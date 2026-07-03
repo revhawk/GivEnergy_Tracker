@@ -11,7 +11,7 @@ from datetime import datetime, timezone, timedelta
 
 # Single source of truth for the add-on version.
 # MUST match `version:` in config.yaml (validated on startup).
-__version__ = "1.0.8"
+__version__ = "1.0.9"
 
 
 # Import custom configurations
@@ -546,7 +546,15 @@ async def run_startup_write_test():
     logging.info(f"Test slot: {test_start.strftime('%H:%M')} → {test_end.strftime('%H:%M')} (100%)")
 
     try:
-        # Step        await asyncio.sleep(8)  # let GivTCP cache propagate
+        # Step 1: write the test slot
+        logging.info("[1/4] Writing test slot via GivTCP...")
+        ok = await set_inverter_charge_slots(test_start, test_end, charge_target=100)
+        if not ok:
+            logging.error("[1/4] FAIL — set_inverter_charge_slots returned False")
+            return False
+        logging.info("[1/4] PASS — write returned success")
+
+        await asyncio.sleep(8)  # let GivTCP cache propagate
 
         # Step 2: read back and verify
         logging.info("[2/4] Reading back charge slots from GivTCP...")
@@ -589,19 +597,7 @@ async def run_startup_write_test():
             return False
         logging.info("[3/4] PASS — clear returned success")
 
-        await asyncio.sleep(8)
-nergy app manually.)"
-                )
-
-        # Step 3: clear
-        logging.info("[3/4] Clearing test slot via GivTCP...")
-        ok = await set_inverter_charge_slots(None, None)
-        if not ok:
-            logging.error("[3/4] FAIL — clear returned False")
-            return False
-        logging.info("[3/4] PASS — clear returned success")
-
-        await asyncio.sleep(3)
+        await asyncio.sleep(8)  # let GivTCP cache propagate clearing
 
         # Step 4: read back and verify cleared
         logging.info("[4/4] Reading back to verify slot cleared...")
