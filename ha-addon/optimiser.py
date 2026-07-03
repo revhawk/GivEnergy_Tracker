@@ -9,6 +9,10 @@ import requests
 from logging.handlers import RotatingFileHandler
 from datetime import datetime, timezone, timedelta
 
+# Single source of truth for the add-on version.
+# MUST match `version:` in config.yaml (validated on startup).
+__version__ = "1.0.4"
+
 # Import custom configurations
 try:
     import config
@@ -1090,8 +1094,24 @@ async def main():
     interval = int(os.environ.get('INTERVAL_MINUTES', 30))
 
     # ── Startup checks ───────────────────────────────────────────────────────
+    # Fail loudly if config.yaml and __version__ disagree — prevents silent
+    # version drift where HA reports one version and the running code is another.
+    try:
+        with open(os.path.join(os.path.dirname(__file__), 'config.yaml')) as _f:
+            for _line in _f:
+                if _line.strip().startswith('version:'):
+                    _yaml_ver = _line.split(':', 1)[1].strip().strip('"').strip("'")
+                    if _yaml_ver != __version__:
+                        logging.warning(
+                            f"VERSION MISMATCH: config.yaml says '{_yaml_ver}' "
+                            f"but code says '{__version__}'. Fix before releasing."
+                        )
+                    break
+    except FileNotFoundError:
+        pass  # container may not have config.yaml at runtime path
+
     logging.info("========================================")
-    logging.info("  GivEnergy Tariff Optimiser v1.0.4")
+    logging.info(f"  GivEnergy Tariff Optimiser v{__version__}")
     logging.info("========================================")
     logging.info("--- Effective config (config.py) ---")
     logging.info(f"  BASE_LOAD_W            = {getattr(config, 'BASE_LOAD_W', 1000)} W")
