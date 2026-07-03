@@ -11,7 +11,7 @@ from datetime import datetime, timezone, timedelta
 
 # Single source of truth for the add-on version.
 # MUST match `version:` in config.yaml (validated on startup).
-__version__ = "1.0.9"
+__version__ = "1.0.10"
 
 
 # Import custom configurations
@@ -1243,17 +1243,16 @@ async def main():
                 except Exception as e:
                     logging.error(f"Audit failed: {e}", exc_info=True)
 
-            # 2. Daily plan — fire if we've never planned, OR today's plan is
-            #    stale AND we've crossed plan_hour (tomorrow's rates now published).
+            # 2. Daily plan — fire if we've never planned, OR today's plan is stale.
             last_plan_date = state.get('last_plan_date')
             need_first_plan = last_plan_date is None
-            need_new_day_plan = (last_plan_date != today_str) and (now_local.hour >= plan_hour)
+            need_new_day_plan = (last_plan_date != today_str)
 
             if need_first_plan or need_new_day_plan:
                 if run_once:
                     logging.info("===== PLANNING RUN (RUN_ONCE) =====")
                 else:
-                    reason = "first plan since startup" if need_first_plan else f"new day (crossed {plan_hour:02d}:00, rates for tomorrow now published)"
+                    reason = "first plan since startup" if need_first_plan else "new calendar day detected"
                     logging.info(f"===== DAILY PLANNING RUN ({reason}) =====")
                 _last_plan.clear()
                 await run_optimization()
