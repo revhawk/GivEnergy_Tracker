@@ -11,7 +11,7 @@ from datetime import datetime, timezone, timedelta
 
 # Single source of truth for the add-on version.
 # MUST match `version:` in config.yaml (validated on startup).
-__version__ = "1.0.10"
+__version__ = "1.0.12"
 
 
 # Import custom configurations
@@ -111,7 +111,7 @@ def chatgpt_veto_plan(current_soc, battery_capacity_kwh, solar_total_kwh,
         f"You validate battery charging plans for a UK home.\n"
         f"\n"
         f"HARD FACTS — do not contradict these in your reasoning:\n"
-        f"1. Import: Octopus Agile, prices vary every 30 min.\n"
+        f"1. Import: Octopus Agile, prices vary every 30 min. Prices can go NEGATIVE (below 0.0p), which means the grid pays us to import energy.\n"
         f"2. Export: Octopus Outgoing at {export_rate:.2f}p/kWh. This rate is "
         f"FLAT and does NOT change during the day. Never suggest 'better export "
         f"rates later' — there are none.\n"
@@ -120,6 +120,7 @@ def chatgpt_veto_plan(current_soc, battery_capacity_kwh, solar_total_kwh,
         f"4. Only two profitable reasons to charge: (a) cover a genuine home-load "
         f"deficit later today, or (b) import price is below "
         f"{efficiency_break_even:.1f}p for real arbitrage.\n"
+        f"5. IMPORTANT: Negative import rates (e.g. -4.74p) are below 0.0p and are extremely profitable because the grid is paying us to take power. Do not confuse negative numbers as being 'above' the break-even threshold. Always approve charging at negative rates.\n"
         f"\n"
         f"Reply ONLY with valid JSON:\n"
         f"  'approve' (bool) - would you apply this action?\n"
@@ -135,7 +136,7 @@ def chatgpt_veto_plan(current_soc, battery_capacity_kwh, solar_total_kwh,
         f"Upcoming Agile rates:\n{rates_lines}\n\n"
         f"Proposed action: {action}\n\n"
         f"Rate 1-10 and approve=true iff you would apply this action. "
-        f"If false, cite the specific slot/rate that motivates rejection."
+        f"If false, cite the specific slot/rate that motivates rejection. Note if prices are negative."
     )
 
     try:
@@ -1083,13 +1084,23 @@ async def run_optimization():
         else:
             logging.info(f"Economics: charge {required_charge_kwh:.1f} kWh × {min_window_cost:.2f}p = {charge_cost_p:.0f}p  (deficit charge, above export rate)")
 
-        # LLM veto: if the model rejects the plan, fall back to clearing slots
+        # LLM veto: if the model rejects the plan, fall back to clearing slots.
+        # Bypass the veto if the average cost is negative — grid is paying us to charge,
+        # so any LLM reject is a mathematical hallucination.
         approve, score, reason = chatgpt_veto_plan(
             current_soc, battery_capacity, total_solar_kwh, export_rate,
             upcoming_slots, local_start, local_end, required_charge_kwh, min_window_cost
         )
         score_str = f"{score}/10" if score is not None else "n/a"
-        logging.info(f"LLM veto: approve={approve}  score={score_str}  reason={reason}")
+        
+        if min_window_cost < 0.0:
+            logging.info(f"LLM veto response: approve={approve}  score={score_str}  reason={reason}")
+            if not approve:
+                logging.info(f"⚡ OVERRIDING LLM VETO: proposed window cost is negative ({min_window_cost:.2f}p/kWh). Proceeding with plan.")
+                approve = True
+        else:
+            logging.info(f"LLM veto: approve={approve}  score={score_str}  reason={reason}")
+
         if not approve:
             logging.info("LLM VETOED the charge plan — clearing slots as fallback (deterministic plan overridden).")
             _record_plan(action="no_charge", branch="llm_vetoed",
