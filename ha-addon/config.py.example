@@ -1,0 +1,56 @@
+# ─── GivEnergy Tariff Optimiser: config.py template ─────────────────────────
+# Copy this file to config.py in the same directory and fill in your own values.
+# config.py is gitignored — never commit real credentials.
+
+# Private local network configuration
+INVERTER_IP = "192.168.1.xx"       # Your GivEnergy inverter static IP
+IBOOST_IP = "192.168.1.xx"         # (Optional) Solar iBoost IP if networked
+INVERTER_PORT = 8899               # Modbus TCP port (usually 8899 or 502)
+
+# GivTCP REST API URL (preferred over direct Modbus)
+GIVTCP_URL = "http://192.168.1.xx:6345"   # Set to None to force Modbus fallback
+
+# Octopus Energy — API access
+OCTOPUS_API_KEY = "sk_live_xxxxxxxxxxxxxxxxxxxxxxxx"   # Your Octopus API key
+OCTOPUS_ACCOUNT_ID = "A-XXXXXXXX"                       # e.g. A-1234ABCD
+
+# Physical meter point identifiers
+ELEC_IMPORT_MPAN = "1400000000000" # Import MPAN
+ELEC_EXPORT_MPAN = "1400000000000" # Export MPAN
+ELEC_SERIAL = "XXK0000000"         # Shared meter serial
+GAS_MPRN = "0000000000"            # Optional — gas MPRN
+GAS_SERIAL = "GXK00000000000"      # Optional — gas meter serial
+
+# Import tariff (Octopus Agile)
+AGILE_PRODUCT_CODE = "AGILE-24-10-01"
+AGILE_TARIFF_CODE = "E-1R-AGILE-24-10-01-E"   # Adjust final letter for your region
+
+# Export tariff (Octopus Outgoing Variable — verify via account API if it changes)
+EXPORT_PRODUCT_CODE = "OUTGOING-VAR-24-10-26"
+EXPORT_TARIFF_CODE = "E-1R-OUTGOING-VAR-24-10-26-E"
+EXPORT_RATE_P_FALLBACK = 12.0       # Used only if live rate fetch fails
+ARBITRAGE_MARGIN_P = 0.5            # Import must be below (export − margin)
+
+# Home energy limits
+MAX_BATTERY_CHARGE_RATE = 3000     # Max GivEnergy charge speed in Watts
+IBOOST_MAX_DIVERT_RATE = 3000      # Standard UK immersion heater load cap (W)
+BASE_LOAD_W = 1000                 # Continuous home load in Watts.
+                                   # Set from your true overnight draw;
+                                   # under-estimating causes skipped charges.
+
+# Battery capacity
+BATTERY_CAPACITY_KWH = 9.5         # Total battery capacity in kWh
+
+# Solar array
+LATITUDE = 52.0                    # Your home latitude
+LONGITUDE = -2.0                   # Your home longitude
+SOLAR_DECLINATION = 35             # Panel tilt (0 = flat, 90 = vertical)
+SOLAR_AZIMUTH = 0                  # 0 = South, -90 = East, +90 = West
+SOLAR_KWP = 10.0                   # Array capacity in kWp
+
+# Logging (writes to HA /share/ mount if configured; falls back to console)
+LOG_FILE_PATH = "/share/nas_logs/givenergy_tracker.log"
+LOG_LEVEL = "INFO"                 # DEBUG | INFO | WARNING | ERROR
+
+# Optional: OpenAI (LLM veto + end-of-day audit)
+OPENAI_API_KEY = ""                # Leave blank to disable

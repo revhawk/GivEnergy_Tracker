@@ -1,0 +1,3 @@
+requests
+givenergy-modbus
+openai>=1.0.0

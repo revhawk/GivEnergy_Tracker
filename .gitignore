@@ -1,0 +1,28 @@
+# Secrets — real config with API keys, meter serials, passwords.
+# Keep only the template in git.
+ha-addon/config.py
+config.py
+
+# Local backup of the pre-restructure files and secrets — never publish
+_legacy/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.python-version
+.venv/
+venv/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+*.swp
+
+# Test / build artefacts
+.pytest_cache/
+htmlcov/
+.coverage
+*.log
