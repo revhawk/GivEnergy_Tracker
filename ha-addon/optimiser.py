@@ -11,7 +11,7 @@ from datetime import datetime, timezone, timedelta
 
 # Single source of truth for the add-on version.
 # MUST match `version:` in config.yaml (validated on startup).
-__version__ = "1.0.13"
+__version__ = "1.0.15"
 
 
 # Import custom configurations
@@ -722,9 +722,10 @@ async def set_inverter_charge_slots(start_time, end_time, charge_target=100):
                 # all of them. A 404 is logged as a warning but does NOT abort.
                 logging.info(f"GivTCP: Enabling grid charge and setting target to {charge_target}%...")
                 for _path, _payload in [
-                    ("/setChargeTarget",     {"chargeToPercent": charge_target}),
-                    ("/enableChargeTarget",  {"state": "enable"}),
-                    ("/setChargeEnable",     {"state": "enable"}),
+                    ("/setChargeTarget",        {"chargeToPercent": charge_target}),
+                    ("/enableChargeTarget",     {"state": "enable"}),
+                    ("/enableChargeSchedule",   {"state": "enable"}),
+                    ("/setChargeEnable",        {"state": "enable"}),
                 ]:
                     try:
                         _r = requests.post(f"{base_url}{_path}", json=_payload, timeout=10)
@@ -739,10 +740,14 @@ async def set_inverter_charge_slots(start_time, end_time, charge_target=100):
                 r2 = requests.post(f"{base_url}/setChargeSlot2", json={"start": "00:00", "finish": "00:00", "chargeToPercent": 0}, timeout=10)
                 r2.raise_for_status()
                 # Best-effort disable.
-                try:
-                    requests.post(f"{base_url}/setChargeEnable", json={"state": "disable"}, timeout=10)
-                except Exception:
-                    pass
+                for _path, _payload in [
+                    ("/enableChargeSchedule",   {"state": "disable"}),
+                    ("/setChargeEnable",        {"state": "disable"}),
+                ]:
+                    try:
+                        requests.post(f"{base_url}{_path}", json=_payload, timeout=10)
+                    except Exception:
+                        pass
 
             logging.info("GivTCP: Configuration applied successfully.")
             return True
@@ -919,10 +924,10 @@ async def run_optimization():
             
     # Print a beautiful simulation timeline
     logging.info("--- 24-Hour Base Simulation (No Grid Charge) ---")
-    logging.info(f"{'Time':<5} | {'Price':<6} | {'Solar':<6} | {'Load':<6} | {'Battery':<7} | {'iBoost':<6} | {'Export':<6} | {'Import':<6}")
-    logging.info("-" * 70)
+    logging.info(f"{'Date/Time':<10} | {'Price':<6} | {'Solar':<6} | {'Load':<6} | {'Battery':<7} | {'iBoost':<6} | {'Export':<6} | {'Import':<6}")
+    logging.info("-" * 75)
     for imp in imports:
-        time_str = imp['slot']['start'].astimezone().strftime('%H:%M')
+        time_str = imp['slot']['start'].astimezone().strftime('%m-%d %H:%M')
         price = f"{imp['slot']['price']:.1f}p"
         solar = f"{imp['solar']:.2f}"
         load = f"{imp['load']:.2f}"
@@ -931,7 +936,7 @@ async def run_optimization():
         export = f"{imp['export']:.2f}" if imp['export'] > 0 else "-"
         imp_val = f"{imp['import_needed']:.2f}" if imp['import_needed'] > 0 else "-"
         
-        logging.info(f"{time_str:<5} | {price:<6} | {solar:<6} | {load:<6} | {batt:<7} | {iboost:<6} | {export:<6} | {imp_val:<6}")
+        logging.info(f"{time_str:<10} | {price:<6} | {solar:<6} | {load:<6} | {batt:<7} | {iboost:<6} | {export:<6} | {imp_val:<6}")
         
     total_import_kwh = sum(i['kwh'] for i in import_needed_slots)
     total_iboost_kwh = sum(i['iboost'] for i in imports)
@@ -958,12 +963,12 @@ async def run_optimization():
     if negative_slots:
         logging.info(f"⚡ NEGATIVE RATE ALERT: {len(negative_slots)} slot(s) — grid pays YOU!")
         for ns in negative_slots[:8]:
-            local_t = ns['start'].astimezone().strftime('%H:%M')
+            local_t = ns['start'].astimezone().strftime('%m-%d %H:%M')
             logging.info(f"   {local_t}  {ns['price']:.2f}p/kWh  ← free money!")
     elif arbitrage_slots:
         logging.info(f"💰 Arbitrage opportunity: {len(arbitrage_slots)} slot(s) below {arbitrage_threshold:.2f}p")
         for a in arbitrage_slots[:6]:
-            local_t = a['start'].astimezone().strftime('%H:%M')
+            local_t = a['start'].astimezone().strftime('%m-%d %H:%M')
             profit = export_rate - a['price']
             logging.info(f"   {local_t}  {a['price']:.2f}p/kWh  (profit: {profit:.2f}p/kWh vs export)")
 
