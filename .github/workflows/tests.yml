@@ -24,4 +24,7 @@ jobs:
           pip install requests
       - name: Run tests
         working-directory: tests
+        # Match the timezone the add-on runs under (config.yaml: TZ=Europe/London)
+        env:
+          TZ: Europe/London
         run: pytest -v

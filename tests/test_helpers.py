@@ -44,6 +44,11 @@ class TestFindKeyRecursive:
 
 
 class TestGetSolarKwhForSlot:
+    """The mapping is done in *local* time (via .astimezone() with no tz arg).
+    The add-on runs with TZ=Europe/London. Tests assume the same — CI sets it
+    on the runner. If you run pytest locally in a different tz, use TZ=Europe/London.
+    """
+
     def _slot(self, start_iso, end_iso):
         return {
             "start": datetime.fromisoformat(start_iso.replace("Z", "+00:00")),
@@ -51,10 +56,12 @@ class TestGetSolarKwhForSlot:
         }
 
     def test_hour_match_halves_the_kwh(self):
-        # An hourly forecast of 2.0 kWh should map to 1.0 kWh per half-hour slot
+        # Forecast comes back as local-time entries. With TZ=Europe/London,
+        # the .astimezone() call produces Europe/London-tz datetimes.
         forecast = [{"time": datetime(2026, 7, 3, 12, 0).astimezone(), "kwh": 2.0}]
         slot = self._slot("2026-07-03T11:30:00+01:00", "2026-07-03T12:00:00+01:00")
         got = optimiser.get_solar_kwh_for_slot(slot["start"], slot["end"], forecast)
+        # Hourly 2.0 kWh split across two half-hour slots → 1.0 kWh each
         assert got == 1.0
 
     def test_no_match_returns_zero(self):
