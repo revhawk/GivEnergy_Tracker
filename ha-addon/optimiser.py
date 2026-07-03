@@ -646,12 +646,9 @@ async def set_inverter_charge_slots(start_time, end_time, charge_target=100):
         base_url = givtcp_url.rstrip('/')
         try:
             if start_time and end_time:
-                logging.info(f"GivTCP: Enabling grid charge and setting target to {charge_target}%...")
-                r = requests.post(f"{base_url}/setChargeEnable", json={"state": "enable"}, timeout=10)
-                r.raise_for_status()
-                r = requests.post(f"{base_url}/setChargeTarget", json={"chargeToPercent": str(charge_target)}, timeout=10)
-                r.raise_for_status()
-                
+                # Set the slot time windows FIRST, then enable charging.
+                # Some inverter firmware ignores the enable command if slots
+                # aren't already programmed when it arrives.
                 if start_time.date() == end_time.date():
                     s_str = start_time.strftime("%H%M")
                     e_str = end_time.strftime("%H%M")
@@ -662,13 +659,14 @@ async def set_inverter_charge_slots(start_time, end_time, charge_target=100):
                         "chargeToPercent": str(charge_target)
                     }, timeout=10)
                     r.raise_for_status()
-                    requests.post(f"{base_url}/setChargeSlot2", json={"start": "0000", "finish": "0000", "chargeToPercent": "0"}, timeout=10)
+                    r2 = requests.post(f"{base_url}/setChargeSlot2", json={"start": "0000", "finish": "0000", "chargeToPercent": "0"}, timeout=10)
+                    r2.raise_for_status()
                 else:
                     s_str1 = start_time.strftime("%H%M")
                     e_str1 = "2359"
                     s_str2 = "0000"
                     e_str2 = end_time.strftime("%H%M")
-                    
+
                     logging.info(f"GivTCP: Spanning midnight. Slot 1: {s_str1}-{e_str1}, Slot 2: {s_str2}-{e_str2}")
                     r1 = requests.post(f"{base_url}/setChargeSlot1", json={
                         "start": s_str1,
@@ -676,19 +674,29 @@ async def set_inverter_charge_slots(start_time, end_time, charge_target=100):
                         "chargeToPercent": str(charge_target)
                     }, timeout=10)
                     r1.raise_for_status()
-                    
+
                     r2 = requests.post(f"{base_url}/setChargeSlot2", json={
                         "start": s_str2,
                         "finish": e_str2,
                         "chargeToPercent": str(charge_target)
                     }, timeout=10)
                     r2.raise_for_status()
+
+                # Enable charging and set target AFTER slots are written.
+                logging.info(f"GivTCP: Enabling grid charge and setting target to {charge_target}%...")
+                r = requests.post(f"{base_url}/setChargeTarget", json={"chargeToPercent": str(charge_target)}, timeout=10)
+                r.raise_for_status()
+                r = requests.post(f"{base_url}/setChargeEnable", json={"state": "enable"}, timeout=10)
+                r.raise_for_status()
             else:
                 logging.info("GivTCP: Disabling grid charging (clearing slots)...")
+                # Clear slots before disabling so the inverter sees a clean state.
+                r1 = requests.post(f"{base_url}/setChargeSlot1", json={"start": "0000", "finish": "0000", "chargeToPercent": "0"}, timeout=10)
+                r1.raise_for_status()
+                r2 = requests.post(f"{base_url}/setChargeSlot2", json={"start": "0000", "finish": "0000", "chargeToPercent": "0"}, timeout=10)
+                r2.raise_for_status()
                 requests.post(f"{base_url}/setChargeEnable", json={"state": "disable"}, timeout=10)
-                requests.post(f"{base_url}/setChargeSlot1", json={"start": "0000", "finish": "0000", "chargeToPercent": "0"}, timeout=10)
-                requests.post(f"{base_url}/setChargeSlot2", json={"start": "0000", "finish": "0000", "chargeToPercent": "0"}, timeout=10)
-            
+
             logging.info("GivTCP: Configuration applied successfully.")
             return True
         except Exception as e:
@@ -702,49 +710,59 @@ async def set_inverter_charge_slots(start_time, end_time, charge_target=100):
         )
         return False
 
-
     port = getattr(config, 'INVERTER_PORT', 8899)
     client = Client(host=config.INVERTER_IP, port=port)
     try:
         await client.connect()
-        await client.refresh_plant(full_refresh=True)
-        
+        # Wrap full_refresh in its own try/except: on ARM hardware certain
+        # inverter register layouts can trigger a SIGBUS inside the native
+        # givenergy-modbus Cython decoder if an unaligned read is attempted.
+        # A failed refresh is non-fatal — we still attempt the write commands.
+        try:
+            await client.refresh_plant(full_refresh=True)
+        except Exception as refresh_err:
+            logging.warning(f"Modbus: refresh_plant failed ({refresh_err}); continuing with write commands anyway.")
+
         logging.info(f"Modbus: Setting charge target to {charge_target}%...")
         await client.one_shot_command(commands.set_charge_target(charge_target))
-        
+
+        # Helper: call set_charge_slot with slot_map if the attribute exists,
+        # otherwise fall back to the older 2-arg signature.
+        def _slot_map():
+            try:
+                return client.plant.inverter.slot_map
+            except AttributeError:
+                return None
+
+        async def _write_slot(slot_num, ts):
+            sm = _slot_map()
+            if sm is not None:
+                try:
+                    await client.one_shot_command(commands.set_charge_slot(slot_num, ts, sm))
+                    return
+                except Exception:
+                    pass  # fall through to 2-arg form
+            await client.one_shot_command(commands.set_charge_slot(slot_num, ts))
+
         if start_time and end_time:
             logging.info(f"Modbus: Programming charge slots: {start_time.strftime('%H:%M')} to {end_time.strftime('%H:%M')}...")
             if start_time.date() == end_time.date():
                 ts1 = TimeSlot.from_components(start_time.hour, start_time.minute, end_time.hour, end_time.minute)
-                try:
-                    await client.one_shot_command(commands.set_charge_slot(1, ts1, client.plant.inverter.slot_map))
-                except Exception:
-                    await client.one_shot_command(commands.set_charge_slot(1, ts1))
                 ts2 = TimeSlot.from_components(0, 0, 0, 0)
-                try:
-                    await client.one_shot_command(commands.set_charge_slot(2, ts2, client.plant.inverter.slot_map))
-                except Exception:
-                    await client.one_shot_command(commands.set_charge_slot(2, ts2))
+                await _write_slot(1, ts1)
+                await _write_slot(2, ts2)
             else:
                 ts1 = TimeSlot.from_components(start_time.hour, start_time.minute, 23, 59)
                 ts2 = TimeSlot.from_components(0, 0, end_time.hour, end_time.minute)
                 logging.info("Modbus: Splitting charge slot across midnight.")
-                try:
-                    await client.one_shot_command(commands.set_charge_slot(1, ts1, client.plant.inverter.slot_map))
-                    await client.one_shot_command(commands.set_charge_slot(2, ts2, client.plant.inverter.slot_map))
-                except Exception:
-                    await client.one_shot_command(commands.set_charge_slot(1, ts1))
-                    await client.one_shot_command(commands.set_charge_slot(2, ts2))
+                await _write_slot(1, ts1)
+                await _write_slot(2, ts2)
         else:
             logging.info("Modbus: Clearing all charge slots...")
             ts_clear = TimeSlot.from_components(0, 0, 0, 0)
-            try:
-                await client.one_shot_command(commands.set_charge_slot(1, ts_clear, client.plant.inverter.slot_map))
-                await client.one_shot_command(commands.set_charge_slot(2, ts_clear, client.plant.inverter.slot_map))
-            except Exception:
-                await client.one_shot_command(commands.set_charge_slot(1, ts_clear))
-                await client.one_shot_command(commands.set_charge_slot(2, ts_clear))
-                
+            await _write_slot(1, ts_clear)
+            await _write_slot(2, ts_clear)
+
         logging.info("Modbus: Inverter configuration complete.")
         await client.close()
         return True

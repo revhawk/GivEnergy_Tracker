@@ -54,6 +54,15 @@ class TestSetInverterChargeSlotsGivTCP:
         assert "/setChargeSlot1" in paths
         assert "/setChargeSlot2" in paths
 
+        # Slots must be written BEFORE enable/target (inverter firmware requirement)
+        slot1_idx  = next(i for i, c in enumerate(responses.calls) if c.request.url.endswith("/setChargeSlot1"))
+        slot2_idx  = next(i for i, c in enumerate(responses.calls) if c.request.url.endswith("/setChargeSlot2"))
+        target_idx = next(i for i, c in enumerate(responses.calls) if c.request.url.endswith("/setChargeTarget"))
+        enable_idx = next(i for i, c in enumerate(responses.calls) if c.request.url.endswith("/setChargeEnable"))
+        assert slot1_idx < target_idx, "slot1 must be set before setChargeTarget"
+        assert slot2_idx < target_idx, "slot2 must be cleared before setChargeTarget"
+        assert target_idx < enable_idx, "setChargeTarget must fire before setChargeEnable"
+
         # Enable should be "enable"
         enable_call = next(c for c in responses.calls if c.request.url.endswith("/setChargeEnable"))
         assert _body(enable_call) == {"state": "enable"}
