@@ -546,15 +546,7 @@ async def run_startup_write_test():
     logging.info(f"Test slot: {test_start.strftime('%H:%M')} → {test_end.strftime('%H:%M')} (100%)")
 
     try:
-        # Step 1: write the test slot
-        logging.info("[1/4] Writing test slot via GivTCP...")
-        ok = await set_inverter_charge_slots(test_start, test_end, charge_target=100)
-        if not ok:
-            logging.error("[1/4] FAIL — set_inverter_charge_slots returned False")
-            return False
-        logging.info("[1/4] PASS — write returned success")
-
-        await asyncio.sleep(3)  # let GivTCP propagate
+        # Step        await asyncio.sleep(8)  # let GivTCP cache propagate
 
         # Step 2: read back and verify
         logging.info("[2/4] Reading back charge slots from GivTCP...")
@@ -563,7 +555,7 @@ async def run_startup_write_test():
             logging.warning("[2/4] SKIP — could not read back (GivTCP fields not found or unreachable)")
         else:
             logging.info(f"[2/4] Read: slot1={slots.get('slot1_start')} → {slots.get('slot1_end')}, "
-                         f"slot2={slots.get('slot2_start')} → {slots.get('slot2_end')}")
+                          f"slot2={slots.get('slot2_start')} → {slots.get('slot2_end')}")
              # GivTCP returns times as "HH:MM:SS" or "HH:MM" — normalize to "HH:MM"
             def _norm(v):
                 if v is None: return "00:00"
@@ -587,6 +579,18 @@ async def run_startup_write_test():
                     f"[2/4] MISMATCH — expected slot1={expected_start_hh_mm} → {expected_end_hh_mm}, "
                     f"got {_norm(slots.get('slot1_start'))} → {_norm(slots.get('slot1_end'))}. "
                     f"(May be a field-name mismatch — check via GivEnergy app manually.)"
+                )
+
+        # Step 3: clear
+        logging.info("[3/4] Clearing test slot via GivTCP...")
+        ok = await set_inverter_charge_slots(None, None)
+        if not ok:
+            logging.error("[3/4] FAIL — clear returned False")
+            return False
+        logging.info("[3/4] PASS — clear returned success")
+
+        await asyncio.sleep(8)
+nergy app manually.)"
                 )
 
         # Step 3: clear
