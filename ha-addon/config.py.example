@@ -29,7 +29,9 @@ AGILE_TARIFF_CODE = "E-1R-AGILE-24-10-01-E"   # Adjust final letter for your reg
 EXPORT_PRODUCT_CODE = "OUTGOING-VAR-24-10-26"
 EXPORT_TARIFF_CODE = "E-1R-OUTGOING-VAR-24-10-26-E"
 EXPORT_RATE_P_FALLBACK = 12.0       # Used only if live rate fetch fails
-ARBITRAGE_MARGIN_P = 0.5            # Import must be below (export − margin)
+ARBITRAGE_MARGIN_P = 1.5            # Import must be below (export − margin).
+                                    # 1.5p accounts for ~10% round-trip battery loss:
+                                    # break-even ≈ 12p × 0.90 ≈ 10.8p, then 0.7p headroom.
 
 # Home energy limits
 MAX_BATTERY_CHARGE_RATE = 3000     # Max GivEnergy charge speed in Watts

@@ -103,22 +103,34 @@ def chatgpt_veto_plan(current_soc, battery_capacity_kwh, solar_total_kwh,
 
     efficiency_break_even = export_rate * 0.90
     system_msg = (
-        f"You validate battery charging plans for a UK home on Octopus Agile "
-        f"(variable import) and Octopus Outgoing (export rate given below). "
-        f"Round-trip battery efficiency is ~90%, so importing above "
-        f"~{efficiency_break_even:.1f}p is not arbitrage-profitable. Reply ONLY "
-        f"with valid JSON containing keys 'approve' (boolean), 'score' "
-        f"(integer 1-10), 'reason' (string ≤ 120 chars)."
+        f"You validate battery charging plans for a UK home.\n"
+        f"\n"
+        f"HARD FACTS — do not contradict these in your reasoning:\n"
+        f"1. Import: Octopus Agile, prices vary every 30 min.\n"
+        f"2. Export: Octopus Outgoing at {export_rate:.2f}p/kWh. This rate is "
+        f"FLAT and does NOT change during the day. Never suggest 'better export "
+        f"rates later' — there are none.\n"
+        f"3. Round-trip battery efficiency ≈ 90%. Importing above "
+        f"{efficiency_break_even:.1f}p yields NEGATIVE arbitrage profit.\n"
+        f"4. Only two profitable reasons to charge: (a) cover a genuine home-load "
+        f"deficit later today, or (b) import price is below "
+        f"{efficiency_break_even:.1f}p for real arbitrage.\n"
+        f"\n"
+        f"Reply ONLY with valid JSON:\n"
+        f"  'approve' (bool) - would you apply this action?\n"
+        f"  'score'   (int 1-10) - 1=terrible, 10=optimal for this data\n"
+        f"  'reason'  (string ≤ 120 chars) - MUST reference concrete numbers "
+        f"from the data. No vague appeals to 'later', 'better times', etc."
     )
     user_msg = (
         f"Battery: {current_soc}% of {battery_capacity_kwh} kWh\n"
         f"Solar forecast today: {solar_total_kwh:.1f} kWh\n"
-        f"Export rate: {export_rate:.2f}p/kWh\n"
+        f"Export rate (FLAT all day): {export_rate:.2f}p/kWh\n"
+        f"Break-even (post 90% efficiency): {efficiency_break_even:.2f}p/kWh\n"
         f"Upcoming Agile rates:\n{rates_lines}\n\n"
         f"Proposed action: {action}\n\n"
-        f"Rate the plan 1-10 (1=terrible, 10=optimal). "
-        f"approve=true iff you would apply this action. "
-        f"If false, explain briefly what should be done instead."
+        f"Rate 1-10 and approve=true iff you would apply this action. "
+        f"If false, cite the specific slot/rate that motivates rejection."
     )
 
     try:
@@ -443,6 +455,135 @@ def get_solar_kwh_for_slot(slot_start, slot_end, solar_forecasts):
             return f['kwh'] / 2.0
     return 0.0
 
+# Read current charge-slot configuration from GivTCP (for the startup self-test).
+# Returns dict with slot1_start/end and slot2_start/end (values may be None if
+# GivTCP didn't return the expected field names — degrades gracefully).
+def read_inverter_charge_slots():
+    givtcp_url = getattr(config, 'GIVTCP_URL', None)
+    if not givtcp_url:
+        return None
+    url = f"{givtcp_url.rstrip('/')}/getCache"
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        # GivTCP field naming varies between versions — try common variants
+        candidates_start1 = ["Charge_start_time_slot_1", "Charge_Start_Time_1",
+                             "Timeslots.Charge_start_time_slot_1", "charge_start_time_slot_1"]
+        candidates_end1 = ["Charge_end_time_slot_1", "Charge_End_Time_1",
+                           "charge_end_time_slot_1"]
+        candidates_start2 = ["Charge_start_time_slot_2", "Charge_Start_Time_2",
+                             "charge_start_time_slot_2"]
+        candidates_end2 = ["Charge_end_time_slot_2", "Charge_End_Time_2",
+                           "charge_end_time_slot_2"]
+        def _first_found(keys):
+            for k in keys:
+                v = find_key_recursive(data, k)
+                if v is not None:
+                    return v
+            return None
+        return {
+            'slot1_start': _first_found(candidates_start1),
+            'slot1_end': _first_found(candidates_end1),
+            'slot2_start': _first_found(candidates_start2),
+            'slot2_end': _first_found(candidates_end2),
+        }
+    except Exception as e:
+        logging.warning(f"Failed to read charge slots from GivTCP: {e}")
+        return None
+
+# Startup self-test — verifies the GivTCP write path by adding, reading back,
+# and clearing a test charge slot. Runs once on daemon startup when enabled.
+async def run_startup_write_test():
+    logging.info("=" * 40)
+    logging.info(" STARTUP WRITE-PATH SELF-TEST")
+    logging.info("=" * 40)
+
+    now_local = datetime.now().astimezone()
+    # Test slot: 2 hours in the future (won't collide with an active plan since
+    # planning runs are once daily at DAILY_PLAN_HOUR). 30 min duration.
+    test_start = (now_local + timedelta(hours=2)).replace(second=0, microsecond=0)
+    # Snap DOWN to nearest 30-min boundary
+    test_start = test_start.replace(minute=(test_start.minute // 30) * 30)
+    test_end = test_start + timedelta(minutes=30)
+    expected_start_hhmm = test_start.strftime("%H%M")
+    expected_end_hhmm = test_end.strftime("%H%M")
+
+    logging.info(f"Test slot: {test_start.strftime('%H:%M')} → {test_end.strftime('%H:%M')} (100%)")
+
+    try:
+        # Step 1: write the test slot
+        logging.info("[1/4] Writing test slot via GivTCP...")
+        ok = await set_inverter_charge_slots(test_start, test_end, charge_target=100)
+        if not ok:
+            logging.error("[1/4] FAIL — set_inverter_charge_slots returned False")
+            return False
+        logging.info("[1/4] PASS — write returned success")
+
+        await asyncio.sleep(3)  # let GivTCP propagate
+
+        # Step 2: read back and verify
+        logging.info("[2/4] Reading back charge slots from GivTCP...")
+        slots = read_inverter_charge_slots()
+        if slots is None:
+            logging.warning("[2/4] SKIP — could not read back (GivTCP fields not found or unreachable)")
+        else:
+            logging.info(f"[2/4] Read: slot1={slots.get('slot1_start')} → {slots.get('slot1_end')}, "
+                         f"slot2={slots.get('slot2_start')} → {slots.get('slot2_end')}")
+            # GivTCP returns times as "HH:MM" strings — compare loosely
+            def _norm(v):
+                if v is None: return None
+                s = str(v).replace(":", "")
+                return s
+            if _norm(slots.get('slot1_start')) == expected_start_hhmm and \
+               _norm(slots.get('slot1_end')) == expected_end_hhmm:
+                logging.info(f"[2/4] PASS — slot 1 matches expected {test_start.strftime('%H:%M')} → {test_end.strftime('%H:%M')}")
+            else:
+                logging.warning(
+                    f"[2/4] MISMATCH — expected slot1={expected_start_hhmm} → {expected_end_hhmm}, "
+                    f"got {_norm(slots.get('slot1_start'))} → {_norm(slots.get('slot1_end'))}. "
+                    f"(May be a field-name mismatch — check via GivEnergy app manually.)"
+                )
+
+        # Step 3: clear
+        logging.info("[3/4] Clearing test slot via GivTCP...")
+        ok = await set_inverter_charge_slots(None, None)
+        if not ok:
+            logging.error("[3/4] FAIL — clear returned False")
+            return False
+        logging.info("[3/4] PASS — clear returned success")
+
+        await asyncio.sleep(3)
+
+        # Step 4: read back and verify cleared
+        logging.info("[4/4] Reading back to verify slot cleared...")
+        slots = read_inverter_charge_slots()
+        if slots is None:
+            logging.warning("[4/4] SKIP — could not read back after clear")
+        else:
+            def _norm(v):
+                if v is None: return None
+                return str(v).replace(":", "")
+            s1 = _norm(slots.get('slot1_start'))
+            e1 = _norm(slots.get('slot1_end'))
+            if s1 in (None, "0000") and e1 in (None, "0000"):
+                logging.info("[4/4] PASS — slot 1 is cleared (00:00 → 00:00)")
+            else:
+                logging.warning(f"[4/4] slot 1 not cleared as expected: {s1} → {e1}")
+
+        logging.info("=" * 40)
+        logging.info(" WRITE-PATH SELF-TEST COMPLETE")
+        logging.info("=" * 40)
+        return True
+    except Exception as e:
+        logging.error(f"Startup write-test crashed: {e}", exc_info=True)
+        # Best-effort clear so we don't leave a stray slot behind
+        try:
+            await set_inverter_charge_slots(None, None)
+        except Exception:
+            pass
+        return False
+
 # Connect to Inverter and get State of Charge (SoC)
 async def get_inverter_soc():
     # 1. Try GivTCP REST API if configured
@@ -716,7 +857,7 @@ async def run_optimization():
 
     # 5. Fetch live export rate and identify arbitrage opportunities
     export_rate = fetch_export_rate()
-    margin = getattr(config, 'ARBITRAGE_MARGIN_P', 0.5)
+    margin = getattr(config, 'ARBITRAGE_MARGIN_P', 1.5)
     arbitrage_threshold = export_rate - margin
 
     negative_slots = [s for s in upcoming_slots if s['price'] < 0]
@@ -950,7 +1091,7 @@ async def main():
 
     # ── Startup checks ───────────────────────────────────────────────────────
     logging.info("========================================")
-    logging.info("  GivEnergy Tariff Optimiser v1.0.3")
+    logging.info("  GivEnergy Tariff Optimiser v1.0.4")
     logging.info("========================================")
     logging.info("--- Effective config (config.py) ---")
     logging.info(f"  BASE_LOAD_W            = {getattr(config, 'BASE_LOAD_W', 1000)} W")
@@ -963,7 +1104,7 @@ async def main():
     live_export = fetch_export_rate()
     fallback_export = getattr(config, 'EXPORT_RATE_P_FALLBACK', 12.0)
     logging.info(f"  EXPORT_RATE (live)     = {live_export:.2f}p/kWh  (fallback: {fallback_export:.2f}p)")
-    logging.info(f"  ARBITRAGE_MARGIN_P     = {getattr(config, 'ARBITRAGE_MARGIN_P', 0.5)}p")
+    logging.info(f"  ARBITRAGE_MARGIN_P     = {getattr(config, 'ARBITRAGE_MARGIN_P', 1.5)}p")
     logging.info(f"  GIVTCP_URL             = {getattr(config, 'GIVTCP_URL', None) or 'not set (Modbus fallback)'}")
     logging.info(f"  INTERVAL_MINUTES       = {interval}")
     logging.info(f"  RUN_ONCE               = {run_once}")
@@ -975,6 +1116,14 @@ async def main():
     plan_hour = int(os.environ.get('DAILY_PLAN_HOUR', '17'))
     audit_hour = int(os.environ.get('DAILY_AUDIT_HOUR', '23'))
     logging.info(f"Scheduling: daily plan at {plan_hour:02d}:00, audit at {audit_hour:02d}:00 (local time).")
+
+    # Optional startup self-test — verifies the GivTCP write path is working by
+    # briefly setting and clearing a test slot. Runs once per daemon startup.
+    if os.environ.get('STARTUP_WRITE_TEST', 'false').lower() in ('true', '1', 'yes'):
+        try:
+            await run_startup_write_test()
+        except Exception as e:
+            logging.error(f"Startup write-test errored (continuing anyway): {e}", exc_info=True)
 
     while True:
         try:

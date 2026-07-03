@@ -11,6 +11,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.4] - 2026-07-03
+
+### Added
+- **Startup write-path self-test** (`STARTUP_WRITE_TEST` env / `startup_write_test` add-on option, default `false`). On daemon start it writes a test charge slot 2 hours in the future, reads it back via GivTCP `/getCache`, clears it, verifies cleared. Confirms end-to-end that the write path works in production. Logs each of the 4 steps.
+- `read_inverter_charge_slots()` — helper that queries GivTCP for current slot configuration, tolerant of field-name variation across GivTCP versions.
+
+### Changed
+- `ARBITRAGE_MARGIN_P` default raised from `0.5` → `1.5` — accounts for the ~10% round-trip battery loss. Import must now be below `~10.5p` (was `11.5p`) to trigger arbitrage, so only genuinely profitable slots reach the LLM validator.
+- Tightened `chatgpt_veto_plan` system prompt with explicit "HARD FACTS" section stating the export rate is FLAT and does not vary during the day. The LLM was hallucinating "better rates later for export" — the new prompt bans this specifically. Reason field now required to reference concrete numbers from the input data.
+- Fallback default for `BASE_LOAD_W` in the fetch code aligned to `1000` (was `300`) to match the config-level default.
+
+---
+
 ## [1.0.3] - 2026-07-03
 
 ### Added
@@ -68,6 +81,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-[Unreleased]: https://github.com/yourusername/givenergy-tracker/compare/v1.0.3...HEAD
-[1.0.3]: https://github.com/yourusername/givenergy-tracker/compare/v1.0.1...v1.0.3
-[1.0.1]: https://github.com/yourusername/givenergy-tracker/releases/tag/v1.0.1
+[Unreleased]: https://github.com/revhawk/GivEnergy_Tracker/compare/v1.0.4...HEAD
+[1.0.4]: https://github.com/revhawk/GivEnergy_Tracker/compare/v1.0.3...v1.0.4
+[1.0.3]: https://github.com/revhawk/GivEnergy_Tracker/compare/v1.0.1...v1.0.3
+[1.0.1]: https://github.com/revhawk/GivEnergy_Tracker/releases/tag/v1.0.1
