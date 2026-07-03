@@ -1,5 +1,5 @@
 name: "GivEnergy Tariff Optimiser"
-version: "1.0.6"
+version: "1.0.7"
 slug: "givenergy_tracker"
 description: "Schedules GivEnergy battery charging during cheapest Octopus Agile slots using live solar forecasts. Enter your OpenAI API key in Configuration for AI-powered daily savings reports."
 url: "https://github.com/revhawk/GivEnergy_Tracker"
@@ -9,6 +9,9 @@ arch:
   - armv7
 startup: "services"
 boot: "auto"
+map:
+  - share:rw   # mounts /share — needed for config file, NAS logging, state persistence
+  - data:rw    # mounts /data  — addon data dir (options.json + config.py fallback)
 options:
   interval_minutes: 30
   run_once: false

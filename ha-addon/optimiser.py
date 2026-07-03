@@ -11,7 +11,7 @@ from datetime import datetime, timezone, timedelta
 
 # Single source of truth for the add-on version.
 # MUST match `version:` in config.yaml (validated on startup).
-__version__ = "1.0.6"
+__version__ = "1.0.7"
 
 
 # Import custom configurations
