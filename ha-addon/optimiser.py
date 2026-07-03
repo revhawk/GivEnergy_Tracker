@@ -646,68 +646,64 @@ async def set_inverter_charge_slots(start_time, end_time, charge_target=100):
     if givtcp_url:
         base_url = givtcp_url.rstrip('/')
         try:
-            if start_time and end_time:
-                # Set the slot time windows FIRST, then enable charging.
-                # Some inverter firmware ignores the enable command if slots
-                # aren't already programmed when it arrives.
+                 # GivTCP v3 requires HH:MM format (not HHMM) and integer chargeToPercent.
                 if start_time.date() == end_time.date():
-                    s_str = start_time.strftime("%H%M")
-                    e_str = end_time.strftime("%H%M")
+                    s_str = start_time.strftime("%H:%M")
+                    e_str = end_time.strftime("%H:%M")
                     logging.info(f"GivTCP: Setting slot 1: {s_str} to {e_str}")
                     r = requests.post(f"{base_url}/setChargeSlot1", json={
                         "start": s_str,
                         "finish": e_str,
-                        "chargeToPercent": str(charge_target)
+                        "chargeToPercent": charge_target
                     }, timeout=10)
                     r.raise_for_status()
-                    r2 = requests.post(f"{base_url}/setChargeSlot2", json={"start": "0000", "finish": "0000", "chargeToPercent": "0"}, timeout=10)
+                    r2 = requests.post(f"{base_url}/setChargeSlot2", json={"start": "00:00", "finish": "00:00", "chargeToPercent": 0}, timeout=10)
                     r2.raise_for_status()
                 else:
-                    s_str1 = start_time.strftime("%H%M")
-                    e_str1 = "2359"
-                    s_str2 = "0000"
-                    e_str2 = end_time.strftime("%H%M")
+                    s_str1 = start_time.strftime("%H:%M")
+                    e_str1 = "23:59"
+                    s_str2 = "00:00"
+                    e_str2 = end_time.strftime("%H:%M")
 
                     logging.info(f"GivTCP: Spanning midnight. Slot 1: {s_str1}-{e_str1}, Slot 2: {s_str2}-{e_str2}")
                     r1 = requests.post(f"{base_url}/setChargeSlot1", json={
                         "start": s_str1,
                         "finish": e_str1,
-                        "chargeToPercent": str(charge_target)
+                        "chargeToPercent": charge_target
                     }, timeout=10)
                     r1.raise_for_status()
 
                     r2 = requests.post(f"{base_url}/setChargeSlot2", json={
                         "start": s_str2,
                         "finish": e_str2,
-                        "chargeToPercent": str(charge_target)
+                        "chargeToPercent": charge_target
                     }, timeout=10)
                     r2.raise_for_status()
 
-                # Enable charging and set target AFTER slots are written.
-                # These two endpoints are best-effort: some GivTCP versions don't
-                # expose them (returns 404). A missing endpoint is logged as a
-                # warning but does NOT abort — the slot registers are what the
-                # inverter actually uses to schedule charging.
+                # Enable charging AFTER slots are written.
+                # These endpoints are best-effort — some GivTCP versions don't expose
+                # all of them. A 404 is logged as a warning but does NOT abort.
                 logging.info(f"GivTCP: Enabling grid charge and setting target to {charge_target}%...")
                 for _path, _payload in [
-                    ("/setChargeTarget", {"chargeToPercent": str(charge_target)}),
-                    ("/setChargeEnable", {"state": "enable"}),
+                    ("/setChargeTarget",     {"chargeToPercent": charge_target}),
+                    ("/enableChargeTarget",  {"state": "enable"}),
+                    ("/setChargeEnable",     {"state": "enable"}),
                 ]:
                     try:
                         _r = requests.post(f"{base_url}{_path}", json=_payload, timeout=10)
                         _r.raise_for_status()
                     except Exception as _e:
-                        logging.warning(f"GivTCP: {_path} unavailable ({_e}) — skipping (slot registers already written).")
+                        logging.warning(f"GivTCP: {_path} unavailable ({_e}) — skipping.")
             else:
                 logging.info("GivTCP: Disabling grid charging (clearing slots)...")
-                # Clear slots before disabling so the inverter sees a clean state.
-                r1 = requests.post(f"{base_url}/setChargeSlot1", json={"start": "0000", "finish": "0000", "chargeToPercent": "0"}, timeout=10)
+                # GivTCP v3: use HH:MM format, integer chargeToPercent
+                r1 = requests.post(f"{base_url}/setChargeSlot1", json={"start": "00:00", "finish": "00:00", "chargeToPercent": 0}, timeout=10)
                 r1.raise_for_status()
-                r2 = requests.post(f"{base_url}/setChargeSlot2", json={"start": "0000", "finish": "0000", "chargeToPercent": "0"}, timeout=10)
+                r2 = requests.post(f"{base_url}/setChargeSlot2", json={"start": "00:00", "finish": "00:00", "chargeToPercent": 0}, timeout=10)
                 r2.raise_for_status()
-                # Best-effort disable — not all GivTCP versions support this endpoint.
+                # Best-effort disable.
                 try:
-                    requests.post(f"{base_url}/setChargeEnable", json={"state": "disable"}, timeout=10)
+                    requests.post(f"{base_url}/setChargeEnable", json={{"state": "disable"}}, timeout=10)
                 except Exception:
                     pass
 
