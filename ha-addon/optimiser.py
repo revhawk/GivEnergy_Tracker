@@ -11,7 +11,7 @@ from datetime import datetime, timezone, timedelta
 
 # Single source of truth for the add-on version.
 # MUST match `version:` in config.yaml (validated on startup).
-__version__ = "1.0.12"
+__version__ = "1.0.13"
 
 
 # Import custom configurations
@@ -1229,6 +1229,7 @@ async def main():
     # Time-of-day thresholds (overridable via env)
     plan_hour = int(os.environ.get('DAILY_PLAN_HOUR', '17'))
     audit_hour = int(os.environ.get('DAILY_AUDIT_HOUR', '23'))
+    is_startup = True
     logging.info(f"Scheduling: daily plan at {plan_hour:02d}:00, audit at {audit_hour:02d}:00 (local time).")
 
     # Optional startup self-test — verifies the GivTCP write path is working by
@@ -1254,16 +1255,21 @@ async def main():
                 except Exception as e:
                     logging.error(f"Audit failed: {e}", exc_info=True)
 
-            # 2. Daily plan — fire if we've never planned, OR today's plan is stale.
+            # 2. Daily plan — fire if startup, OR we've never planned, OR calendar day has changed.
             last_plan_date = state.get('last_plan_date')
             need_first_plan = last_plan_date is None
             need_new_day_plan = (last_plan_date != today_str)
 
-            if need_first_plan or need_new_day_plan:
+            if is_startup or need_first_plan or need_new_day_plan:
                 if run_once:
                     logging.info("===== PLANNING RUN (RUN_ONCE) =====")
                 else:
-                    reason = "first plan since startup" if need_first_plan else "new calendar day detected"
+                    if is_startup:
+                        reason = "add-on startup"
+                    elif need_first_plan:
+                        reason = "first plan since startup"
+                    else:
+                        reason = "new calendar day detected"
                     logging.info(f"===== DAILY PLANNING RUN ({reason}) =====")
                 _last_plan.clear()
                 await run_optimization()
@@ -1273,6 +1279,7 @@ async def main():
                     state['last_plan_at'] = _last_plan.get('at')
                     state['last_plan_date'] = today_str
                     save_state(state)
+                is_startup = False
             else:
                 await run_light_monitor()
 
