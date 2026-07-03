@@ -134,14 +134,17 @@ class TestSetInverterChargeSlotsGivTCP:
         assert _body(slot1_call)["chargeToPercent"] == "100"
 
     @responses.activate
-    async def test_givtcp_error_falls_back_to_mock_when_modbus_absent(self):
-        # First call fails hard → optimiser should try Modbus fallback,
-        # but the givenergy_modbus package isn't installed in tests → mocked path → returns True.
+    async def test_givtcp_error_and_no_modbus_returns_false(self):
+        """When GivTCP fails and the Modbus package isn't installed, the
+        function must return False (not silently pretend the write succeeded).
+        This prevents silent bad decisions when the write path is broken.
+        """
         responses.add(responses.POST, f"{GIVTCP_URL}/setChargeEnable", status=500)
 
         start = datetime(2026, 7, 4, 3, 0, tzinfo=timezone.utc)
         end = datetime(2026, 7, 4, 5, 0, tzinfo=timezone.utc)
         ok = await optimiser.set_inverter_charge_slots(start, end)
 
-        # HAS_MODBUS is False in test env → the mock branch reports success
-        assert ok is True
+        # HAS_MODBUS is False in test env → previously this silently returned True (mock);
+        # now it must return False so the caller can detect the failure.
+        assert ok is False

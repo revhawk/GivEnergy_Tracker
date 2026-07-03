@@ -11,6 +11,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.5] - 2026-07-03
+
+### Fixed
+- **Silent-mock removed on GivTCP failure.** Previously, if GivTCP was unreachable AND the `givenergy-modbus` package was unavailable, the code would log `[MOCK] Setting charge slot 1: ...` and return `True` — pretending the write succeeded while nothing reached the inverter. Now returns `False` and logs an ERROR so the caller can detect the failure. Similarly for SoC reads: returns `None` and aborts the planning run rather than defaulting to a magic 25% value.
+- **Improved Modbus import diagnostic.** The old warning ("givenergy-modbus package not installed") was misleading when the package *was* installed but a submodule import failed (typical after v2.x restructure). New warning logs the actual exception message so the difference between "not installed" and "API mismatch" is visible.
+
+### Changed
+- `run_optimization` now bails out early with an ERROR if `get_inverter_soc()` returns `None`, rather than crashing on `None / 100.0`. The tracker will retry on the next tick.
+
+---
+
 ## [1.0.4] - 2026-07-03
 
 ### Added
@@ -81,7 +92,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-[Unreleased]: https://github.com/revhawk/GivEnergy_Tracker/compare/v1.0.4...HEAD
+[Unreleased]: https://github.com/revhawk/GivEnergy_Tracker/compare/v1.0.5...HEAD
+[1.0.5]: https://github.com/revhawk/GivEnergy_Tracker/compare/v1.0.4...v1.0.5
 [1.0.4]: https://github.com/revhawk/GivEnergy_Tracker/compare/v1.0.3...v1.0.4
 [1.0.3]: https://github.com/revhawk/GivEnergy_Tracker/compare/v1.0.1...v1.0.3
 [1.0.1]: https://github.com/revhawk/GivEnergy_Tracker/releases/tag/v1.0.1

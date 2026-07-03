@@ -11,7 +11,7 @@ from datetime import datetime, timezone, timedelta
 
 # Single source of truth for the add-on version.
 # MUST match `version:` in config.yaml (validated on startup).
-__version__ = "1.0.4"
+__version__ = "1.0.5"
 
 # Import custom configurations
 try:
@@ -331,14 +331,21 @@ def generate_daily_summary(stats):
     except Exception as e:
         logging.warning(f"Daily summary ChatGPT call failed: {e}")
 
-# GivEnergy Modbus imports (for direct Modbus fallback)
+# GivEnergy Modbus imports (for direct Modbus fallback if GivTCP fails).
+# The package name on PyPI is `givenergy-modbus`; the newer 2.x releases
+# restructured internal modules so the specific submodule imports below
+# may fail even when the package itself is installed. Log the full error
+# so the difference between "not installed" and "API mismatch" is visible.
 try:
     from givenergy_modbus.client.client import Client
     from givenergy_modbus.client import commands
     from givenergy_modbus.model.plant import TimeSlot
     HAS_MODBUS = True
-except ImportError:
-    logging.warning("givenergy-modbus package not installed. Direct Modbus operations will be mocked.")
+except ImportError as _e:
+    logging.warning(
+        f"Modbus fallback DISABLED — could not import from givenergy_modbus: {_e}. "
+        f"GivTCP will be the ONLY write path. If GivTCP fails, plans will not be applied."
+    )
     HAS_MODBUS = False
 
 # Helper: Parse UTC ISO timestamps from Octopus API
@@ -610,9 +617,13 @@ async def get_inverter_soc():
 
     # 2. Fall back to local Modbus TCP
     if not HAS_MODBUS:
-        logging.info("[MOCK] Inverter Modbus not available. Mocking current SoC as 25%.")
-        return 25
-    
+        logging.error(
+            "SoC read FAILED — GivTCP unreachable AND Modbus package unavailable. "
+            "Cannot fetch battery state; aborting this run. Returning None."
+        )
+        return None
+
+
     port = getattr(config, 'INVERTER_PORT', 8899)
     logging.info(f"Connecting to GivEnergy Inverter at {config.INVERTER_IP}:{port} via Modbus TCP...")
     client = Client(host=config.INVERTER_IP, port=port)
@@ -685,12 +696,13 @@ async def set_inverter_charge_slots(start_time, end_time, charge_target=100):
 
     # 2. Fall back to local Modbus TCP
     if not HAS_MODBUS:
-        if start_time and end_time:
-            logging.info(f"[MOCK] Setting charge slot 1: {start_time.strftime('%H:%M')} to {end_time.strftime('%H:%M')} with target {charge_target}%")
-        else:
-            logging.info("[MOCK] Clearing all charge slots")
-        return True
-    
+        logging.error(
+            "Inverter write FAILED — GivTCP unreachable AND Modbus package unavailable. "
+            "Charge slot was NOT applied to the inverter."
+        )
+        return False
+
+
     port = getattr(config, 'INVERTER_PORT', 8899)
     client = Client(host=config.INVERTER_IP, port=port)
     try:
@@ -766,7 +778,14 @@ async def run_optimization():
     
     # 3. Get current battery SoC
     current_soc = await get_inverter_soc()
-    
+    if current_soc is None:
+        logging.error(
+            "Cannot plan without a valid battery SoC reading. Aborting this optimization run. "
+            "The tracker will retry on the next tick. Check GivTCP is running at "
+            f"{getattr(config, 'GIVTCP_URL', '(not set)')}."
+        )
+        return
+
     # 4. Simulate battery SoC evolution if we DO NOT grid-charge
     battery_capacity = getattr(config, 'BATTERY_CAPACITY_KWH', 9.5)
     max_charge_rate = getattr(config, 'MAX_BATTERY_CHARGE_RATE', 3000)
