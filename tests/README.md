@@ -24,6 +24,26 @@ pytest -v
   - `fetch_export_rate` — picks the currently-active tariff, uses fallback on error, caches for 6 h
   - `fetch_solar_forecast` — handles rate-limit (429) responses gracefully
 
+- **GivTCP write path** (`test_write_slots.py`)
+  - Same-day charge window populates slot 1 and clears slot 2
+  - Midnight-spanning window splits across slot 1 (up to 23:59) and slot 2 (from 00:00)
+  - Clearing (start=None, end=None) disables charging and zeros both slots
+  - `charge_target` defaults to 100 % if not passed
+  - GivTCP error falls through to Modbus fallback (mocked path in tests)
+
+## Manual / integration test
+
+`scripts/test_write_slot.py` is a **live** end-to-end test that hits your real
+GivTCP. Not part of CI. Run it manually to verify the write path actually
+programs the inverter:
+
+```bash
+python3 scripts/test_write_slot.py --start-in-minutes 60 --duration-minutes 30
+```
+
+It prompts before writing, sets a charge slot 1 hour from now, waits for you
+to verify in the GivEnergy app, then clears the slot on ENTER (or on Ctrl-C).
+
 ### Planned 🚧
 
 - **Arbitrage decision logic**
