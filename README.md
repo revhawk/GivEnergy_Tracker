@@ -78,9 +78,20 @@ Persisted state       ──┘                  └─► ChatGPT Veto (score) 
 | Home Assistant | 2024.1+ with Supervisor |
 | GivEnergy Inverter | Any model supported by GivTCP |
 | GivTCP Add-on | Installed & running in Home Assistant |
-| Octopus Energy | Agile tariff with API key |
+| Octopus Energy | Agile tariff (import) with API key + Outgoing Variable (export) |
 | Solar Panels | With known kWp, tilt (declination), and azimuth |
 | Network Share (Optional) | For persistent log files (NAS, Samba, etc.) |
+
+### Home Assistant resources
+
+If you're new to Home Assistant or the add-on system:
+
+- 🏠 [Home Assistant website](https://www.home-assistant.io/) — official project home
+- 🚀 [Getting started guide](https://www.home-assistant.io/getting-started/) — installation, first-boot onboarding, device integration
+- 📦 [Add-ons overview](https://www.home-assistant.io/addons/) — how HA's add-on system works
+- 🛠️ [Local add-on tutorial (developer docs)](https://developers.home-assistant.io/docs/add-ons/tutorial/) — the mechanics of installing a local repository
+- 🔌 [GivTCP](https://github.com/britkat1980/giv_tcp) — the community add-on that talks to GivEnergy inverters (prerequisite for this tracker)
+- ⚡ [Octopus Energy Developer API](https://developer.octopus.energy/) — where your API key lives
 
 ---
 
@@ -88,32 +99,43 @@ Persisted state       ──┘                  └─► ChatGPT Veto (score) 
 
 ### 1. Add the Local Repository
 
-1. In Home Assistant, go to **Settings → Apps → ⋮ → Repositories**
-2. Add the path to the `ha-addon/` directory on your Samba share:
-   ```
-   /addons/givenergy_tracker
-   ```
-3. The **GivEnergy Tariff Optimiser** app will appear under **Local apps**.
+1. Put the `ha-addon/` folder on your Home Assistant host under `/addons/givenergy_tracker/`. Two common methods:
+   - **Samba share** — mount `\\homeassistant\addons\` from your desktop and copy the folder in.
+   - **Terminal / SSH add-on** — `scp` or `git clone` directly onto the Pi.
+2. In Home Assistant: **Settings → Add-ons → Add-on Store**. The **GivEnergy Tariff Optimiser** card will appear under **Local add-ons**.
+3. If you don't see it, click **⋮ (top right) → "Check for updates"** — that forces HA to re-scan the local add-on folder.
 
 ### 2. Configure `config.py`
 
-Before installing the add-on, populate `ha-addon/config.py` with your credentials.
+Before installing, populate `ha-addon/config.py` on the HA host with your credentials.
 Copy from the template:
 
 ```bash
-cp config.py.example ha-addon/config.py
+cp config.py.example config.py
 ```
 
-Then fill in your values (see [Configuration Reference](#-configuration-reference) below).
+Then edit `config.py` with your Octopus API key, MPANs, meter serial, geographic coordinates, and battery/solar hardware settings (see [Configuration Reference](#-configuration-reference) below).
 
-> ⚠️ **`config.py` is listed in `.gitignore` and will never be committed to Git.** It contains your API keys and passwords. Keep it safe.
+> ⚠️ **`config.py` is listed in `.gitignore`** and will never be committed to Git. It contains your API keys and passwords. Treat it as a secret file — do not paste its contents into chat logs, forums, or LLM sessions.
 
 ### 3. Install & Start
 
 1. Click **Install** on the add-on card
-2. Go to the **Configuration** tab and set your options
+2. Go to the **Configuration** tab and set your options (`interval_minutes`, `openai_api_key`, `daily_plan_hour`, `daily_audit_hour`, `startup_write_test`)
 3. Click **Start**
-4. Check the **Log** tab to confirm it's running
+4. Watch the **Log** tab. On first startup you should see:
+   - Version banner: `GivEnergy Tariff Optimiser v1.0.4`
+   - Effective config dump (verifies your `config.py` values)
+   - First planning run (`===== DAILY PLANNING RUN (first plan since startup) =====`)
+
+### 4. Updating to a newer version
+
+After you edit any file on the HA host (either by editing directly or SMB-copying new versions):
+
+1. Bump `version:` in `config.yaml` AND `__version__` at the top of `optimiser.py` (they must match)
+2. **Reload the addon store** — Settings → Add-ons → Add-on Store → ⋮ → **Check for updates**. This is the step most easily forgotten — HA caches the version metadata and won't detect the change without this refresh.
+3. Click **Update** on the addon card (or ⋮ → **Rebuild** if you want to force a fresh image build)
+4. Confirm the log banner shows the new version
 
 ---
 
