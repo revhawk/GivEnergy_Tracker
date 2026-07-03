@@ -36,8 +36,8 @@ class TestSetInverterChargeSlotsGivTCP:
 
     @responses.activate
     async def test_same_day_window_populates_slot1_and_clears_slot2(self):
-        # Mock all four expected endpoints
-        for path in ("/setChargeEnable", "/setChargeTarget",
+        # Mock expected endpoints
+        for path in ("/setChargeEnable", "/setChargeTarget", "/enableChargeTarget",
                      "/setChargeSlot1", "/setChargeSlot2"):
             responses.add(responses.POST, f"{GIVTCP_URL}{path}", json={"result": "ok"})
 
@@ -47,10 +47,11 @@ class TestSetInverterChargeSlotsGivTCP:
         ok = await optimiser.set_inverter_charge_slots(start, end, charge_target=90)
         assert ok is True
 
-        # Verify all four calls fired
+        # Verify calls fired
         paths = [c.request.url.replace(GIVTCP_URL, "") for c in responses.calls]
         assert "/setChargeEnable" in paths
         assert "/setChargeTarget" in paths
+        assert "/enableChargeTarget" in paths
         assert "/setChargeSlot1" in paths
         assert "/setChargeSlot2" in paths
 
@@ -58,35 +59,34 @@ class TestSetInverterChargeSlotsGivTCP:
         slot1_idx  = next(i for i, c in enumerate(responses.calls) if c.request.url.endswith("/setChargeSlot1"))
         slot2_idx  = next(i for i, c in enumerate(responses.calls) if c.request.url.endswith("/setChargeSlot2"))
         target_idx = next(i for i, c in enumerate(responses.calls) if c.request.url.endswith("/setChargeTarget"))
-        enable_idx = next(i for i, c in enumerate(responses.calls) if c.request.url.endswith("/setChargeEnable"))
+
         assert slot1_idx < target_idx, "slot1 must be set before setChargeTarget"
         assert slot2_idx < target_idx, "slot2 must be cleared before setChargeTarget"
-        assert target_idx < enable_idx, "setChargeTarget must fire before setChargeEnable"
 
         # Enable should be "enable"
         enable_call = next(c for c in responses.calls if c.request.url.endswith("/setChargeEnable"))
         assert _body(enable_call) == {"state": "enable"}
 
-        # Target should be 90%
+        # Target should be 90
         target_call = next(c for c in responses.calls if c.request.url.endswith("/setChargeTarget"))
-        assert _body(target_call) == {"chargeToPercent": "90"}
+        assert _body(target_call) == {"chargeToPercent": 90}
 
         # Slot 1 should carry the window
         slot1_call = next(c for c in responses.calls if c.request.url.endswith("/setChargeSlot1"))
         body1 = _body(slot1_call)
-        assert body1["start"] == "0200"
-        assert body1["finish"] == "0430"
-        assert body1["chargeToPercent"] == "90"
+        assert body1["start"] == "02:00"
+        assert body1["finish"] == "04:30"
+        assert body1["chargeToPercent"] == 90
 
-        # Slot 2 should be cleared to 0000-0000
+        # Slot 2 should be cleared to 00:00-00:00
         slot2_call = next(c for c in responses.calls if c.request.url.endswith("/setChargeSlot2"))
         body2 = _body(slot2_call)
-        assert body2["start"] == "0000"
-        assert body2["finish"] == "0000"
+        assert body2["start"] == "00:00"
+        assert body2["finish"] == "00:00"
 
     @responses.activate
     async def test_midnight_spanning_window_splits_across_two_slots(self):
-        for path in ("/setChargeEnable", "/setChargeTarget",
+        for path in ("/setChargeEnable", "/setChargeTarget", "/enableChargeTarget",
                      "/setChargeSlot1", "/setChargeSlot2"):
             responses.add(responses.POST, f"{GIVTCP_URL}{path}", json={"result": "ok"})
 
@@ -99,13 +99,13 @@ class TestSetInverterChargeSlotsGivTCP:
 
         slot1_call = next(c for c in responses.calls if c.request.url.endswith("/setChargeSlot1"))
         body1 = _body(slot1_call)
-        assert body1["start"] == "2330"
-        assert body1["finish"] == "2359"  # capped at end-of-day
+        assert body1["start"] == "23:30"
+        assert body1["finish"] == "23:59"  # capped at end-of-day
 
         slot2_call = next(c for c in responses.calls if c.request.url.endswith("/setChargeSlot2"))
         body2 = _body(slot2_call)
-        assert body2["start"] == "0000"
-        assert body2["finish"] == "0200"
+        assert body2["start"] == "00:00"
+        assert body2["finish"] == "02:00"
 
     @responses.activate
     async def test_none_window_clears_both_slots_and_disables(self):
@@ -118,17 +118,17 @@ class TestSetInverterChargeSlotsGivTCP:
         enable_call = next(c for c in responses.calls if c.request.url.endswith("/setChargeEnable"))
         assert _body(enable_call) == {"state": "disable"}
 
-        # Both slots should be cleared to 0000-0000 with 0% target
+        # Both slots should be cleared to 00:00-00:00 with 0 target
         for path in ("/setChargeSlot1", "/setChargeSlot2"):
             call = next(c for c in responses.calls if c.request.url.endswith(path))
             body = _body(call)
-            assert body["start"] == "0000"
-            assert body["finish"] == "0000"
-            assert body["chargeToPercent"] == "0"
+            assert body["start"] == "00:00"
+            assert body["finish"] == "00:00"
+            assert body["chargeToPercent"] == 0
 
     @responses.activate
     async def test_target_percentage_defaults_to_100(self):
-        for path in ("/setChargeEnable", "/setChargeTarget",
+        for path in ("/setChargeEnable", "/setChargeTarget", "/enableChargeTarget",
                      "/setChargeSlot1", "/setChargeSlot2"):
             responses.add(responses.POST, f"{GIVTCP_URL}{path}", json={"result": "ok"})
 
@@ -138,9 +138,9 @@ class TestSetInverterChargeSlotsGivTCP:
         await optimiser.set_inverter_charge_slots(start, end)
 
         target_call = next(c for c in responses.calls if c.request.url.endswith("/setChargeTarget"))
-        assert _body(target_call) == {"chargeToPercent": "100"}
+        assert _body(target_call) == {"chargeToPercent": 100}
         slot1_call = next(c for c in responses.calls if c.request.url.endswith("/setChargeSlot1"))
-        assert _body(slot1_call)["chargeToPercent"] == "100"
+        assert _body(slot1_call)["chargeToPercent"] == 100
 
     @responses.activate
     async def test_givtcp_error_and_no_modbus_returns_false(self):

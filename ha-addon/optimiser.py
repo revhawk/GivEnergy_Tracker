@@ -11,7 +11,7 @@ from datetime import datetime, timezone, timedelta
 
 # Single source of truth for the add-on version.
 # MUST match `version:` in config.yaml (validated on startup).
-__version__ = "1.0.7"
+__version__ = "1.0.8"
 
 
 # Import custom configurations
@@ -479,7 +479,29 @@ def read_inverter_charge_slots():
         response = requests.get(url, timeout=10)
         response.raise_for_status()
         data = response.json()
+        
         # GivTCP field naming varies between versions — try common variants
+        # In v3, we also have nested objects like raw.invertor.charge_slot_1 = {"start": "00:00", "end": "00:00"}
+        # Check raw.invertor.charge_slot_1 first
+        def _get_slot_v3(slot_num, field):
+            val = find_key_recursive(data, f"charge_slot_{slot_num}")
+            if isinstance(val, dict):
+                return val.get(field)
+            return None
+
+        s1 = _get_slot_v3(1, 'start')
+        e1 = _get_slot_v3(1, 'end')
+        s2 = _get_slot_v3(2, 'start')
+        e2 = _get_slot_v3(2, 'end')
+
+        if s1 is not None or e1 is not None:
+            return {
+                'slot1_start': s1,
+                'slot1_end': e1,
+                'slot2_start': s2,
+                'slot2_end': e2,
+            }
+
         candidates_start1 = ["Charge_start_time_slot_1", "Charge_Start_Time_1",
                              "Timeslots.Charge_start_time_slot_1", "charge_start_time_slot_1"]
         candidates_end1 = ["Charge_end_time_slot_1", "Charge_End_Time_1",
@@ -542,17 +564,27 @@ async def run_startup_write_test():
         else:
             logging.info(f"[2/4] Read: slot1={slots.get('slot1_start')} → {slots.get('slot1_end')}, "
                          f"slot2={slots.get('slot2_start')} → {slots.get('slot2_end')}")
-            # GivTCP returns times as "HH:MM" strings — compare loosely
+             # GivTCP returns times as "HH:MM:SS" or "HH:MM" — normalize to "HH:MM"
             def _norm(v):
-                if v is None: return None
+                if v is None: return "00:00"
+                parts = str(v).split(':')
+                if len(parts) >= 2:
+                    return f"{parts[0].zfill(2)}:{parts[1].zfill(2)}"
+                # If no colon, try to parse HHMM
                 s = str(v).replace(":", "")
-                return s
-            if _norm(slots.get('slot1_start')) == expected_start_hhmm and \
-               _norm(slots.get('slot1_end')) == expected_end_hhmm:
-                logging.info(f"[2/4] PASS — slot 1 matches expected {test_start.strftime('%H:%M')} → {test_end.strftime('%H:%M')}")
+                if len(s) >= 4:
+                    return f"{s[:2]}:{s[2:4]}"
+                return "00:00"
+
+            expected_start_hh_mm = test_start.strftime("%H:%M")
+            expected_end_hh_mm = test_end.strftime("%H:%M")
+
+            if _norm(slots.get('slot1_start')) == expected_start_hh_mm and \
+               _norm(slots.get('slot1_end')) == expected_end_hh_mm:
+                logging.info(f"[2/4] PASS — slot 1 matches expected {expected_start_hh_mm} → {expected_end_hh_mm}")
             else:
                 logging.warning(
-                    f"[2/4] MISMATCH — expected slot1={expected_start_hhmm} → {expected_end_hhmm}, "
+                    f"[2/4] MISMATCH — expected slot1={expected_start_hh_mm} → {expected_end_hh_mm}, "
                     f"got {_norm(slots.get('slot1_start'))} → {_norm(slots.get('slot1_end'))}. "
                     f"(May be a field-name mismatch — check via GivEnergy app manually.)"
                 )
@@ -574,11 +606,14 @@ async def run_startup_write_test():
             logging.warning("[4/4] SKIP — could not read back after clear")
         else:
             def _norm(v):
-                if v is None: return None
-                return str(v).replace(":", "")
+                if v is None: return "00:00"
+                parts = str(v).split(':')
+                if len(parts) >= 2:
+                    return f"{parts[0].zfill(2)}:{parts[1].zfill(2)}"
+                return "00:00"
             s1 = _norm(slots.get('slot1_start'))
             e1 = _norm(slots.get('slot1_end'))
-            if s1 in (None, "0000") and e1 in (None, "0000"):
+            if s1 == "00:00" and e1 == "00:00":
                 logging.info("[4/4] PASS — slot 1 is cleared (00:00 → 00:00)")
             else:
                 logging.warning(f"[4/4] slot 1 not cleared as expected: {s1} → {e1}")
@@ -646,7 +681,8 @@ async def set_inverter_charge_slots(start_time, end_time, charge_target=100):
     if givtcp_url:
         base_url = givtcp_url.rstrip('/')
         try:
-                 # GivTCP v3 requires HH:MM format (not HHMM) and integer chargeToPercent.
+            if start_time and end_time:
+                # GivTCP v3 requires HH:MM format (not HHMM) and integer chargeToPercent.
                 if start_time.date() == end_time.date():
                     s_str = start_time.strftime("%H:%M")
                     e_str = end_time.strftime("%H:%M")
@@ -703,7 +739,7 @@ async def set_inverter_charge_slots(start_time, end_time, charge_target=100):
                 r2.raise_for_status()
                 # Best-effort disable.
                 try:
-                    requests.post(f"{base_url}/setChargeEnable", json={{"state": "disable"}}, timeout=10)
+                    requests.post(f"{base_url}/setChargeEnable", json={"state": "disable"}, timeout=10)
                 except Exception:
                     pass
 
