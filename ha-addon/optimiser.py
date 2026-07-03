@@ -11,7 +11,8 @@ from datetime import datetime, timezone, timedelta
 
 # Single source of truth for the add-on version.
 # MUST match `version:` in config.yaml (validated on startup).
-__version__ = "1.0.5"
+__version__ = "1.0.6"
+
 
 # Import custom configurations
 try:
@@ -683,11 +684,20 @@ async def set_inverter_charge_slots(start_time, end_time, charge_target=100):
                     r2.raise_for_status()
 
                 # Enable charging and set target AFTER slots are written.
+                # These two endpoints are best-effort: some GivTCP versions don't
+                # expose them (returns 404). A missing endpoint is logged as a
+                # warning but does NOT abort — the slot registers are what the
+                # inverter actually uses to schedule charging.
                 logging.info(f"GivTCP: Enabling grid charge and setting target to {charge_target}%...")
-                r = requests.post(f"{base_url}/setChargeTarget", json={"chargeToPercent": str(charge_target)}, timeout=10)
-                r.raise_for_status()
-                r = requests.post(f"{base_url}/setChargeEnable", json={"state": "enable"}, timeout=10)
-                r.raise_for_status()
+                for _path, _payload in [
+                    ("/setChargeTarget", {"chargeToPercent": str(charge_target)}),
+                    ("/setChargeEnable", {"state": "enable"}),
+                ]:
+                    try:
+                        _r = requests.post(f"{base_url}{_path}", json=_payload, timeout=10)
+                        _r.raise_for_status()
+                    except Exception as _e:
+                        logging.warning(f"GivTCP: {_path} unavailable ({_e}) — skipping (slot registers already written).")
             else:
                 logging.info("GivTCP: Disabling grid charging (clearing slots)...")
                 # Clear slots before disabling so the inverter sees a clean state.
@@ -695,7 +705,11 @@ async def set_inverter_charge_slots(start_time, end_time, charge_target=100):
                 r1.raise_for_status()
                 r2 = requests.post(f"{base_url}/setChargeSlot2", json={"start": "0000", "finish": "0000", "chargeToPercent": "0"}, timeout=10)
                 r2.raise_for_status()
-                requests.post(f"{base_url}/setChargeEnable", json={"state": "disable"}, timeout=10)
+                # Best-effort disable — not all GivTCP versions support this endpoint.
+                try:
+                    requests.post(f"{base_url}/setChargeEnable", json={"state": "disable"}, timeout=10)
+                except Exception:
+                    pass
 
             logging.info("GivTCP: Configuration applied successfully.")
             return True
