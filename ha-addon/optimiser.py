@@ -11,7 +11,7 @@ from datetime import datetime, timezone, timedelta
 
 # Single source of truth for the add-on version.
 # MUST match `version:` in config.yaml (validated on startup).
-__version__ = "1.0.16"
+__version__ = "1.0.17"
 
 
 # Import custom configurations
@@ -1327,7 +1327,7 @@ async def main():
     logging.info(f"  GivEnergy Tariff Optimiser v{__version__}")
     logging.info("========================================")
     logging.info("--- Effective config (config.py) ---")
-    logging.info(f"  BASE_LOAD_W            = {getattr(config, 'BASE_LOAD_W', 1000)} W")
+    logging.info(f"  BASE_LOAD_W            = {getattr(config, 'BASE_LOAD_W', 400)} W")
     logging.info(f"  BATTERY_CAPACITY_KWH   = {getattr(config, 'BATTERY_CAPACITY_KWH', 9.5)} kWh")
     logging.info(f"  MAX_BATTERY_CHARGE_RATE= {getattr(config, 'MAX_BATTERY_CHARGE_RATE', 3000)} W")
     logging.info(f"  IBOOST_MAX_DIVERT_RATE = {getattr(config, 'IBOOST_MAX_DIVERT_RATE', 3000)} W")
