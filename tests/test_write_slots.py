@@ -38,7 +38,7 @@ class TestSetInverterChargeSlotsGivTCP:
     async def test_same_day_window_populates_slot1_and_clears_slot2(self):
         # Mock expected endpoints
         for path in ("/setChargeEnable", "/setChargeTarget", "/enableChargeTarget",
-                     "/setChargeSlot1", "/setChargeSlot2"):
+                     "/enableChargeSchedule", "/setChargeSlot1", "/setChargeSlot2"):
             responses.add(responses.POST, f"{GIVTCP_URL}{path}", json={"result": "ok"})
 
         start = datetime(2026, 7, 4, 2, 0, tzinfo=timezone.utc)
@@ -52,6 +52,7 @@ class TestSetInverterChargeSlotsGivTCP:
         assert "/setChargeEnable" in paths
         assert "/setChargeTarget" in paths
         assert "/enableChargeTarget" in paths
+        assert "/enableChargeSchedule" in paths
         assert "/setChargeSlot1" in paths
         assert "/setChargeSlot2" in paths
 
@@ -66,6 +67,9 @@ class TestSetInverterChargeSlotsGivTCP:
         # Enable should be "enable"
         enable_call = next(c for c in responses.calls if c.request.url.endswith("/setChargeEnable"))
         assert _body(enable_call) == {"state": "enable"}
+
+        schedule_call = next(c for c in responses.calls if c.request.url.endswith("/enableChargeSchedule"))
+        assert _body(schedule_call) == {"state": "enable"}
 
         # Target should be 90
         target_call = next(c for c in responses.calls if c.request.url.endswith("/setChargeTarget"))
@@ -87,7 +91,7 @@ class TestSetInverterChargeSlotsGivTCP:
     @responses.activate
     async def test_midnight_spanning_window_splits_across_two_slots(self):
         for path in ("/setChargeEnable", "/setChargeTarget", "/enableChargeTarget",
-                     "/setChargeSlot1", "/setChargeSlot2"):
+                     "/enableChargeSchedule", "/setChargeSlot1", "/setChargeSlot2"):
             responses.add(responses.POST, f"{GIVTCP_URL}{path}", json={"result": "ok"})
 
         # 23:30 today → 02:00 tomorrow (crosses midnight)
@@ -109,7 +113,7 @@ class TestSetInverterChargeSlotsGivTCP:
 
     @responses.activate
     async def test_none_window_clears_both_slots_and_disables(self):
-        for path in ("/setChargeEnable", "/setChargeSlot1", "/setChargeSlot2"):
+        for path in ("/setChargeEnable", "/enableChargeSchedule", "/setChargeSlot1", "/setChargeSlot2"):
             responses.add(responses.POST, f"{GIVTCP_URL}{path}", json={"result": "ok"})
 
         ok = await optimiser.set_inverter_charge_slots(None, None)
@@ -117,6 +121,9 @@ class TestSetInverterChargeSlotsGivTCP:
 
         enable_call = next(c for c in responses.calls if c.request.url.endswith("/setChargeEnable"))
         assert _body(enable_call) == {"state": "disable"}
+
+        schedule_call = next(c for c in responses.calls if c.request.url.endswith("/enableChargeSchedule"))
+        assert _body(schedule_call) == {"state": "disable"}
 
         # Both slots should be cleared to 00:00-00:00 with 0 target
         for path in ("/setChargeSlot1", "/setChargeSlot2"):
@@ -129,7 +136,7 @@ class TestSetInverterChargeSlotsGivTCP:
     @responses.activate
     async def test_target_percentage_defaults_to_100(self):
         for path in ("/setChargeEnable", "/setChargeTarget", "/enableChargeTarget",
-                     "/setChargeSlot1", "/setChargeSlot2"):
+                     "/enableChargeSchedule", "/setChargeSlot1", "/setChargeSlot2"):
             responses.add(responses.POST, f"{GIVTCP_URL}{path}", json={"result": "ok"})
 
         start = datetime(2026, 7, 4, 3, 0, tzinfo=timezone.utc)
