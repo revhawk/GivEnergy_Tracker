@@ -19,11 +19,11 @@ When incrementing the version of this add-on for a release, the version number *
 
 1. **`ha-addon/config.yaml`**: The `version:` field must match the target release.
    ```yaml
-   version: "1.0.10"
+   version: "1.0.17"
    ```
 2. **`ha-addon/optimiser.py`**: The `__version__` variable must match the target release.
    ```python
-   __version__ = "1.0.10"
+   __version__ = "1.0.17"
    ```
 
 *Note: Home Assistant validates these versions on startup. If they do not match, the add-on will log a warning warning.*

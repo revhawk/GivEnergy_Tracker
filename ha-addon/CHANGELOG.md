@@ -11,6 +11,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.17] - 2026-07-04
+
+### Fixed
+- **Startup Log Print Fallback**: Updated the fallback baseload value printed in the startup diagnostic logs from `1000 W` to `400 W` when `BASE_LOAD_W` is deleted/not defined in the configuration file.
+
+---
+
+## [1.0.16] - 2026-07-04
+
+### Added
+- **10-Slot Arbitrage Planning**: Added support to merge contiguous half-hour periods of cheap import rates (<10.5p) and negative rates into unified charging blocks (up to 10 slots programmed).
+- **Omitted SOC Target on Clear**: Prevented GivTCP validation crashes on newer firmware by omitting `chargeToPercent` in `/setChargeSlot` payloads when clearing unused slots.
+- **Inverter Telemetry Integration**: Live `SOC`, `PV_Power`, and `Load_Power` are now fetched from the GivTCP cache and injected into the first slot of the simulation loop.
+
+### Changed
+- **Default Baseload**: Adjusted default fallback `BASE_LOAD_W` from `1000 W` to `400 W` to align with typical home draw.
+
+---
+
+## [1.0.15] - 2026-07-03
+
+### Added
+- **Smart Scheduler Control**: Enabled smart scheduler via `/enableChargeSchedule`.
+- **Date Labels in Logs**: Added date labels to simulation output logs.
+
+---
+
 ## [1.0.5] - 2026-07-03
 
 ### Fixed
@@ -92,7 +119,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-[Unreleased]: https://github.com/revhawk/GivEnergy_Tracker/compare/v1.0.5...HEAD
+[Unreleased]: https://github.com/revhawk/GivEnergy_Tracker/compare/v1.0.17...HEAD
+[1.0.17]: https://github.com/revhawk/GivEnergy_Tracker/compare/v1.0.16...v1.0.17
+[1.0.16]: https://github.com/revhawk/GivEnergy_Tracker/compare/v1.0.15...v1.0.16
+[1.0.15]: https://github.com/revhawk/GivEnergy_Tracker/compare/v1.0.5...v1.0.15
 [1.0.5]: https://github.com/revhawk/GivEnergy_Tracker/compare/v1.0.4...v1.0.5
 [1.0.4]: https://github.com/revhawk/GivEnergy_Tracker/compare/v1.0.3...v1.0.4
 [1.0.3]: https://github.com/revhawk/GivEnergy_Tracker/compare/v1.0.1...v1.0.3
