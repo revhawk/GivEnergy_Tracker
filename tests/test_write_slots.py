@@ -1,9 +1,9 @@
 """Tests for set_inverter_charge_slots (the GivTCP write path).
 
 Verifies the correct HTTP requests are sent for each scenario:
-- Same-day window → slot 1 populated, slot 2 cleared
+- Same-day window → slot 1 populated, slots 2-10 cleared
 - Midnight-spanning window → split across slot 1 (up to 23:59) and slot 2 (from 00:00)
-- No window (clear) → both slots cleared and charging disabled
+- No window (clear) → all slots cleared and charging disabled
 - Charge target percentage honoured
 - GivTCP error → graceful fallback (returns True in mock mode)
 
@@ -35,10 +35,10 @@ class TestSetInverterChargeSlotsGivTCP:
     """
 
     @responses.activate
-    async def test_same_day_window_populates_slot1_and_clears_slot2(self):
+    async def test_same_day_window_populates_slot1_and_clears_slot2_to_10(self):
         # Mock expected endpoints
         for path in ("/setChargeEnable", "/setChargeTarget", "/enableChargeTarget",
-                     "/enableChargeSchedule", "/setChargeSlot1", "/setChargeSlot2"):
+                     "/enableChargeSchedule", "/setChargeSlot"):
             responses.add(responses.POST, f"{GIVTCP_URL}{path}", json={"result": "ok"})
 
         start = datetime(2026, 7, 4, 2, 0, tzinfo=timezone.utc)
@@ -53,16 +53,16 @@ class TestSetInverterChargeSlotsGivTCP:
         assert "/setChargeTarget" in paths
         assert "/enableChargeTarget" in paths
         assert "/enableChargeSchedule" in paths
-        assert "/setChargeSlot1" in paths
-        assert "/setChargeSlot2" in paths
+        assert "/setChargeSlot" in paths
 
         # Slots must be written BEFORE enable/target (inverter firmware requirement)
-        slot1_idx  = next(i for i, c in enumerate(responses.calls) if c.request.url.endswith("/setChargeSlot1"))
-        slot2_idx  = next(i for i, c in enumerate(responses.calls) if c.request.url.endswith("/setChargeSlot2"))
-        target_idx = next(i for i, c in enumerate(responses.calls) if c.request.url.endswith("/setChargeTarget"))
+        slot_calls = [c for c in responses.calls if c.request.url.endswith("/setChargeSlot")]
+        assert len(slot_calls) == 10
 
-        assert slot1_idx < target_idx, "slot1 must be set before setChargeTarget"
-        assert slot2_idx < target_idx, "slot2 must be cleared before setChargeTarget"
+        target_idx = next(i for i, c in enumerate(responses.calls) if c.request.url.endswith("/setChargeTarget"))
+        slot_indices = [i for i, c in enumerate(responses.calls) if c.request.url.endswith("/setChargeSlot")]
+        for idx in slot_indices:
+            assert idx < target_idx, "slots must be set before setChargeTarget"
 
         # Enable should be "enable"
         enable_call = next(c for c in responses.calls if c.request.url.endswith("/setChargeEnable"))
@@ -76,22 +76,23 @@ class TestSetInverterChargeSlotsGivTCP:
         assert _body(target_call) == {"chargeToPercent": 90}
 
         # Slot 1 should carry the window
-        slot1_call = next(c for c in responses.calls if c.request.url.endswith("/setChargeSlot1"))
-        body1 = _body(slot1_call)
-        assert body1["start"] == "02:00"
-        assert body1["finish"] == "04:30"
-        assert body1["chargeToPercent"] == 90
+        slot1_body = _body(slot_calls[0])
+        assert slot1_body["start"] == "02:00"
+        assert slot1_body["finish"] == "04:30"
+        assert slot1_body["slot"] == "1"
+        assert slot1_body["chargeToPercent"] == 90
 
-        # Slot 2 should be cleared to 00:00-00:00
-        slot2_call = next(c for c in responses.calls if c.request.url.endswith("/setChargeSlot2"))
-        body2 = _body(slot2_call)
-        assert body2["start"] == "00:00"
-        assert body2["finish"] == "00:00"
+        # Slot 2 should be cleared to 00:00-00:00 without chargeToPercent
+        slot2_body = _body(slot_calls[1])
+        assert slot2_body["start"] == "00:00"
+        assert slot2_body["finish"] == "00:00"
+        assert slot2_body["slot"] == "2"
+        assert "chargeToPercent" not in slot2_body
 
     @responses.activate
     async def test_midnight_spanning_window_splits_across_two_slots(self):
         for path in ("/setChargeEnable", "/setChargeTarget", "/enableChargeTarget",
-                     "/enableChargeSchedule", "/setChargeSlot1", "/setChargeSlot2"):
+                     "/enableChargeSchedule", "/setChargeSlot"):
             responses.add(responses.POST, f"{GIVTCP_URL}{path}", json={"result": "ok"})
 
         # 23:30 today → 02:00 tomorrow (crosses midnight)
@@ -101,19 +102,21 @@ class TestSetInverterChargeSlotsGivTCP:
         ok = await optimiser.set_inverter_charge_slots(start, end, charge_target=100)
         assert ok is True
 
-        slot1_call = next(c for c in responses.calls if c.request.url.endswith("/setChargeSlot1"))
-        body1 = _body(slot1_call)
+        slot_calls = [c for c in responses.calls if c.request.url.endswith("/setChargeSlot")]
+        
+        body1 = _body(slot_calls[0])
         assert body1["start"] == "23:30"
-        assert body1["finish"] == "23:59"  # capped at end-of-day
+        assert body1["finish"] == "23:59"
+        assert body1["slot"] == "1"
 
-        slot2_call = next(c for c in responses.calls if c.request.url.endswith("/setChargeSlot2"))
-        body2 = _body(slot2_call)
+        body2 = _body(slot_calls[1])
         assert body2["start"] == "00:00"
         assert body2["finish"] == "02:00"
+        assert body2["slot"] == "2"
 
     @responses.activate
-    async def test_none_window_clears_both_slots_and_disables(self):
-        for path in ("/setChargeEnable", "/enableChargeSchedule", "/setChargeSlot1", "/setChargeSlot2"):
+    async def test_none_window_clears_all_slots_and_disables(self):
+        for path in ("/setChargeEnable", "/enableChargeSchedule", "/setChargeSlot"):
             responses.add(responses.POST, f"{GIVTCP_URL}{path}", json={"result": "ok"})
 
         ok = await optimiser.set_inverter_charge_slots(None, None)
@@ -125,42 +128,36 @@ class TestSetInverterChargeSlotsGivTCP:
         schedule_call = next(c for c in responses.calls if c.request.url.endswith("/enableChargeSchedule"))
         assert _body(schedule_call) == {"state": "disable"}
 
-        # Both slots should be cleared to 00:00-00:00 with 0 target
-        for path in ("/setChargeSlot1", "/setChargeSlot2"):
-            call = next(c for c in responses.calls if c.request.url.endswith(path))
+        slot_calls = [c for c in responses.calls if c.request.url.endswith("/setChargeSlot")]
+        assert len(slot_calls) == 10
+        for i, call in enumerate(slot_calls):
             body = _body(call)
             assert body["start"] == "00:00"
             assert body["finish"] == "00:00"
-            assert body["chargeToPercent"] == 0
+            assert body["slot"] == str(i + 1)
+            assert "chargeToPercent" not in body
 
     @responses.activate
     async def test_target_percentage_defaults_to_100(self):
         for path in ("/setChargeEnable", "/setChargeTarget", "/enableChargeTarget",
-                     "/enableChargeSchedule", "/setChargeSlot1", "/setChargeSlot2"):
+                     "/enableChargeSchedule", "/setChargeSlot"):
             responses.add(responses.POST, f"{GIVTCP_URL}{path}", json={"result": "ok"})
 
         start = datetime(2026, 7, 4, 3, 0, tzinfo=timezone.utc)
         end = datetime(2026, 7, 4, 5, 0, tzinfo=timezone.utc)
-        # Note: no charge_target passed — should default to 100
         await optimiser.set_inverter_charge_slots(start, end)
 
         target_call = next(c for c in responses.calls if c.request.url.endswith("/setChargeTarget"))
         assert _body(target_call) == {"chargeToPercent": 100}
-        slot1_call = next(c for c in responses.calls if c.request.url.endswith("/setChargeSlot1"))
-        assert _body(slot1_call)["chargeToPercent"] == 100
+        
+        slot_calls = [c for c in responses.calls if c.request.url.endswith("/setChargeSlot")]
+        assert _body(slot_calls[0])["chargeToPercent"] == 100
 
     @responses.activate
     async def test_givtcp_error_and_no_modbus_returns_false(self):
-        """When GivTCP fails and the Modbus package isn't installed, the
-        function must return False (not silently pretend the write succeeded).
-        This prevents silent bad decisions when the write path is broken.
-        """
-        responses.add(responses.POST, f"{GIVTCP_URL}/setChargeEnable", status=500)
+        responses.add(responses.POST, f"{GIVTCP_URL}/setChargeSlot", status=500)
 
         start = datetime(2026, 7, 4, 3, 0, tzinfo=timezone.utc)
         end = datetime(2026, 7, 4, 5, 0, tzinfo=timezone.utc)
         ok = await optimiser.set_inverter_charge_slots(start, end)
-
-        # HAS_MODBUS is False in test env → previously this silently returned True (mock);
-        # now it must return False so the caller can detect the failure.
         assert ok is False

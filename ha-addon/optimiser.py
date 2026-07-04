@@ -11,7 +11,7 @@ from datetime import datetime, timezone, timedelta
 
 # Single source of truth for the add-on version.
 # MUST match `version:` in config.yaml (validated on startup).
-__version__ = "1.0.15"
+__version__ = "1.0.16"
 
 
 # Import custom configurations
@@ -98,7 +98,10 @@ def chatgpt_veto_plan(current_soc, battery_capacity_kwh, solar_total_kwh,
         for s in upcoming_slots[:48]
     )
 
-    if charge_start and charge_end:
+    if isinstance(charge_start, list):
+        slots_desc = [f"{s.strftime('%H:%M')}-{e.strftime('%H:%M')}" for s, e in charge_start]
+        action = f"CHARGE in slots: {', '.join(slots_desc)} — {required_kwh:.1f} kWh at avg {avg_price:.2f}p/kWh"
+    elif charge_start and charge_end:
         action = (
             f"CHARGE from {charge_start.strftime('%H:%M')} to "
             f"{charge_end.strftime('%H:%M')} — {required_kwh:.1f} kWh at avg {avg_price:.2f}p/kWh"
@@ -632,6 +635,38 @@ async def run_startup_write_test():
             pass
         return False
 
+# Fetch live telemetry (SoC, PV Power, Load Power) from GivTCP
+async def get_inverter_telemetry():
+    givtcp_url = getattr(config, 'GIVTCP_URL', None)
+    if givtcp_url:
+        url = f"{givtcp_url.rstrip('/')}/getCache"
+        try:
+            response = requests.get(url, timeout=10)
+            response.raise_for_status()
+            data = response.json()
+            soc = find_key_recursive(data, "SOC")
+            pv_power = find_key_recursive(data, "PV_Power")
+            load_power = find_key_recursive(data, "Load_Power")
+            
+            telemetry = {}
+            if soc is not None:
+                telemetry['soc'] = int(soc)
+            if pv_power is not None:
+                telemetry['pv_power'] = float(pv_power)
+            if load_power is not None:
+                telemetry['load_power'] = float(load_power)
+                
+            if telemetry:
+                logging.info(
+                    f"GivTCP Live Telemetry: SoC={telemetry.get('soc', 'N/A')}% "
+                    f"| PV_Power={telemetry.get('pv_power', 'N/A')}W "
+                    f"| Load_Power={telemetry.get('load_power', 'N/A')}W"
+                )
+                return telemetry
+        except Exception as e:
+            logging.warning(f"Failed to fetch live GivTCP telemetry ({e}); falling back to static config.")
+    return None
+
 # Connect to Inverter and get State of Charge (SoC)
 async def get_inverter_soc():
     # 1. Try GivTCP REST API if configured
@@ -676,70 +711,69 @@ async def get_inverter_soc():
         return 25
 
 # Write charge slots to Inverter
-async def set_inverter_charge_slots(start_time, end_time, charge_target=100):
+async def set_inverter_charge_slots(slots_or_start, end_time=None, charge_target=100):
+    # Backward compatibility: if slots_or_start is a list of tuples/dicts, use it.
+    # Otherwise, treat slots_or_start and end_time as a single slot.
+    if isinstance(slots_or_start, list):
+        slots_list = slots_or_start
+    elif slots_or_start is not None and end_time is not None:
+        slots_list = [(slots_or_start, end_time)]
+    else:
+        slots_list = []
+
     # 1. Try GivTCP REST API if configured
     givtcp_url = getattr(config, 'GIVTCP_URL', None)
     if givtcp_url:
         base_url = givtcp_url.rstrip('/')
         try:
-            if start_time and end_time:
-                # GivTCP v3 requires HH:MM format (not HHMM) and integer chargeToPercent.
-                if start_time.date() == end_time.date():
-                    s_str = start_time.strftime("%H:%M")
-                    e_str = end_time.strftime("%H:%M")
-                    logging.info(f"GivTCP: Setting slot 1: {s_str} to {e_str}")
-                    r = requests.post(f"{base_url}/setChargeSlot1", json={
-                        "start": s_str,
-                        "finish": e_str,
-                        "chargeToPercent": charge_target
-                    }, timeout=10)
-                    r.raise_for_status()
-                    r2 = requests.post(f"{base_url}/setChargeSlot2", json={"start": "00:00", "finish": "00:00", "chargeToPercent": 0}, timeout=10)
-                    r2.raise_for_status()
-                else:
-                    s_str1 = start_time.strftime("%H:%M")
-                    e_str1 = "23:59"
-                    s_str2 = "00:00"
-                    e_str2 = end_time.strftime("%H:%M")
+            if slots_list:
+                # Split any slots that span midnight
+                split_slots = []
+                for start_time, end_time in slots_list:
+                    if start_time.date() == end_time.date():
+                        split_slots.append((start_time, end_time))
+                    else:
+                        end_first = datetime.combine(start_time.date(), datetime.max.time(), tzinfo=start_time.tzinfo)
+                        start_second = datetime.combine(end_time.date(), datetime.min.time(), tzinfo=end_time.tzinfo)
+                        split_slots.append((start_time, end_first))
+                        split_slots.append((start_second, end_time))
+                
+                if len(split_slots) > 10:
+                    logging.warning(f"GivTCP: More than 10 slots generated ({len(split_slots)}). Limiting to top 10.")
+                    split_slots = split_slots[:10]
 
-                    logging.info(f"GivTCP: Spanning midnight. Slot 1: {s_str1}-{e_str1}, Slot 2: {s_str2}-{e_str2}")
-                    r1 = requests.post(f"{base_url}/setChargeSlot1", json={
-                        "start": s_str1,
-                        "finish": e_str1,
-                        "chargeToPercent": charge_target
-                    }, timeout=10)
-                    r1.raise_for_status()
-
-                    r2 = requests.post(f"{base_url}/setChargeSlot2", json={
-                        "start": s_str2,
-                        "finish": e_str2,
-                        "chargeToPercent": charge_target
-                    }, timeout=10)
-                    r2.raise_for_status()
-
-                # Enable charging AFTER slots are written.
-                # These endpoints are best-effort — some GivTCP versions don't expose
-                # all of them. A 404 is logged as a warning but does NOT abort.
-                logging.info(f"GivTCP: Enabling grid charge and setting target to {charge_target}%...")
-                for _path, _payload in [
-                    ("/setChargeTarget",        {"chargeToPercent": charge_target}),
-                    ("/enableChargeTarget",     {"state": "enable"}),
-                    ("/enableChargeSchedule",   {"state": "enable"}),
-                    ("/setChargeEnable",        {"state": "enable"}),
-                ]:
-                    try:
-                        _r = requests.post(f"{base_url}{_path}", json=_payload, timeout=10)
-                        _r.raise_for_status()
-                    except Exception as _e:
-                        logging.warning(f"GivTCP: {_path} unavailable ({_e}) — skipping.")
+                # Set slots
+                for i in range(1, 11):
+                    if i <= len(split_slots):
+                        s, e = split_slots[i - 1]
+                        s_str = s.strftime("%H:%M")
+                        e_str = e.strftime("%H:%M")
+                        logging.info(f"GivTCP: Setting slot {i}: {s_str} to {e_str}")
+                        r = requests.post(f"{base_url}/setChargeSlot", json={
+                            "start": s_str,
+                            "finish": e_str,
+                            "slot": str(i),
+                            "chargeToPercent": int(charge_target)
+                        }, timeout=10)
+                        r.raise_for_status()
+                    else:
+                        # Clear slot safely without chargeToPercent to prevent validation issues
+                        r = requests.post(f"{base_url}/setChargeSlot", json={
+                            "start": "00:00",
+                            "finish": "00:00",
+                            "slot": str(i)
+                        }, timeout=10)
+                        r.raise_for_status()
             else:
                 logging.info("GivTCP: Disabling grid charging (clearing slots)...")
-                # GivTCP v3: use HH:MM format, integer chargeToPercent
-                r1 = requests.post(f"{base_url}/setChargeSlot1", json={"start": "00:00", "finish": "00:00", "chargeToPercent": 0}, timeout=10)
-                r1.raise_for_status()
-                r2 = requests.post(f"{base_url}/setChargeSlot2", json={"start": "00:00", "finish": "00:00", "chargeToPercent": 0}, timeout=10)
-                r2.raise_for_status()
-                # Best-effort disable.
+                for i in range(1, 11):
+                    requests.post(f"{base_url}/setChargeSlot", json={
+                        "start": "00:00",
+                        "finish": "00:00",
+                        "slot": str(i)
+                    }, timeout=10)
+                
+                # Best-effort disable
                 for _path, _payload in [
                     ("/enableChargeSchedule",   {"state": "disable"}),
                     ("/setChargeEnable",        {"state": "disable"}),
@@ -748,6 +782,22 @@ async def set_inverter_charge_slots(start_time, end_time, charge_target=100):
                         requests.post(f"{base_url}{_path}", json=_payload, timeout=10)
                     except Exception:
                         pass
+                logging.info("GivTCP: Configuration applied successfully.")
+                return True
+
+            # Enable charging AFTER slots are written
+            logging.info(f"GivTCP: Enabling grid charge and setting target to {charge_target}%...")
+            for _path, _payload in [
+                ("/setChargeTarget",        {"chargeToPercent": int(charge_target)}),
+                ("/enableChargeTarget",     {"state": "enable"}),
+                ("/enableChargeSchedule",   {"state": "enable"}),
+                ("/setChargeEnable",        {"state": "enable"}),
+            ]:
+                try:
+                    _r = requests.post(f"{base_url}{_path}", json=_payload, timeout=10)
+                    _r.raise_for_status()
+                except Exception as _e:
+                    logging.warning(f"GivTCP: {_path} unavailable ({_e}) — skipping.")
 
             logging.info("GivTCP: Configuration applied successfully.")
             return True
@@ -766,10 +816,6 @@ async def set_inverter_charge_slots(start_time, end_time, charge_target=100):
     client = Client(host=config.INVERTER_IP, port=port)
     try:
         await client.connect()
-        # Wrap full_refresh in its own try/except: on ARM hardware certain
-        # inverter register layouts can trigger a SIGBUS inside the native
-        # givenergy-modbus Cython decoder if an unaligned read is attempted.
-        # A failed refresh is non-fatal — we still attempt the write commands.
         try:
             await client.refresh_plant(full_refresh=True)
         except Exception as refresh_err:
@@ -778,8 +824,6 @@ async def set_inverter_charge_slots(start_time, end_time, charge_target=100):
         logging.info(f"Modbus: Setting charge target to {charge_target}%...")
         await client.one_shot_command(commands.set_charge_target(charge_target))
 
-        # Helper: call set_charge_slot with slot_map if the attribute exists,
-        # otherwise fall back to the older 2-arg signature.
         def _slot_map():
             try:
                 return client.plant.inverter.slot_map
@@ -793,22 +837,36 @@ async def set_inverter_charge_slots(start_time, end_time, charge_target=100):
                     await client.one_shot_command(commands.set_charge_slot(slot_num, ts, sm))
                     return
                 except Exception:
-                    pass  # fall through to 2-arg form
+                    pass
             await client.one_shot_command(commands.set_charge_slot(slot_num, ts))
 
-        if start_time and end_time:
-            logging.info(f"Modbus: Programming charge slots: {start_time.strftime('%H:%M')} to {end_time.strftime('%H:%M')}...")
-            if start_time.date() == end_time.date():
-                ts1 = TimeSlot.from_components(start_time.hour, start_time.minute, end_time.hour, end_time.minute)
-                ts2 = TimeSlot.from_components(0, 0, 0, 0)
+        if slots_list:
+            split_slots = []
+            for start_time, end_time in slots_list:
+                if start_time.date() == end_time.date():
+                    split_slots.append((start_time, end_time))
+                else:
+                    end_first = datetime.combine(start_time.date(), datetime.max.time(), tzinfo=start_time.tzinfo)
+                    start_second = datetime.combine(end_time.date(), datetime.min.time(), tzinfo=end_time.tzinfo)
+                    split_slots.append((start_time, end_first))
+                    split_slots.append((start_second, end_time))
+            
+            logging.info(f"Modbus: Programming charge slots (up to 2)...")
+            # Slot 1
+            if len(split_slots) >= 1:
+                s, e = split_slots[0]
+                ts1 = TimeSlot.from_components(s.hour, s.minute, e.hour, e.minute)
                 await _write_slot(1, ts1)
+            else:
+                await _write_slot(1, TimeSlot.from_components(0, 0, 0, 0))
+            
+            # Slot 2
+            if len(split_slots) >= 2:
+                s, e = split_slots[1]
+                ts2 = TimeSlot.from_components(s.hour, s.minute, e.hour, e.minute)
                 await _write_slot(2, ts2)
             else:
-                ts1 = TimeSlot.from_components(start_time.hour, start_time.minute, 23, 59)
-                ts2 = TimeSlot.from_components(0, 0, end_time.hour, end_time.minute)
-                logging.info("Modbus: Splitting charge slot across midnight.")
-                await _write_slot(1, ts1)
-                await _write_slot(2, ts2)
+                await _write_slot(2, TimeSlot.from_components(0, 0, 0, 0))
         else:
             logging.info("Modbus: Clearing all charge slots...")
             ts_clear = TimeSlot.from_components(0, 0, 0, 0)
@@ -846,8 +904,13 @@ async def run_optimization():
     # 2. Fetch solar forecast
     solar_forecasts = fetch_solar_forecast()
     
-    # 3. Get current battery SoC
-    current_soc = await get_inverter_soc()
+    # 3. Get current battery SoC & telemetry
+    telemetry = await get_inverter_telemetry()
+    if telemetry and 'soc' in telemetry:
+        current_soc = telemetry['soc']
+    else:
+        current_soc = await get_inverter_soc()
+        
     if current_soc is None:
         logging.error(
             "Cannot plan without a valid battery SoC reading. Aborting this optimization run. "
@@ -872,9 +935,18 @@ async def run_optimization():
     imports = []
     
     # Run the physical priority simulation: Solar -> Home Load -> Battery Charge -> iBoost Divert -> Export
-    for slot in upcoming_slots:
-        solar = get_solar_kwh_for_slot(slot['start'], slot['end'], solar_forecasts)
-        load = (getattr(config, 'BASE_LOAD_W', 1000) / 1000.0) * 0.5 # 300W baseline -> 0.15kWh
+    for idx, slot in enumerate(upcoming_slots):
+        if idx == 0 and telemetry and 'pv_power' in telemetry and 'load_power' in telemetry:
+            solar = (telemetry['pv_power'] / 1000.0) * 0.5
+            load = (telemetry['load_power'] / 1000.0) * 0.5
+            logging.info(
+                f"Using live inverter telemetry for slot 0: "
+                f"PV={telemetry['pv_power']:.0f}W ({solar:.2f}kWh), "
+                f"Load={telemetry['load_power']:.0f}W ({load:.2f}kWh)"
+            )
+        else:
+            solar = get_solar_kwh_for_slot(slot['start'], slot['end'], solar_forecasts)
+            load = (getattr(config, 'BASE_LOAD_W', 400) / 1000.0) * 0.5 # Default fallback to 400W
         net = load - solar
         
         iboost_divert = 0.0
@@ -1029,13 +1101,88 @@ async def run_optimization():
         await set_inverter_charge_slots(None, None)
         return
 
+    if force_opportunistic_charge:
+        # Group and merge contiguous sub-threshold slots
+        cheap_slots = arbitrage_slots if arbitrage_slots else negative_slots
+        merged_blocks = []
+        if cheap_slots:
+            sorted_cheap = sorted(cheap_slots, key=lambda s: s['start'])
+            current_start = sorted_cheap[0]['start']
+            current_end = sorted_cheap[0]['end']
+            current_prices = [sorted_cheap[0]['price']]
+            
+            for next_slot in sorted_cheap[1:]:
+                if next_slot['start'] == current_end:
+                    current_end = next_slot['end']
+                    current_prices.append(next_slot['price'])
+                else:
+                    merged_blocks.append({
+                        'start': current_start,
+                        'end': current_end,
+                        'avg_price': sum(current_prices) / len(current_prices)
+                    })
+                    current_start = next_slot['start']
+                    current_end = next_slot['end']
+                    current_prices = [next_slot['price']]
+            merged_blocks.append({
+                'start': current_start,
+                'end': current_end,
+                'avg_price': sum(current_prices) / len(current_prices)
+            })
+
+        if merged_blocks:
+            if len(merged_blocks) > 10:
+                logging.warning(f"Found {len(merged_blocks)} cheap blocks. Limiting to 10 cheapest.")
+                merged_blocks = sorted(merged_blocks, key=lambda b: b['avg_price'])[:10]
+                merged_blocks = sorted(merged_blocks, key=lambda b: b['start'])
+
+            total_avg_price = sum(b['avg_price'] for b in merged_blocks) / len(merged_blocks)
+            slots_tuples = [(b['start'].astimezone(), b['end'].astimezone()) for b in merged_blocks]
+
+            approve, score, reason = chatgpt_veto_plan(
+                current_soc, battery_capacity, total_solar_kwh, export_rate,
+                upcoming_slots, slots_tuples, None, required_charge_kwh, total_avg_price
+            )
+            score_str = f"{score}/10" if score is not None else "n/a"
+
+            if total_avg_price < 0.0:
+                logging.info(f"LLM veto response: approve={approve}  score={score_str}  reason={reason}")
+                if not approve:
+                    logging.info(f"⚡ OVERRIDING LLM VETO: proposed average cost is negative ({total_avg_price:.2f}p/kWh). Proceeding with plan.")
+                    approve = True
+            else:
+                logging.info(f"LLM veto: approve={approve}  score={score_str}  reason={reason}")
+
+            if not approve:
+                logging.info("LLM VETOED the charge plan — clearing slots as fallback.")
+                _record_plan(action="no_charge", branch="llm_vetoed",
+                             current_soc=current_soc, solar_forecast_kwh=total_solar_kwh,
+                             export_rate=export_rate,
+                             min_rate=min(s['price'] for s in upcoming_slots) if upcoming_slots else None,
+                             max_rate=max(s['price'] for s in upcoming_slots) if upcoming_slots else None,
+                             proposed_window={"multi_slots": [(s.strftime('%H:%M'), e.strftime('%H:%M')) for s, e in slots_tuples],
+                                              "kwh": round(required_charge_kwh, 2), "avg_price": round(total_avg_price, 2)},
+                             llm_approve=False, llm_score=score, llm_reason=reason)
+                await set_inverter_charge_slots(None, None)
+                return
+
+            logging.info(f"Arbitrage mode: Programming {len(slots_tuples)} charge block(s)...")
+            _record_plan(action="charge", branch="arbitrage",
+                         current_soc=current_soc, solar_forecast_kwh=total_solar_kwh,
+                         export_rate=export_rate,
+                         min_rate=min(s['price'] for s in upcoming_slots) if upcoming_slots else None,
+                         max_rate=max(s['price'] for s in upcoming_slots) if upcoming_slots else None,
+                         charge_window={"multi_slots": [(s.strftime('%H:%M'), e.strftime('%H:%M')) for s, e in slots_tuples],
+                                        "kwh": round(required_charge_kwh, 2), "avg_price": round(total_avg_price, 2)},
+                         llm_approve=approve, llm_score=score, llm_reason=reason)
+            await set_inverter_charge_slots(slots_tuples)
+            return
+
     slots_to_charge = math.ceil(required_charge_kwh / max_charge_kwh_per_slot)
     slots_to_charge = max(1, min(slots_to_charge, 8))  # Between 30 mins and 4 hours
 
     logging.info(f"Target Grid Charge: {required_charge_kwh:.2f} kWh (~{slots_to_charge} half-hour slot(s))")
 
-    # Slide a window to find the cheapest contiguous block
-    # Negative rate slots will naturally be selected as they have the lowest prices
     best_window_start = None
     best_window_end = None
     min_window_cost = float('inf')
@@ -1050,48 +1197,15 @@ async def run_optimization():
             best_window_end = window[-1]['end']
 
     if best_window_start and best_window_end:
-        # If we're doing pure arbitrage (no home load deficit), require the window
-        # average to actually beat the export rate — otherwise it's not profitable.
-        is_pure_arbitrage = force_opportunistic_charge and total_import_kwh <= 0.2
-        if is_pure_arbitrage and min_window_cost >= arbitrage_threshold:
-            logging.info(f"Cheapest window avg {min_window_cost:.2f}p is not profitable vs export {export_rate:.2f}p — skipping charge.")
-            approve, score, reason = chatgpt_veto_plan(
-                current_soc, battery_capacity, total_solar_kwh, export_rate,
-                upcoming_slots, None, None, 0, 0
-            )
-            score_str = f"{score}/10" if score is not None else "n/a"
-            logging.info(f"LLM opinion (unprofitable-window): approve={approve}  score={score_str}  reason={reason}")
-            _record_plan(action="no_charge", branch="unprofitable_window",
-                         current_soc=current_soc, solar_forecast_kwh=total_solar_kwh,
-                         export_rate=export_rate,
-                         min_rate=min(s['price'] for s in upcoming_slots) if upcoming_slots else None,
-                         max_rate=max(s['price'] for s in upcoming_slots) if upcoming_slots else None,
-                         cheapest_window_avg=min_window_cost,
-                         llm_approve=approve, llm_score=score, llm_reason=reason)
-            await set_inverter_charge_slots(None, None)
-            return
-
         local_start = best_window_start.astimezone()
         local_end = best_window_end.astimezone()
         rate_label = f"{min_window_cost:.2f}p/kWh" if min_window_cost >= 0 else f"{min_window_cost:.2f}p/kWh (NEGATIVE — grid pays us!)"
-        logging.info(f"Optimal Charge Window: {local_start.strftime('%H:%M')} → {local_end.strftime('%H:%M')}  |  Avg: {rate_label}")
+        logging.info(f"Optimal Deficit Charge Window: {local_start.strftime('%H:%M')} → {local_end.strftime('%H:%M')}  |  Avg: {rate_label}")
 
         # Report economics
         charge_cost_p = required_charge_kwh * min_window_cost
-        if min_window_cost < export_rate:
-            profit_per_kwh = export_rate - min_window_cost
-            estimated_profit_p = required_charge_kwh * profit_per_kwh
-            logging.info(
-                f"Economics: charge {required_charge_kwh:.1f} kWh × {min_window_cost:.2f}p = {charge_cost_p:.0f}p cost  "
-                f"|  vs {export_rate:.2f}p export = {profit_per_kwh:.2f}p/kWh profit  "
-                f"|  est. daily gain £{estimated_profit_p/100:.2f}"
-            )
-        else:
-            logging.info(f"Economics: charge {required_charge_kwh:.1f} kWh × {min_window_cost:.2f}p = {charge_cost_p:.0f}p  (deficit charge, above export rate)")
+        logging.info(f"Economics: charge {required_charge_kwh:.1f} kWh × {min_window_cost:.2f}p = {charge_cost_p:.0f}p")
 
-        # LLM veto: if the model rejects the plan, fall back to clearing slots.
-        # Bypass the veto if the average cost is negative — grid is paying us to charge,
-        # so any LLM reject is a mathematical hallucination.
         approve, score, reason = chatgpt_veto_plan(
             current_soc, battery_capacity, total_solar_kwh, export_rate,
             upcoming_slots, local_start, local_end, required_charge_kwh, min_window_cost
@@ -1107,7 +1221,7 @@ async def run_optimization():
             logging.info(f"LLM veto: approve={approve}  score={score_str}  reason={reason}")
 
         if not approve:
-            logging.info("LLM VETOED the charge plan — clearing slots as fallback (deterministic plan overridden).")
+            logging.info("LLM VETOED the charge plan — clearing slots as fallback.")
             _record_plan(action="no_charge", branch="llm_vetoed",
                          current_soc=current_soc, solar_forecast_kwh=total_solar_kwh,
                          export_rate=export_rate,
