@@ -63,3 +63,4 @@ LOG_LEVEL = "INFO"                 # DEBUG | INFO | WARNING | ERROR
 
 # Optional: OpenAI (LLM veto + end-of-day audit)
 OPENAI_API_KEY = ""                # Leave blank to disable
+OPENAI_MODEL   = "gpt-4o-mini"     # "gpt-4o-mini" | "gpt-4o" | "gpt-3.5-turbo"

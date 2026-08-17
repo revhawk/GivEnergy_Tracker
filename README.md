@@ -148,6 +148,7 @@ After you edit any file on the HA host (either by editing directly or SMB-copyin
 | `interval_minutes` | int | `30` | Daemon wake-up cadence. Full re-plan fires once per day; other ticks are cheap SoC-only reads. |
 | `run_once` | bool | `false` | Exit after one planning pass (useful for testing) |
 | `openai_api_key` | str | `""` | OpenAI API key. Enables plan scoring/veto and end-of-day audit. |
+| `openai_model` | dropdown | `"gpt-4o-mini"` | OpenAI model selector (`gpt-4o-mini`, `gpt-4o`, `gpt-3.5-turbo`) |
 | `daily_plan_hour` | int | `17` | Local hour to fire the daily planner (typically after Octopus publishes tomorrow's rates) |
 | `daily_audit_hour` | int | `23` | Local hour to fire the end-of-day audit |
 

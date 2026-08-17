@@ -30,6 +30,7 @@ fi
 INTERVAL_MINUTES=$(jq --raw-output '.interval_minutes' /data/options.json)
 RUN_ONCE=$(jq --raw-output '.run_once' /data/options.json)
 OPENAI_API_KEY=$(jq --raw-output '.openai_api_key' /data/options.json)
+OPENAI_MODEL=$(jq --raw-output '.openai_model // "gpt-4o-mini"' /data/options.json)
 DAILY_PLAN_HOUR=$(jq --raw-output '.daily_plan_hour // 17' /data/options.json)
 DAILY_AUDIT_HOUR=$(jq --raw-output '.daily_audit_hour // 23' /data/options.json)
 STARTUP_WRITE_TEST=$(jq --raw-output '.startup_write_test // false' /data/options.json)
@@ -37,12 +38,14 @@ STARTUP_WRITE_TEST=$(jq --raw-output '.startup_write_test // false' /data/option
 export INTERVAL_MINUTES
 export RUN_ONCE
 export OPENAI_API_KEY
+export OPENAI_MODEL
 export DAILY_PLAN_HOUR
 export DAILY_AUDIT_HOUR
 export STARTUP_WRITE_TEST
 
 echo "Starting GivEnergy Tariff Optimiser add-on..."
 echo "Interval: $INTERVAL_MINUTES minutes  |  Run Once: $RUN_ONCE"
+echo "OpenAI Model: $OPENAI_MODEL"
 echo "Daily plan at ${DAILY_PLAN_HOUR}:00  |  Daily audit at ${DAILY_AUDIT_HOUR}:00"
 echo "Startup write-test: $STARTUP_WRITE_TEST"
 

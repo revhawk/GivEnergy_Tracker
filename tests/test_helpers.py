@@ -127,3 +127,14 @@ class TestParseOctoplusSession:
         assert parsed["session_type"] == "power_up"
         assert parsed["display_name"] == "Power Up Session"
 
+
+class TestGetOpenAIModel:
+    def test_default_fallback(self, monkeypatch):
+        monkeypatch.delenv("OPENAI_MODEL", raising=False)
+        assert optimiser.get_openai_model() == "gpt-4o-mini"
+
+    def test_environment_variable_override(self, monkeypatch):
+        monkeypatch.setenv("OPENAI_MODEL", "gpt-4o")
+        assert optimiser.get_openai_model() == "gpt-4o"
+
+

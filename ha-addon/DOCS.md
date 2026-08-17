@@ -54,6 +54,10 @@ Your OpenAI API key for the ChatGPT plan-scoring and end-of-day audit features. 
 
 > ⚠️ **Storage note:** Home Assistant stores this in `/data/options.json` on the host filesystem in **plaintext** (it is *not* encrypted, contrary to what earlier versions of this document implied). Anyone with SSH/terminal access to the host can read it. This is a Home Assistant limitation, not an add-on choice — treat the key accordingly.
 
+### `openai_model` *(dropdown: gpt-4o-mini | gpt-4o | gpt-3.5-turbo, default: "gpt-4o-mini")*
+
+The OpenAI model used for plan scoring/veto and end-of-day audits. Select from the UI dropdown list under the **Configuration** tab. Defaults to `gpt-4o-mini`.
+
 ### `daily_plan_hour` *(int 0–23, default: 17)*
 
 The hour of local time at which the tracker runs its daily planning pass. Tomorrow's Agile rates typically publish between 16:00 and 20:00, so `17` is a sensible default. If the plan hour hasn't yet been crossed on a fresh day, the tracker will still plan on startup with whatever rates are currently available.

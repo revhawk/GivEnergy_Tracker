@@ -11,7 +11,7 @@ from datetime import datetime, timezone, timedelta
 
 # Single source of truth for the add-on version.
 # MUST match `version:` in config.yaml (validated on startup).
-__version__ = "1.0.18"
+__version__ = "1.0.19"
 
 
 # Import custom configurations
@@ -159,12 +159,19 @@ def test_openai_connection():
         # Minimal test call — lists available models, uses no tokens
         client.models.list()
         _openai_client = client
-        logging.info("✓ OpenAI API connected successfully — ChatGPT audit ENABLED.")
+        model_name = get_openai_model()
+        logging.info(f"✓ OpenAI API connected successfully (model: {model_name}) — ChatGPT audit ENABLED.")
         return True
     except Exception as e:
         logging.warning(f"✗ OpenAI API connection test FAILED: {e}")
         logging.warning("  Check your API key in the Configuration tab. ChatGPT audit DISABLED.")
         return False
+
+
+def get_openai_model():
+    """Return configured OpenAI model name (from environment, config.py, or fallback default)."""
+    model = os.environ.get('OPENAI_MODEL', '').strip() or getattr(config, 'OPENAI_MODEL', 'gpt-4o-mini').strip()
+    return model if model else 'gpt-4o-mini'
 
 # ── ChatGPT Veto (structured decision validator) ─────────────────────────────
 # Returns (approve: bool, score: int|None, reason: str). Fails open — if the
@@ -226,7 +233,7 @@ def chatgpt_veto_plan(current_soc, battery_capacity_kwh, solar_total_kwh,
 
     try:
         response = _openai_client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=get_openai_model(),
             messages=[
                 {"role": "system", "content": system_msg},
                 {"role": "user", "content": user_msg},
@@ -398,7 +405,7 @@ def generate_daily_summary(stats):
 
     try:
         response = _openai_client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=get_openai_model(),
             messages=[{"role": "user", "content": prompt}],
             max_tokens=500,
             temperature=0.4,

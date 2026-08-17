@@ -11,6 +11,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.19] - 2026-08-17
+
+### Added
+- **OpenAI Model Selection Dropdown**: Added `openai_model` Configuration UI dropdown menu (`gpt-4o-mini`, `gpt-4o`, `gpt-3.5-turbo`) allowing users to choose the OpenAI model for ChatGPT plan scoring and daily audits.
+- **Dynamic Model Resolution**: Added `get_openai_model()` helper supporting HA options UI $\rightarrow$ `config.py` (`OPENAI_MODEL`) $\rightarrow$ fallback default (`gpt-4o-mini`).
+
+---
+
 ## [1.0.18] - 2026-08-17
 
 ### Added
@@ -130,7 +138,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-[Unreleased]: https://github.com/revhawk/GivEnergy_Tracker/compare/v1.0.18...HEAD
+[Unreleased]: https://github.com/revhawk/GivEnergy_Tracker/compare/v1.0.19...HEAD
+[1.0.19]: https://github.com/revhawk/GivEnergy_Tracker/compare/v1.0.18...v1.0.19
 [1.0.18]: https://github.com/revhawk/GivEnergy_Tracker/compare/v1.0.17...v1.0.18
 [1.0.17]: https://github.com/revhawk/GivEnergy_Tracker/compare/v1.0.16...v1.0.17
 [1.0.16]: https://github.com/revhawk/GivEnergy_Tracker/compare/v1.0.15...v1.0.16
