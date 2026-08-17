@@ -33,6 +33,13 @@ ARBITRAGE_MARGIN_P = 1.5            # Import must be below (export − margin).
                                     # 1.5p accounts for ~10% round-trip battery loss:
                                     # break-even ≈ 12p × 0.90 ≈ 10.8p, then 0.7p headroom.
 
+# Octopus Octoplus sessions (ADR 0004 compliance: Power Down & Power Up)
+OCTOPLUS_POWER_DOWN_ENTITY = "sensor.octopus_energy_power_down_sessions"
+OCTOPLUS_POWER_UP_ENTITY = "sensor.octopus_energy_power_up_sessions"
+# Legacy fallbacks supported until Jan 2027 per ADR 0004:
+OCTOPLUS_SAVING_SESSIONS_FALLBACK_ENTITY = "sensor.octopus_energy_saving_sessions"
+OCTOPLUS_FREE_ELECTRICITY_FALLBACK_ENTITY = "sensor.octopus_energy_free_electricity_sessions"
+
 # Home energy limits
 MAX_BATTERY_CHARGE_RATE = 3000     # Max GivEnergy charge speed in Watts
 IBOOST_MAX_DIVERT_RATE = 3000      # Standard UK immersion heater load cap (W)

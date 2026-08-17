@@ -11,6 +11,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.18] - 2026-08-17
+
+### Added
+- **Octoplus ADR 0004 Entity Renaming**: Adopted `HomeAssistant-OctopusEnergy` ADR 0004 entity naming standards:
+  - Renamed **Saving Sessions** to **Power Down** (`sensor.octopus_energy_power_down_sessions`, `event.octopus_energy_octoplus_power_down_events`, `calendar.octopus_energy_octoplus_power_down_sessions`).
+  - Renamed **Free Electricity Sessions** to **Power Up** (`sensor.octopus_energy_power_up_sessions`, `event.octopus_energy_octoplus_power_up_events`, `calendar.octopus_energy_octoplus_power_up_sessions`).
+  - Added helper functions (`get_octoplus_entity_name`, `parse_octoplus_session`) with legacy fallback support until January 2027.
+- **Cheapest Non-Contiguous Slot Selection**: Enhanced deficit charge scheduling to evaluate non-contiguous cheapest $N$ slots alongside contiguous windows, programming non-contiguous slots whenever they yield a lower overall cost and fit within GivTCP's 10-slot limit.
+
+---
+
 ## [1.0.17] - 2026-07-04
 
 ### Fixed

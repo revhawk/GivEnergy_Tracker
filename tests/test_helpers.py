@@ -87,3 +87,43 @@ class TestRecordPlan:
         optimiser._record_plan(action="no_charge")
         assert "stale" not in optimiser._last_plan
         assert optimiser._last_plan["action"] == "no_charge"
+
+
+class TestGetOctoplusEntityName:
+    def test_power_down_new_and_fallback(self):
+        assert optimiser.get_octoplus_entity_name("power_down", prefer_new=True) == "sensor.octopus_energy_power_down_sessions"
+        assert optimiser.get_octoplus_entity_name("saving_sessions", prefer_new=False) == "sensor.octopus_energy_saving_sessions"
+
+    def test_power_up_new_and_fallback(self):
+        assert optimiser.get_octoplus_entity_name("power_up", prefer_new=True) == "sensor.octopus_energy_power_up_sessions"
+        assert optimiser.get_octoplus_entity_name("free_electricity", prefer_new=False) == "sensor.octopus_energy_free_electricity_sessions"
+
+    def test_events_and_calendars(self):
+        assert optimiser.get_octoplus_entity_name("power_down", entity_kind="event", prefer_new=True) == "event.octopus_energy_octoplus_power_down_events"
+        assert optimiser.get_octoplus_entity_name("power_up", entity_kind="calendar", prefer_new=True) == "calendar.octopus_energy_octoplus_power_up_sessions"
+
+
+class TestParseOctoplusSession:
+    def test_parses_power_down_session(self):
+        data = {
+            "type": "power_down",
+            "start": "2026-08-17T18:00:00Z",
+            "end": "2026-08-17T19:00:00Z",
+            "code": "PD123"
+        }
+        parsed = optimiser.parse_octoplus_session(data)
+        assert parsed["session_type"] == "power_down"
+        assert parsed["display_name"] == "Power Down Session"
+        assert parsed["code"] == "PD123"
+
+    def test_parses_power_up_legacy_free_electricity_session(self):
+        data = {
+            "session_type": "free_electricity",
+            "start": "2026-08-17T13:00:00Z",
+            "end": "2026-08-17T14:00:00Z",
+            "code": "PU456"
+        }
+        parsed = optimiser.parse_octoplus_session(data)
+        assert parsed["session_type"] == "power_up"
+        assert parsed["display_name"] == "Power Up Session"
+

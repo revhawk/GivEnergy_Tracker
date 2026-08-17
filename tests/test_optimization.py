@@ -6,7 +6,8 @@ import config
 
 # Mock slot rates
 def _make_slot(hour, minute, price):
-    start = datetime(2026, 7, 4, hour, minute, tzinfo=timezone.utc)
+    now = datetime.now(timezone.utc)
+    start = (now + timedelta(days=1)).replace(hour=hour, minute=minute, second=0, microsecond=0)
     return {
         'start': start,
         'end': start + timedelta(minutes=30),
@@ -89,4 +90,41 @@ async def test_optimization_arbitrage_multi_slots(
     assert called_slots[1][0].astimezone(timezone.utc).minute == 0
     assert called_slots[1][1].astimezone(timezone.utc).hour == 4
     assert called_slots[1][1].astimezone(timezone.utc).minute == 30
+
+
+@pytest.mark.asyncio
+@patch('optimiser.set_inverter_charge_slots')
+@patch('optimiser.chatgpt_veto_plan')
+@patch('optimiser.fetch_export_rate')
+@patch('optimiser.fetch_solar_forecast')
+@patch('optimiser.fetch_agile_rates')
+@patch('optimiser.get_inverter_telemetry')
+async def test_optimization_deficit_non_contiguous_cheapest_slots(
+    mock_telemetry, mock_rates, mock_solar, mock_export, mock_veto, mock_set_slots
+):
+    # Setup 2 cheap slots separated by expensive slots (01:00 @ 11p, 02:00 @ 30p, 03:00 @ 11p)
+    slots = [
+        _make_slot(1, 0, 11.0),
+        _make_slot(2, 0, 30.0),
+        _make_slot(3, 0, 11.0),
+    ]
+    for h in range(4, 15):
+        slots.append(_make_slot(h, 0, 25.0))
+
+    mock_telemetry.return_value = {"soc": 60, "pv_power": 0.0, "load_power": 800.0}
+    mock_rates.return_value = slots
+    mock_solar.return_value = []
+    mock_export.return_value = 10.0  # Export threshold = 8.5p, so Agile rates (11p) don't trigger arbitrage
+    mock_veto.return_value = (True, 10, "ok")
+    mock_set_slots.return_value = True
+
+    await optimiser.run_optimization()
+
+    assert mock_set_slots.called
+    called_slots = mock_set_slots.call_args[0][0]
+    # Should pick non-contiguous slots (01:00 and 03:00) instead of forcing contiguous 01:00-02:30 or 02:00-03:30
+    assert len(called_slots) == 2
+    assert called_slots[0][0].astimezone(timezone.utc).hour == 1
+    assert called_slots[1][0].astimezone(timezone.utc).hour == 3
+
 

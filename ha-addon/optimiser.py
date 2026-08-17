@@ -11,7 +11,7 @@ from datetime import datetime, timezone, timedelta
 
 # Single source of truth for the add-on version.
 # MUST match `version:` in config.yaml (validated on startup).
-__version__ = "1.0.17"
+__version__ = "1.0.18"
 
 
 # Import custom configurations
@@ -23,6 +23,88 @@ except ImportError:
 
 # OpenAI client (initialised after connection test)
 _openai_client = None
+
+# ── Octoplus Session Entity Naming (ADR 0004) ───────────────────────────
+# HomeAssistant-OctopusEnergy renamed Saving Sessions to Power Down and
+# Free Electricity Sessions to Power Up (ADR 0004).
+# Legacy entity names remain supported until January 2027.
+DEFAULT_POWER_DOWN_SENSOR = "sensor.octopus_energy_power_down_sessions"
+DEFAULT_POWER_UP_SENSOR = "sensor.octopus_energy_power_up_sessions"
+DEFAULT_POWER_DOWN_EVENT = "event.octopus_energy_octoplus_power_down_events"
+DEFAULT_POWER_UP_EVENT = "event.octopus_energy_octoplus_power_up_events"
+
+FALLBACK_SAVING_SESSIONS_SENSOR = "sensor.octopus_energy_saving_sessions"
+FALLBACK_FREE_ELECTRICITY_SENSOR = "sensor.octopus_energy_free_electricity_sessions"
+FALLBACK_SAVING_SESSIONS_EVENT = "event.octopus_energy_octoplus_saving_sessions_events"
+FALLBACK_FREE_ELECTRICITY_EVENT = "event.octopus_energy_octoplus_free_electricity_sessions_events"
+
+def get_octoplus_entity_name(session_type, entity_kind="sensor", prefer_new=True):
+    """Return entity name for Octoplus sessions according to ADR 0004,
+    supporting legacy fallback for pre-ADR 0004 Home Assistant installations.
+    
+    session_type: 'power_down' (or legacy 'saving_sessions') | 'power_up' (or legacy 'free_electricity')
+    entity_kind:  'sensor' | 'event' | 'calendar'
+    prefer_new:   If True, return new ADR 0004 entity name; if False, return legacy name.
+    """
+    stype = str(session_type).lower().strip()
+    kind = str(entity_kind).lower().strip()
+    
+    is_power_down = stype in ['power_down', 'power_down_sessions', 'saving_sessions', 'saving_session']
+    is_power_up = stype in ['power_up', 'power_up_sessions', 'free_electricity', 'free_electricity_sessions']
+    
+    if is_power_down:
+        if kind == 'event':
+            return DEFAULT_POWER_DOWN_EVENT if prefer_new else FALLBACK_SAVING_SESSIONS_EVENT
+        elif kind == 'calendar':
+            return "calendar.octopus_energy_octoplus_power_down_sessions" if prefer_new else "calendar.octopus_energy_octoplus_saving_sessions"
+        else:
+            return getattr(config, 'OCTOPLUS_POWER_DOWN_ENTITY', DEFAULT_POWER_DOWN_SENSOR) if prefer_new else getattr(config, 'OCTOPLUS_SAVING_SESSIONS_FALLBACK_ENTITY', FALLBACK_SAVING_SESSIONS_SENSOR)
+    elif is_power_up:
+        if kind == 'event':
+            return DEFAULT_POWER_UP_EVENT if prefer_new else FALLBACK_FREE_ELECTRICITY_EVENT
+        elif kind == 'calendar':
+            return "calendar.octopus_energy_octoplus_power_up_sessions" if prefer_new else "calendar.octopus_energy_octoplus_free_electricity_sessions"
+        else:
+            return getattr(config, 'OCTOPLUS_POWER_UP_ENTITY', DEFAULT_POWER_UP_SENSOR) if prefer_new else getattr(config, 'OCTOPLUS_FREE_ELECTRICITY_FALLBACK_ENTITY', FALLBACK_FREE_ELECTRICITY_SENSOR)
+    else:
+        raise ValueError(f"Unknown session_type: {session_type}")
+
+
+def parse_octoplus_session(session_data):
+    """Parse session data dict into a standardized session metadata dictionary.
+    Supports both ADR 0004 (power_down, power_up) and legacy names.
+    """
+    if not isinstance(session_data, dict):
+        return None
+        
+    session_type_raw = str(session_data.get('type') or session_data.get('session_type') or session_data.get('event_type') or '').lower()
+    if any(k in session_type_raw for k in ['power_down', 'saving']):
+        session_type = 'power_down'
+        display_name = 'Power Down Session'
+    elif any(k in session_type_raw for k in ['power_up', 'free_electricity', 'free']):
+        session_type = 'power_up'
+        display_name = 'Power Up Session'
+    else:
+        session_type = 'unknown'
+        display_name = 'Octoplus Session'
+        
+    start_str = session_data.get('start') or session_data.get('valid_from') or session_data.get('start_time')
+    end_str = session_data.get('end') or session_data.get('valid_to') or session_data.get('end_time')
+    
+    start_dt = parse_utc_iso(start_str) if isinstance(start_str, str) else start_str
+    end_dt = parse_utc_iso(end_str) if isinstance(end_str, str) else end_str
+    
+    code = session_data.get('code') or session_data.get('id') or ''
+    
+    return {
+        'session_type': session_type,
+        'display_name': display_name,
+        'start': start_dt,
+        'end': end_dt,
+        'code': code,
+        'entity_name': get_octoplus_entity_name(session_type, entity_kind='sensor')
+    }
+
 
 # setup python logger
 def setup_logging():
@@ -1183,22 +1265,98 @@ async def run_optimization():
 
     logging.info(f"Target Grid Charge: {required_charge_kwh:.2f} kWh (~{slots_to_charge} half-hour slot(s))")
 
-    best_window_start = None
-    best_window_end = None
-    min_window_cost = float('inf')
+    # 1. Contiguous window search
+    best_contig_start = None
+    best_contig_end = None
+    min_contig_cost = float('inf')
 
     for start_idx in range(len(upcoming_slots) - slots_to_charge + 1):
         window = upcoming_slots[start_idx : start_idx + slots_to_charge]
         avg_price = sum(s['price'] for s in window) / len(window)
 
-        if avg_price < min_window_cost:
-            min_window_cost = avg_price
-            best_window_start = window[0]['start']
-            best_window_end = window[-1]['end']
+        if avg_price < min_contig_cost:
+            min_contig_cost = avg_price
+            best_contig_start = window[0]['start']
+            best_contig_end = window[-1]['end']
 
-    if best_window_start and best_window_end:
-        local_start = best_window_start.astimezone()
-        local_end = best_window_end.astimezone()
+    # 2. Non-contiguous cheapest N slots search (if multiple sessions are available)
+    use_non_contiguous = False
+    slots_tuples = []
+    min_window_cost = min_contig_cost
+
+    if len(upcoming_slots) >= slots_to_charge:
+        cheapest_n = sorted(upcoming_slots, key=lambda s: s['price'])[:slots_to_charge]
+        cheapest_n_sorted = sorted(cheapest_n, key=lambda s: s['start'])
+        avg_cheapest_n = sum(s['price'] for s in cheapest_n) / len(cheapest_n)
+
+        # Merge adjacent slots
+        merged_blocks = []
+        if cheapest_n_sorted:
+            c_start = cheapest_n_sorted[0]['start']
+            c_end = cheapest_n_sorted[0]['end']
+            c_prices = [cheapest_n_sorted[0]['price']]
+
+            for nxt in cheapest_n_sorted[1:]:
+                if nxt['start'] == c_end:
+                    c_end = nxt['end']
+                    c_prices.append(nxt['price'])
+                else:
+                    merged_blocks.append({'start': c_start, 'end': c_end, 'avg_price': sum(c_prices) / len(c_prices)})
+                    c_start = nxt['start']
+                    c_end = nxt['end']
+                    c_prices = [nxt['price']]
+            merged_blocks.append({'start': c_start, 'end': c_end, 'avg_price': sum(c_prices) / len(c_prices)})
+
+        # Use non-contiguous if cheaper than contiguous window and fits in 10 slots
+        if avg_cheapest_n < (min_contig_cost - 0.01) and len(merged_blocks) <= 10:
+            use_non_contiguous = True
+            min_window_cost = avg_cheapest_n
+            slots_tuples = [(b['start'].astimezone(), b['end'].astimezone()) for b in merged_blocks]
+
+    if use_non_contiguous:
+        rate_label = f"{min_window_cost:.2f}p/kWh" if min_window_cost >= 0 else f"{min_window_cost:.2f}p/kWh (NEGATIVE — grid pays us!)"
+        logging.info(f"Optimal Deficit Charge: {len(slots_tuples)} non-contiguous block(s)  |  Avg: {rate_label}")
+        charge_cost_p = required_charge_kwh * min_window_cost
+        logging.info(f"Economics: charge {required_charge_kwh:.1f} kWh × {min_window_cost:.2f}p = {charge_cost_p:.0f}p")
+
+        approve, score, reason = chatgpt_veto_plan(
+            current_soc, battery_capacity, total_solar_kwh, export_rate,
+            upcoming_slots, slots_tuples, None, required_charge_kwh, min_window_cost
+        )
+        score_str = f"{score}/10" if score is not None else "n/a"
+        if min_window_cost < 0.0:
+            logging.info(f"LLM veto response: approve={approve}  score={score_str}  reason={reason}")
+            if not approve:
+                logging.info(f"⚡ OVERRIDING LLM VETO: proposed window cost is negative ({min_window_cost:.2f}p/kWh). Proceeding with plan.")
+                approve = True
+        else:
+            logging.info(f"LLM veto: approve={approve}  score={score_str}  reason={reason}")
+
+        if not approve:
+            logging.info("LLM VETOED the charge plan — clearing slots as fallback.")
+            _record_plan(action="no_charge", branch="llm_vetoed",
+                         current_soc=current_soc, solar_forecast_kwh=total_solar_kwh,
+                         export_rate=export_rate,
+                         min_rate=min(s['price'] for s in upcoming_slots) if upcoming_slots else None,
+                         max_rate=max(s['price'] for s in upcoming_slots) if upcoming_slots else None,
+                         proposed_window={"multi_slots": [(s.strftime('%H:%M'), e.strftime('%H:%M')) for s, e in slots_tuples],
+                                          "kwh": round(required_charge_kwh, 2), "avg_price": round(min_window_cost, 2)},
+                         llm_approve=False, llm_score=score, llm_reason=reason)
+            await set_inverter_charge_slots(None, None)
+            return
+
+        _record_plan(action="charge", branch="scheduled",
+                     current_soc=current_soc, solar_forecast_kwh=total_solar_kwh,
+                     export_rate=export_rate,
+                     min_rate=min(s['price'] for s in upcoming_slots) if upcoming_slots else None,
+                     max_rate=max(s['price'] for s in upcoming_slots) if upcoming_slots else None,
+                     charge_window={"multi_slots": [(s.strftime('%H:%M'), e.strftime('%H:%M')) for s, e in slots_tuples],
+                                    "kwh": round(required_charge_kwh, 2), "avg_price": round(min_window_cost, 2)},
+                     llm_approve=approve, llm_score=score, llm_reason=reason)
+        await set_inverter_charge_slots(slots_tuples)
+    elif best_contig_start and best_contig_end:
+        local_start = best_contig_start.astimezone()
+        local_end = best_contig_end.astimezone()
         rate_label = f"{min_window_cost:.2f}p/kWh" if min_window_cost >= 0 else f"{min_window_cost:.2f}p/kWh (NEGATIVE — grid pays us!)"
         logging.info(f"Optimal Deficit Charge Window: {local_start.strftime('%H:%M')} → {local_end.strftime('%H:%M')}  |  Avg: {rate_label}")
 

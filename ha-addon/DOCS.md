@@ -127,12 +127,32 @@ BASE_LOAD_W = 1000   # Continuous home load in Watts. Set from your true overnig
                      # draw — under-estimating causes the tracker to schedule too
                      # little grid charge.
 
-# Export tariff (live-fetched, but with a fallback)
+# Export tariff (Octopus Outgoing Variable — verify via account API if it changes)
 EXPORT_PRODUCT_CODE     = "OUTGOING-VAR-24-10-26"
 EXPORT_TARIFF_CODE      = "E-1R-OUTGOING-VAR-24-10-26-E"
 EXPORT_RATE_P_FALLBACK  = 12.0
 ARBITRAGE_MARGIN_P      = 0.5   # Import must be below (export - margin) to arbitrage
+
+# Octopus Octoplus sessions (ADR 0004 compliance)
+OCTOPLUS_POWER_DOWN_ENTITY = "sensor.octopus_energy_power_down_sessions"
+OCTOPLUS_POWER_UP_ENTITY   = "sensor.octopus_energy_power_up_sessions"
 ```
+
+---
+
+## Octoplus Session Integration (ADR 0004)
+
+Per `HomeAssistant-OctopusEnergy` ADR 0004:
+- **Saving Sessions** are renamed to **Power Down** (`sensor.octopus_energy_power_down_sessions`, `event.octopus_energy_octoplus_power_down_events`, `calendar.octopus_energy_octoplus_power_down_sessions`).
+- **Free Electricity Sessions** are renamed to **Power Up** (`sensor.octopus_energy_power_up_sessions`, `event.octopus_energy_octoplus_power_up_events`, `calendar.octopus_energy_octoplus_power_up_sessions`).
+
+The add-on resolves entity names via `get_octoplus_entity_name()` and `parse_octoplus_session()`, providing backwards compatibility for legacy `saving_sessions` and `free_electricity_sessions` entities until January 2027.
+
+### Multi-Slot & Non-Contiguous Optimisation
+
+When multiple cheap sessions or Agile slots exist across the day:
+1. **Opportunistic / Arbitrage & Power Up (Free Electricity)**: Sub-threshold and free slots are merged into blocks and sorted by average price, programming up to the 10 cheapest charge blocks into GivTCP.
+2. **Deficit Charging**: The tracker evaluates contiguous charge windows alongside the cheapest $N$ non-contiguous slots, selecting non-contiguous blocks whenever they yield a lower overall cost.
 
 ---
 

@@ -13,8 +13,8 @@ A Home Assistant add-on that automatically schedules your GivEnergy battery to c
 - ⚡ **Octopus Agile rate fetching** — pulls all upcoming 30-minute pricing slots
 - 💱 **Live Octopus export rate** — fetches the current Outgoing Variable rate so arbitrage decisions self-adjust when Octopus changes their tariff
 - 📊 **24-hour simulation** — models battery/solar/load to estimate true import need
-- 🎯 **Arbitrage-aware optimiser** — charges from grid whenever import < export rate (after ~90% round-trip efficiency), even when solar could cover demand
-- 🧠 **Sliding window search** — finds the cheapest contiguous charge window
+- 🎯 **Arbitrage-aware & Octoplus optimiser** — charges from grid whenever import < export rate (after ~90% round-trip efficiency), or during free Octoplus Power Up sessions (ADR 0004 compliant), even when solar could cover demand
+- 🧠 **Smart cheapest slot search** — evaluates both contiguous and non-contiguous cheapest slot combinations across the day
 - 🤖 **ChatGPT plan validator** — scores each plan 1-10 and can veto poor charge decisions; produces an English-language end-of-day audit
 - 📅 **Once-per-day planning** — daily planner + light monitor + audit split cuts API calls from ~192/day to ~2/day
 - 📋 **NAS log rotation** — rotates logs automatically (5 MB max, 3 backups)
