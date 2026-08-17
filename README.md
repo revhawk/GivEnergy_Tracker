@@ -95,11 +95,30 @@ If you're new to Home Assistant or the add-on system:
 
 ---
 
-## 🚀 Installation
+## 🚀 Installation & Sharing
 
-### 1. Add the Local Repository
+### Adding to Home Assistant (1-Click Badge)
 
-1. Put the `ha-addon/` folder on your Home Assistant host under `/addons/givenergy_tracker/`. Two common methods:
+Click the button below to add this repository directly to your Home Assistant Add-on Store:
+
+[![Open your Home Assistant instance and show the add-on store with a specific repository filled in.](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Frevhawk%2FGivEnergy_Tracker)
+
+### Manual Repository Installation
+
+Any Home Assistant user can add your add-on store repository by following these steps:
+
+1. In Home Assistant, go to **Settings → Add-ons → Add-on Store**.
+2. In the top-right corner, click **⋮ (three dots) → Repositories**.
+3. Add the GitHub repository URL:
+   ```text
+   https://github.com/revhawk/GivEnergy_Tracker
+   ```
+4. Click **Add**. The **GivEnergy Tariff Optimiser** card will appear in the Add-on Store!
+5. Click **Install**, configure options under the **Configuration** tab, and click **Start**.
+
+---
+
+### Local Development Installation (Alternative)
    - **Samba share** — mount `\\homeassistant\addons\` from your desktop and copy the folder in.
    - **Terminal / SSH add-on** — `scp` or `git clone` directly onto the Pi.
 2. In Home Assistant: **Settings → Add-ons → Add-on Store**. The **GivEnergy Tariff Optimiser** card will appear under **Local add-ons**.
@@ -344,6 +363,15 @@ python ha-addon/optimiser.py
 ```
 
 Test targets and coverage are documented in [`tests/README.md`](tests/README.md).
+
+---
+
+## 💬 Community & Support
+
+- 🐛 **Report a Bug / Request a Feature**: Open an issue on [GitHub Issues](https://github.com/revhawk/GivEnergy_Tracker/issues)
+- 📋 **View Release Notes**: Check out the [Changelog](https://github.com/revhawk/GivEnergy_Tracker/blob/main/ha-addon/CHANGELOG.md)
+- 📖 **Add-on Documentation**: Read the full [DOCS.md](https://github.com/revhawk/GivEnergy_Tracker/blob/main/ha-addon/DOCS.md)
+- 🐙 **GitHub Repository**: [revhawk/GivEnergy_Tracker](https://github.com/revhawk/GivEnergy_Tracker)
 
 ---
 

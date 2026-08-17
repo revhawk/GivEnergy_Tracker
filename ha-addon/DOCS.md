@@ -13,21 +13,41 @@ Since v1.0.3 the add-on runs **one planning pass per day** (not every 30 minutes
 
 ---
 
+## 📥 Installation & Repository Setup
+
+### Option 1: 1-Click Add-on Store Setup
+
+Click the button below to add this repository directly to your Home Assistant Add-on Store:
+
+[![Open your Home Assistant instance and show the add-on store with a specific repository filled in.](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Frevhawk%2FGivEnergy_Tracker)
+
+### Option 2: Manual Add-on Store Setup
+
+1. In Home Assistant, go to **Settings → Add-ons → Add-on Store**.
+2. Click **⋮ (three dots) → Repositories** (top right).
+3. Paste the repository URL:
+   ```text
+   https://github.com/revhawk/GivEnergy_Tracker
+   ```
+4. Click **Add**, then select **GivEnergy Tariff Optimiser** from the store list to install.
+
+---
+
 ## Version Control Checklist
 
 When incrementing the version of this add-on for a release, the version number **must** be updated in the following three files at the same time:
 
 1. **`ha-addon/config.yaml`**: The `version:` field must match the target release (used by Home Assistant Add-on Store to detect updates).
    ```yaml
-   version: "1.0.18"
+   version: "1.0.19"
    ```
 2. **`ha-addon/optimiser.py`**: The `__version__` variable must match the target release (validated at runtime on startup).
    ```python
-   __version__ = "1.0.18"
+   __version__ = "1.0.19"
    ```
 3. **`ha-addon/CHANGELOG.md`**: Add the release header and update compare link references at the bottom of the file.
    ```markdown
-   ## [1.0.18] - 2026-08-17
+   ## [1.0.19] - 2026-08-17
    ```
 
 *Note: Home Assistant validates `config.yaml` and `optimiser.py` versions on startup. If they do not match, the add-on will log a warning on startup.*
