@@ -265,6 +265,11 @@ This project follows [Semantic Versioning](https://semver.org/):
 | `0.x.0` | Beta builds — new features |
 | `1.0.0+` | Stable production releases |
 
+When releasing a new version, increment the version string in the following files:
+- **`ha-addon/config.yaml`**: `version: "x.y.z"` (read by Home Assistant store to prompt updates)
+- **`ha-addon/optimiser.py`**: `__version__ = "x.y.z"` (checked at runtime on startup)
+- **`ha-addon/CHANGELOG.md`**: `## [x.y.z] - YYYY-MM-DD` and updated link definitions at bottom
+
 When the version number in `ha-addon/config.yaml` is bumped, Home Assistant will show an **Update** badge on the add-on card — no reinstall required.
 
 ---

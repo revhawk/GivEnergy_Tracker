@@ -15,18 +15,22 @@ Since v1.0.3 the add-on runs **one planning pass per day** (not every 30 minutes
 
 ## Version Control Checklist
 
-When incrementing the version of this add-on for a release, the version number **must** be updated in exactly two files at the same time:
+When incrementing the version of this add-on for a release, the version number **must** be updated in the following three files at the same time:
 
-1. **`ha-addon/config.yaml`**: The `version:` field must match the target release.
+1. **`ha-addon/config.yaml`**: The `version:` field must match the target release (used by Home Assistant Add-on Store to detect updates).
    ```yaml
-   version: "1.0.17"
+   version: "1.0.18"
    ```
-2. **`ha-addon/optimiser.py`**: The `__version__` variable must match the target release.
+2. **`ha-addon/optimiser.py`**: The `__version__` variable must match the target release (validated at runtime on startup).
    ```python
-   __version__ = "1.0.17"
+   __version__ = "1.0.18"
+   ```
+3. **`ha-addon/CHANGELOG.md`**: Add the release header and update compare link references at the bottom of the file.
+   ```markdown
+   ## [1.0.18] - 2026-08-17
    ```
 
-*Note: Home Assistant validates these versions on startup. If they do not match, the add-on will log a warning warning.*
+*Note: Home Assistant validates `config.yaml` and `optimiser.py` versions on startup. If they do not match, the add-on will log a warning on startup.*
 
 ---
 
