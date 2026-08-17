@@ -2,11 +2,17 @@
 
 Tests for the GivEnergy Tariff Optimiser add-on.
 
-## Running
+## Running Tests in Local Environment
 
 ```bash
-cd tests
-pip install -r requirements.txt
+# 1. From project root, create and activate a virtual environment
+python3 -m venv .venv
+source .venv/bin/activate
+
+# 2. Install dependencies for both add-on and test suite
+pip install -r ha-addon/requirements.txt -r tests/requirements.txt
+
+# 3. Execute unit tests
 pytest -v
 ```
 

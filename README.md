@@ -312,12 +312,29 @@ cp config.py.example config.py
 
 Set `run_once: true` in the add-on's Configuration tab, then Start it. It'll do a full plan, write to the inverter, and exit.
 
-### Tests
+### Testing in Local Environment
+
+To set up your local development environment and run unit tests inside a virtual environment (`.venv`):
 
 ```bash
-cd tests/
-pip install -r requirements.txt
+# 1. Create virtual environment from project root
+python3 -m venv .venv
+
+# 2. Activate the virtual environment
+source .venv/bin/activate
+
+# 3. Install add-on & test suite dependencies
+pip install -r ha-addon/requirements.txt -r tests/requirements.txt
+
+# 4. Run the full unit test suite
 pytest
+
+# 5. Run pytest in verbose mode or run specific tests
+pytest -v
+pytest tests/test_optimization.py
+
+# 6. (Optional) Run local optimizer dry-run inside .venv
+python ha-addon/optimiser.py
 ```
 
 Test targets and coverage are documented in [`tests/README.md`](tests/README.md).

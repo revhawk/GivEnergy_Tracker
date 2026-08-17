@@ -206,6 +206,24 @@ Look at the log for `Total Grid Import Needed` and the arbitrage section. If `To
 
 ---
 
+## Local Development & Testing
+
+To set up a local testing environment in `.venv` and execute unit tests:
+
+```bash
+# 1. Create & activate Python virtual environment
+python3 -m venv .venv
+source .venv/bin/activate
+
+# 2. Install requirements for both add-on and test suite
+pip install -r ha-addon/requirements.txt -r tests/requirements.txt
+
+# 3. Run unit test suite
+pytest -v
+```
+
+---
+
 ## Support
 
 - Issues: please include the last ~50 lines of the addon log when reporting bugs.
