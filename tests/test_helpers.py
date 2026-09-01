@@ -64,6 +64,13 @@ class TestGetSolarKwhForSlot:
         # Hourly 2.0 kWh split across two half-hour slots → 1.0 kWh each
         assert got == 1.0
 
+    def test_morning_solar_damping_applied_before_9am(self):
+        forecast = [{"time": datetime(2026, 7, 3, 8, 0).astimezone(), "kwh": 2.0}]
+        slot = self._slot("2026-07-03T07:30:00+01:00", "2026-07-03T08:00:00+01:00")
+        got = optimiser.get_solar_kwh_for_slot(slot["start"], slot["end"], forecast)
+        # 2.0 kWh / 2 * 0.65 = 0.65 kWh
+        assert abs(got - 0.65) < 1e-4
+
     def test_no_match_returns_zero(self):
         forecast = [{"time": datetime(2026, 7, 3, 12, 0).astimezone(), "kwh": 2.0}]
         slot = self._slot("2026-07-03T20:00:00+01:00", "2026-07-03T20:30:00+01:00")
@@ -72,6 +79,55 @@ class TestGetSolarKwhForSlot:
     def test_empty_forecast_returns_zero(self):
         slot = self._slot("2026-07-03T11:30:00+01:00", "2026-07-03T12:00:00+01:00")
         assert optimiser.get_solar_kwh_for_slot(slot["start"], slot["end"], []) == 0.0
+
+
+class TestGetLoadKwhForSlot:
+    def _slot(self, start_iso, end_iso):
+        return {
+            "start": datetime.fromisoformat(start_iso.replace("Z", "+00:00")),
+            "end": datetime.fromisoformat(end_iso.replace("Z", "+00:00")),
+        }
+
+    def test_evening_peak_load_baseline(self):
+        slot = self._slot("2026-07-03T18:00:00+01:00", "2026-07-03T18:30:00+01:00")
+        got = optimiser.get_load_kwh_for_slot(slot["start"], slot["end"])
+        # 1200W * 0.5h / 1000 = 0.60 kWh
+        assert got == 0.60
+
+    def test_daytime_load_baseline(self):
+        slot = self._slot("2026-07-03T14:00:00+01:00", "2026-07-03T14:30:00+01:00")
+        got = optimiser.get_load_kwh_for_slot(slot["start"], slot["end"])
+        # 700W * 0.5h / 1000 = 0.35 kWh
+        assert got == 0.35
+
+    def test_overnight_load_baseline(self):
+        slot = self._slot("2026-07-03T02:00:00+01:00", "2026-07-03T02:30:00+01:00")
+        got = optimiser.get_load_kwh_for_slot(slot["start"], slot["end"])
+        # 400W * 0.5h / 1000 = 0.20 kWh
+        assert got == 0.20
+
+    def test_uses_historical_rolling_average(self):
+        slot = self._slot("2026-07-03T18:00:00+01:00", "2026-07-03T18:30:00+01:00")
+        history = {"18:00": [0.50, 0.70, 0.60]}
+        got = optimiser.get_load_kwh_for_slot(slot["start"], slot["end"], history)
+        assert abs(got - 0.60) < 1e-4
+
+
+class TestIsPowerDownSlot:
+    def _slot(self, start_iso, end_iso):
+        return {
+            "start": datetime.fromisoformat(start_iso.replace("Z", "+00:00")),
+            "end": datetime.fromisoformat(end_iso.replace("Z", "+00:00")),
+        }
+
+    def test_matches_power_down_window(self):
+        # 18:00 - 19:00 window
+        slot = self._slot("2026-07-03T18:00:00+01:00", "2026-07-03T18:30:00+01:00")
+        assert optimiser.is_power_down_slot(slot["start"], slot["end"]) is True
+
+    def test_non_power_down_window(self):
+        slot = self._slot("2026-07-03T14:00:00+01:00", "2026-07-03T14:30:00+01:00")
+        assert optimiser.is_power_down_slot(slot["start"], slot["end"]) is False
 
 
 class TestRecordPlan:

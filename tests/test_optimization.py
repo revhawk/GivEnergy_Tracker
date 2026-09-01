@@ -47,7 +47,7 @@ async def test_get_inverter_telemetry_missing():
 @patch('optimiser.set_inverter_charge_slots')
 @patch('optimiser.chatgpt_veto_plan')
 @patch('optimiser.fetch_export_rate')
-@patch('optimiser.fetch_solar_forecast')
+@patch('optimiser.fetch_parallel_solar_forecasts')
 @patch('optimiser.fetch_agile_rates')
 @patch('optimiser.get_inverter_telemetry')
 async def test_optimization_arbitrage_multi_slots(
@@ -67,7 +67,7 @@ async def test_optimization_arbitrage_multi_slots(
         
     mock_telemetry.return_value = {"soc": 50, "pv_power": 0.0, "load_power": 400.0}
     mock_rates.return_value = slots
-    mock_solar.return_value = []
+    mock_solar.return_value = ([], {})
     mock_export.return_value = 12.0 # Arbitrage threshold will be 12.0 - 1.5 = 10.5p
     mock_veto.return_value = (True, 10, "arbitrage")
     mock_set_slots.return_value = True
@@ -96,7 +96,7 @@ async def test_optimization_arbitrage_multi_slots(
 @patch('optimiser.set_inverter_charge_slots')
 @patch('optimiser.chatgpt_veto_plan')
 @patch('optimiser.fetch_export_rate')
-@patch('optimiser.fetch_solar_forecast')
+@patch('optimiser.fetch_parallel_solar_forecasts')
 @patch('optimiser.fetch_agile_rates')
 @patch('optimiser.get_inverter_telemetry')
 async def test_optimization_deficit_non_contiguous_cheapest_slots(
@@ -111,9 +111,9 @@ async def test_optimization_deficit_non_contiguous_cheapest_slots(
     for h in range(4, 15):
         slots.append(_make_slot(h, 0, 25.0))
 
-    mock_telemetry.return_value = {"soc": 60, "pv_power": 0.0, "load_power": 800.0}
+    mock_telemetry.return_value = {"soc": 40, "pv_power": 0.0, "load_power": 800.0}
     mock_rates.return_value = slots
-    mock_solar.return_value = []
+    mock_solar.return_value = ([], {})
     mock_export.return_value = 10.0  # Export threshold = 8.5p, so Agile rates (11p) don't trigger arbitrage
     mock_veto.return_value = (True, 10, "ok")
     mock_set_slots.return_value = True
@@ -126,5 +126,46 @@ async def test_optimization_deficit_non_contiguous_cheapest_slots(
     assert len(called_slots) == 2
     assert called_slots[0][0].astimezone(timezone.utc).hour == 1
     assert called_slots[1][0].astimezone(timezone.utc).hour == 3
+
+
+@pytest.mark.asyncio
+@patch('optimiser.get_inverter_telemetry')
+@patch('optimiser.load_state')
+async def test_light_monitor_soc_drift_triggers_replan(mock_load_state, mock_telemetry):
+    now_utc = datetime.now(timezone.utc)
+    slot_start = now_utc - timedelta(minutes=10)
+    slot_end = now_utc + timedelta(minutes=20)
+
+    # Realtime SoC is 30%, planned SoC was 80% (drift = 50% > threshold 15%)
+    mock_telemetry.return_value = {"soc": 30, "load_power": 500.0}
+    mock_load_state.return_value = {
+        "planned_soc_schedule": [
+            {"start": slot_start.isoformat(), "end": slot_end.isoformat(), "soc": 80.0}
+        ]
+    }
+
+    replan_needed = await optimiser.run_light_monitor()
+    assert replan_needed is True
+
+
+@pytest.mark.asyncio
+@patch('optimiser.get_inverter_telemetry')
+@patch('optimiser.load_state')
+async def test_light_monitor_soc_drift_within_threshold_no_replan(mock_load_state, mock_telemetry):
+    now_utc = datetime.now(timezone.utc)
+    slot_start = now_utc - timedelta(minutes=10)
+    slot_end = now_utc + timedelta(minutes=20)
+
+    # Realtime SoC is 75%, planned SoC was 80% (drift = 5% <= threshold 15%)
+    mock_telemetry.return_value = {"soc": 75, "load_power": 500.0}
+    mock_load_state.return_value = {
+        "planned_soc_schedule": [
+            {"start": slot_start.isoformat(), "end": slot_end.isoformat(), "soc": 80.0}
+        ]
+    }
+
+    replan_needed = await optimiser.run_light_monitor()
+    assert replan_needed is False
+
 
 

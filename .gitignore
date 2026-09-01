@@ -2,11 +2,16 @@
 # Keep only the template in git.
 ha-addon/config.py
 config.py
+ha-addon/options.json
 
 # Local backup of the pre-restructure files and secrets — never publish
 _legacy/
 
-# Python
+# Local Developer Setup & Implementation Docs — keep local, never publish
+LOCAL_SETUP.md
+DEVELOPMENT.md
+
+# Python & Environment
 __pycache__/
 *.pyc
 *.pyo
@@ -14,15 +19,27 @@ __pycache__/
 .python-version
 .venv/
 venv/
+ENV/
+env/
 
-# Editors / OS
+# Editors & Operating System
 .vscode/
 .idea/
 .DS_Store
 *.swp
+*~
 
-# Test / build artefacts
+# Test, Coverage & Log Artefacts
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
 htmlcov/
 .coverage
 *.log
+test-results/
+junit-*.xml
+
+# Temporary & State Files
+*.tmp
+*.bak
+state.json

@@ -35,19 +35,19 @@ Click the button below to add this repository directly to your Home Assistant Ad
 
 ## Version Control Checklist
 
-When incrementing the version of this add-on for a release, the version number **must** be updated in the following three files at the same time:
+When incrementing the version of this add-on for a release, the version number **must** be updated in `ha-addon/version.py` and `ha-addon/config.yaml` at the same time:
 
-1. **`ha-addon/config.yaml`**: The `version:` field must match the target release (used by Home Assistant Add-on Store to detect updates).
-   ```yaml
-   version: "1.0.19"
-   ```
-2. **`ha-addon/optimiser.py`**: The `__version__` variable must match the target release (validated at runtime on startup).
+1. **`ha-addon/version.py`**: Single source of truth for python code (`__version__ = "1.0.20"`).
    ```python
-   __version__ = "1.0.19"
+   __version__ = "1.0.20"
    ```
-3. **`ha-addon/CHANGELOG.md`**: Add the release header and update compare link references at the bottom of the file.
+2. **`ha-addon/config.yaml`**: The `version:` field must match the target release (used by Home Assistant Add-on Store to detect updates).
+   ```yaml
+   version: "1.0.20"
+   ```
+3. **`ha-addon/CHANGELOG.md`**: Add the release header and list all notable changes.
    ```markdown
-   ## [1.0.19] - 2026-08-17
+   ## [1.0.20] - 2026-09-01
    ```
 
 *Note: Home Assistant validates `config.yaml` and `optimiser.py` versions on startup. If they do not match, the add-on will log a warning on startup.*
@@ -100,17 +100,18 @@ Runs on startup and on the first tick after `daily_plan_hour` each new day. This
 
 1. **Fetch Octopus Agile rates** for all upcoming half-hour slots (the public product endpoint — no auth needed).
 2. **Fetch the current Octopus Outgoing Variable export rate** (cached 6 hours).
-3. **Fetch solar forecast** from Forecast.Solar for your latitude/longitude/panel geometry.
+3. **Fetch solar forecast** from Forecast.Solar (primary) and Open-Meteo (shadow parallel provider).
 4. **Read current battery SoC** from GivTCP (with direct Modbus TCP as fallback).
-5. **Simulate 24 hours** of battery/solar/home-load evolution without any grid charge, using `BASE_LOAD_W` as the continuous baseline.
+5. **Simulate 24 hours** of battery/solar/home-load evolution using dynamic load profiling (rolling half-hour telemetry history & hourly baseline profiles: overnight 400 W, daytime 700 W, evening peak 1200 W).
 6. **Decide the action:**
-   - **Deficit charge**: if the simulation predicts >0.2 kWh of grid import, schedule the cheapest contiguous Agile window that covers it (plus 10% margin).
-   - **Arbitrage charge**: if any upcoming slot is priced below `(export_rate − ARBITRAGE_MARGIN_P)`, fill available battery capacity from that window — even if solar could have covered demand. Rationale: importing at 5p and letting more solar export at 12p yields ~7p/kWh profit after round-trip losses.
+   - **Deficit charge**: if the simulation predicts grid import is required, schedule the cheapest Agile slot combination that covers it.
+   - **Power Down session pre-charge**: if an Octoplus Power Down session is active (e.g. 18:00-19:00), enforce 0.0 kWh grid import and pre-charge battery at cheaper prior rates.
+   - **Arbitrage charge**: if any upcoming slot is priced below `(export_rate × 0.90 - ARBITRAGE_MARGIN_P)`, fill available battery capacity from that window.
    - **Negative-rate override**: if any slot has a negative price (grid pays you), fill the battery aggressively.
-   - **No charge**: if none of the above are worthwhile, clear all charge slots.
+   - **No charge**: if none of the above are worthwhile, clear all charge slots (set Eco mode).
 7. **LLM veto**: send the plan to ChatGPT in a structured JSON prompt. It returns `approve` (bool), `score` (1–10), and `reason`. If it disapproves a charge plan, slots are cleared as a fallback. The LLM fails-open — a timeout or bad response defaults to approving the deterministic plan.
-8. **Write to inverter**: via GivTCP REST (`setChargeEnable`, `setChargeTarget`, `setChargeSlot1`, `setChargeSlot2`), splitting the window across two inverter slots if it crosses midnight.
-9. **Persist snapshot**: the full plan (window, kWh, rates, LLM verdict) is written to `/share/nas_logs/givenergy_state.json` for the audit to read later.
+8. **Write to inverter**: via GivTCP REST v2/v3 (`/setChargeSlot`, `/setChargeTarget`, `/setBatteryMode`), programming up to 10 slots and setting Timed Demand mode.
+9. **Persist snapshot**: the full plan (window, kWh, rates, LLM verdict) is written to state for the audit to read later.
 
 Total external calls per planning run: ~2 Octopus, 1 forecast.solar, 1 OpenAI. Under 5 seconds end-to-end.
 

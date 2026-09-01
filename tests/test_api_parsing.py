@@ -92,16 +92,17 @@ class TestFetchExportRate:
             "https://api.octopus.energy/v1/products/OUTGOING-VAR-24-10-26/electricity-tariffs/E-1R-OUTGOING-VAR-24-10-26-E/standard-unit-rates/",
             json={"results": [{"valid_from": "2026-03-01T00:00:00Z", "valid_to": None, "value_inc_vat": 12.00}]},
         )
+        # First call populates cache
+        assert optimiser.fetch_export_rate() == 12.00
         # Second response with new rate
-        responses.add(
+        responses.replace(
             responses.GET,
             "https://api.octopus.energy/v1/products/OUTGOING-VAR-24-10-26/electricity-tariffs/E-1R-OUTGOING-VAR-24-10-26-E/standard-unit-rates/",
             json={"results": [{"valid_from": "2026-03-01T00:00:00Z", "valid_to": None, "value_inc_vat": 10.50}]},
         )
-        # First call populates cache
-        assert optimiser.fetch_export_rate() == 12.00
         # Manually expire cache: set fetched_at to 7h ago
-        optimiser._export_rate_cache["fetched_at"] = datetime.now(timezone.utc) - timedelta(hours=7)
+        import tariffs
+        tariffs._export_rate_cache["fetched_at"] = datetime.now(timezone.utc) - timedelta(hours=7)
         # Next call should re-fetch and return the updated rate
         assert optimiser.fetch_export_rate() == 10.50
 

@@ -34,8 +34,26 @@ if "config" not in sys.modules:
     config.BATTERY_CAPACITY_KWH = 9.5
     config.MAX_BATTERY_CHARGE_RATE = 3000
     config.IBOOST_MAX_DIVERT_RATE = 3000
-    config.BASE_LOAD_W = 1000
+    config.BASE_LOAD_W = 400
+    config.OVERNIGHT_LOAD_W = 400
+    config.DAYTIME_LOAD_W = 700
+    config.EVENING_PEAK_LOAD_W = 1200
+    config.MORNING_SOLAR_DAMPING = 0.65
+    config.SOC_DRIFT_THRESHOLD_PCT = 15.0
+    config.POWER_DOWN_WINDOWS = [("18:00", "19:00")]
     config.LOG_FILE_PATH = None  # No file logging in tests
     config.LOG_LEVEL = "WARNING"
     config.OPENAI_API_KEY = ""
     sys.modules["config"] = config
+
+
+import pytest
+
+@pytest.fixture(autouse=True)
+def reset_export_rate_cache():
+    import tariffs
+    tariffs._export_rate_cache["rate"] = None
+    tariffs._export_rate_cache["fetched_at"] = None
+
+
+

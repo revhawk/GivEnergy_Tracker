@@ -8,40 +8,51 @@ A Home Assistant add-on that automatically schedules your GivEnergy battery to c
 
 ## ✨ Features
 
-- 🔋 **Reads live battery SoC** via GivTCP REST API (falls back to direct Modbus TCP)
-- ☀️ **Solar forecast integration** via [Forecast.Solar](https://forecast.solar) free API
+- 🔋 **Reads live battery SoC** via GivTCP REST API v2/v3 (falls back to direct Modbus TCP)
+- ☀️ **Dual parallel solar forecasting** — Forecast.Solar API primary + [Open-Meteo Solar API](https://open-meteo.com) shadow provider with real-time accuracy logging
 - ⚡ **Octopus Agile rate fetching** — pulls all upcoming 30-minute pricing slots
-- 💱 **Live Octopus export rate** — fetches the current Outgoing Variable rate so arbitrage decisions self-adjust when Octopus changes their tariff
-- 📊 **24-hour simulation** — models battery/solar/load to estimate true import need
-- 🎯 **Arbitrage-aware & Octoplus optimiser** — charges from grid whenever import < export rate (after ~90% round-trip efficiency), or during free Octoplus Power Up sessions (ADR 0004 compliant), even when solar could cover demand
+- 💱 **Live Octopus export rate** — fetches Outgoing Variable rate so arbitrage self-adjusts
+- 📊 **24-hour simulation & dynamic load profiling** — models battery/solar/load with half-hour telemetry history & hourly baseline profiles
+- 🛡️ **Octopus Octoplus Power Down protection** — enforces 0.0 kWh grid import during Power Down sessions and pre-charges battery at cheaper earlier rates
+- 🎯 **Arbitrage-aware & Octoplus optimiser** — charges from grid whenever import < export rate (after ~90% round-trip efficiency), or during free Octoplus sessions
 - 🧠 **Smart cheapest slot search** — evaluates both contiguous and non-contiguous cheapest slot combinations across the day
-- 🤖 **ChatGPT plan validator** — scores each plan 1-10 and can veto poor charge decisions; produces an English-language end-of-day audit
-- 📅 **Once-per-day planning** — daily planner + light monitor + audit split cuts API calls from ~192/day to ~2/day
-- 📋 **NAS log rotation** — rotates logs automatically (5 MB max, 3 backups)
-- 🔁 **Configurable schedule** — set the daily plan and audit hours from HA UI
+- 🤖 **Smart ChatGPT plan validator** — evaluates pre-charge economics vs peak import rates avoided; produces plain-English daily audit reports
+- 🔄 **Dynamic SoC Drift Re-Planning** — periodic 30-minute light monitor tick checks live SoC against planned schedule, triggering immediate re-planning if drift > `15.0%`
+- 🧩 **Flattened Modular Architecture** — clean separation into `givtcp.py`, `tariffs.py`, `solar.py`, `solar_openmeteo.py`, `profiler.py`, and `llm.py`
+- 📋 **Technical Specification & Contract Testing** — formal [`SPECIFICATION.md`](file:///home/reg/Coding/GivEnergy_Tracker/ha-addon/SPECIFICATION.md) and API contract test suite (`tests/test_contracts.py`)
+- 🏷️ **Single-Source Versioning** — `version.py` (`1.0.20`) synced with `config.yaml` to ensure zero version drift
 - 🏠 **Native Home Assistant add-on** — installs directly from a local repository
 
 ---
 
 ## 🏗️ Architecture
 
+For complete API contracts, component specifications, and Mermaid sequence diagrams, see [`ha-addon/SPECIFICATION.md`](file:///home/reg/Coding/GivEnergy_Tracker/ha-addon/SPECIFICATION.md).
+
 ```
 GivEnergy_Tracker/
 ├── ha-addon/                      ← The Home Assistant add-on package
+│   ├── version.py                 ← Single source of truth for version (__version__ = "1.0.20")
 │   ├── config.yaml                ← Add-on manifest (name, version, options)
 │   ├── Dockerfile                 ← Builds the add-on container (python:3.11-slim)
 │   ├── run.sh                     ← Entrypoint: reads HA options, launches optimiser
-│   ├── config.py.example          ← Template — copy to config.py and fill in
-│   ├── config.py                  ← Gitignored; your real credentials & settings
-│   ├── optimiser.py               ← Core optimization engine
+│   ├── config.py                  ← Real credentials & settings
+│   ├── optimiser.py               ← Main optimization orchestrator & simulation loop
+│   ├── givtcp.py                  ← GivTCP REST API v2/v3 & Modbus TCP integration
+│   ├── tariffs.py                 ← Octopus Agile & Outgoing export rates
+│   ├── solar.py                   ← Forecast.Solar API client & parallel comparison manager
+│   ├── solar_openmeteo.py         ← Open-Meteo Solar API client (shadow provider)
+│   ├── profiler.py                ← Dynamic load profiling & Power Down detection
+│   ├── llm.py                     ← Smart ChatGPT veto validator & daily summary report
 │   ├── tracker.py                 ← Lightweight Octopus API connection test
 │   ├── requirements.txt           ← Python dependencies
+│   ├── SPECIFICATION.md           ← Complete technical specification & architecture
 │   └── DOCS.md                    ← Add-on user documentation
-├── tests/                         ← Test suite (see Development)
+├── tests/                         ← Pytest test suite (includes contract tests)
 ├── README.md
 ├── CHANGELOG.md
 ├── LICENSE
-└── .gitignore                     ← Excludes ha-addon/config.py and _legacy/
+└── .gitignore
 ```
 
 ### Data Flow

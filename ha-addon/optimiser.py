@@ -9,10 +9,8 @@ import requests
 from logging.handlers import RotatingFileHandler
 from datetime import datetime, timezone, timedelta
 
-# Single source of truth for the add-on version.
-# MUST match `version:` in config.yaml (validated on startup).
-__version__ = "1.0.19"
-
+# Single source of truth for the add-on version (imported from version.py).
+from version import __version__
 
 # Import custom configurations
 try:
@@ -21,8 +19,37 @@ except ImportError:
     print("Error: config.py not found. Please ensure config.py is in the same directory.")
     sys.exit(1)
 
-# OpenAI client (initialised after connection test)
-_openai_client = None
+# Import composable modules directly
+from givtcp import (
+    find_key_recursive,
+    read_inverter_charge_slots,
+    run_startup_write_test,
+    get_inverter_telemetry,
+    get_inverter_soc,
+    set_inverter_charge_slots,
+    HAS_MODBUS,
+)
+from tariffs import (
+    parse_utc_iso,
+    fetch_export_rate,
+    fetch_agile_rates,
+    _export_rate_cache,
+)
+from solar import (
+    fetch_solar_forecast,
+    get_solar_kwh_for_slot,
+    fetch_parallel_solar_forecasts,
+)
+from profiler import (
+    get_load_kwh_for_slot,
+    is_power_down_slot,
+)
+from llm import (
+    test_openai_connection,
+    get_openai_model,
+    chatgpt_veto_plan,
+    generate_daily_summary,
+)
 
 # ── Octoplus Session Entity Naming (ADR 0004) ───────────────────────────
 # HomeAssistant-OctopusEnergy renamed Saving Sessions to Power Down and
@@ -143,118 +170,6 @@ def setup_logging():
 
 setup_logging()
 
-# ── OpenAI Startup Connection Test ──────────────────────────────────────────
-def test_openai_connection():
-    """Test OpenAI API key at startup and initialise the client if valid."""
-    global _openai_client
-    openai_key = os.environ.get('OPENAI_API_KEY', '').strip() or getattr(config, 'OPENAI_API_KEY', '').strip()
-
-    if not openai_key:
-        logging.info("OpenAI API key not configured — ChatGPT audit DISABLED.")
-        return False
-
-    try:
-        import openai
-        client = openai.OpenAI(api_key=openai_key)
-        # Minimal test call — lists available models, uses no tokens
-        client.models.list()
-        _openai_client = client
-        model_name = get_openai_model()
-        logging.info(f"✓ OpenAI API connected successfully (model: {model_name}) — ChatGPT audit ENABLED.")
-        return True
-    except Exception as e:
-        logging.warning(f"✗ OpenAI API connection test FAILED: {e}")
-        logging.warning("  Check your API key in the Configuration tab. ChatGPT audit DISABLED.")
-        return False
-
-
-def get_openai_model():
-    """Return configured OpenAI model name (from environment, config.py, or fallback default)."""
-    model = os.environ.get('OPENAI_MODEL', '').strip() or getattr(config, 'OPENAI_MODEL', 'gpt-4o-mini').strip()
-    return model if model else 'gpt-4o-mini'
-
-# ── ChatGPT Veto (structured decision validator) ─────────────────────────────
-# Returns (approve: bool, score: int|None, reason: str). Fails open — if the
-# LLM is unavailable or misbehaves, approve=True so the deterministic plan wins.
-def chatgpt_veto_plan(current_soc, battery_capacity_kwh, solar_total_kwh,
-                     export_rate, upcoming_slots, charge_start, charge_end,
-                     required_kwh, avg_price):
-    if _openai_client is None:
-        return True, None, "LLM disabled"
-
-    rates_lines = "\n".join(
-        f"  {s['start'].astimezone().strftime('%H:%M')}  {s['price']:.2f}p"
-        for s in upcoming_slots[:48]
-    )
-
-    if isinstance(charge_start, list):
-        slots_desc = [f"{s.strftime('%H:%M')}-{e.strftime('%H:%M')}" for s, e in charge_start]
-        action = f"CHARGE in slots: {', '.join(slots_desc)} — {required_kwh:.1f} kWh at avg {avg_price:.2f}p/kWh"
-    elif charge_start and charge_end:
-        action = (
-            f"CHARGE from {charge_start.strftime('%H:%M')} to "
-            f"{charge_end.strftime('%H:%M')} — {required_kwh:.1f} kWh at avg {avg_price:.2f}p/kWh"
-        )
-    else:
-        action = "NO CHARGE — rely on solar and existing battery"
-
-    efficiency_break_even = export_rate * 0.90
-    system_msg = (
-        f"You validate battery charging plans for a UK home.\n"
-        f"\n"
-        f"HARD FACTS — do not contradict these in your reasoning:\n"
-        f"1. Import: Octopus Agile, prices vary every 30 min. Prices can go NEGATIVE (below 0.0p), which means the grid pays us to import energy.\n"
-        f"2. Export: Octopus Outgoing at {export_rate:.2f}p/kWh. This rate is "
-        f"FLAT and does NOT change during the day. Never suggest 'better export "
-        f"rates later' — there are none.\n"
-        f"3. Round-trip battery efficiency ≈ 90%. Importing above "
-        f"{efficiency_break_even:.1f}p yields NEGATIVE arbitrage profit.\n"
-        f"4. Only two profitable reasons to charge: (a) cover a genuine home-load "
-        f"deficit later today, or (b) import price is below "
-        f"{efficiency_break_even:.1f}p for real arbitrage.\n"
-        f"5. IMPORTANT: Negative import rates (e.g. -4.74p) are below 0.0p and are extremely profitable because the grid is paying us to take power. Do not confuse negative numbers as being 'above' the break-even threshold. Always approve charging at negative rates.\n"
-        f"\n"
-        f"Reply ONLY with valid JSON:\n"
-        f"  'approve' (bool) - would you apply this action?\n"
-        f"  'score'   (int 1-10) - 1=terrible, 10=optimal for this data\n"
-        f"  'reason'  (string ≤ 120 chars) - MUST reference concrete numbers "
-        f"from the data. No vague appeals to 'later', 'better times', etc."
-    )
-    user_msg = (
-        f"Battery: {current_soc}% of {battery_capacity_kwh} kWh\n"
-        f"Solar forecast today: {solar_total_kwh:.1f} kWh\n"
-        f"Export rate (FLAT all day): {export_rate:.2f}p/kWh\n"
-        f"Break-even (post 90% efficiency): {efficiency_break_even:.2f}p/kWh\n"
-        f"Upcoming Agile rates:\n{rates_lines}\n\n"
-        f"Proposed action: {action}\n\n"
-        f"Rate 1-10 and approve=true iff you would apply this action. "
-        f"If false, cite the specific slot/rate that motivates rejection. Note if prices are negative."
-    )
-
-    try:
-        response = _openai_client.chat.completions.create(
-            model=get_openai_model(),
-            messages=[
-                {"role": "system", "content": system_msg},
-                {"role": "user", "content": user_msg},
-            ],
-            max_tokens=150,
-            temperature=0.1,
-            response_format={"type": "json_object"},
-        )
-        content = response.choices[0].message.content.strip()
-        parsed = json.loads(content)
-        approve = bool(parsed.get("approve", True))
-        score = parsed.get("score")
-        if isinstance(score, (int, float)):
-            score = max(1, min(10, int(score)))
-        else:
-            score = None
-        reason = str(parsed.get("reason", ""))[:200]
-        return approve, score, reason
-    except Exception as e:
-        logging.warning(f"ChatGPT veto call failed ({e}); defaulting to approve=True")
-        return True, None, f"LLM error: {e}"
 
 # ── Plan snapshotting: run_optimization populates this via _record_plan ─────
 # It's read by run_daily_plan() and persisted to state for the audit.
@@ -464,515 +379,6 @@ def find_key_recursive(data, target_key):
                 return result
     return None
 
-# Fetch current Octopus export rate. Cached for 6h so we don't hammer the API.
-_export_rate_cache = {"rate": None, "fetched_at": None}
-
-def fetch_export_rate():
-    global _export_rate_cache
-    now = datetime.now(timezone.utc)
-    if _export_rate_cache["fetched_at"]:
-        age = (now - _export_rate_cache["fetched_at"]).total_seconds()
-        if _export_rate_cache["rate"] is not None and age < 6 * 3600:
-            return _export_rate_cache["rate"]
-
-    product = getattr(config, 'EXPORT_PRODUCT_CODE', 'OUTGOING-VAR-24-10-26')
-    tariff = getattr(config, 'EXPORT_TARIFF_CODE', 'E-1R-OUTGOING-VAR-24-10-26-E')
-    fallback = getattr(config, 'EXPORT_RATE_P_FALLBACK', 12.0)
-    url = f"https://api.octopus.energy/v1/products/{product}/electricity-tariffs/{tariff}/standard-unit-rates/"
-    try:
-        response = requests.get(url, timeout=15)
-        response.raise_for_status()
-        results = response.json().get('results', [])
-        now_iso = now.isoformat().replace('+00:00', 'Z')
-        active = next((r for r in results
-                       if r['valid_from'] <= now_iso <= (r.get('valid_to') or '9999')), None)
-        rate = active['value_inc_vat'] if active else (results[0]['value_inc_vat'] if results else fallback)
-        _export_rate_cache = {"rate": rate, "fetched_at": now}
-        logging.info(f"Export rate: {rate:.2f}p/kWh (from Octopus)")
-        return rate
-    except Exception as e:
-        logging.warning(f"Failed to fetch export rate ({e}); using fallback {fallback}p/kWh")
-        return fallback
-
-# Fetch Octopus Agile Rates
-def fetch_agile_rates():
-    url = f"https://api.octopus.energy/v1/products/{config.AGILE_PRODUCT_CODE}/electricity-tariffs/{config.AGILE_TARIFF_CODE}/standard-unit-rates/"
-    logging.info(f"Fetching Octopus Agile pricing from: {url}")
-    try:
-        response = requests.get(url, auth=(config.OCTOPUS_API_KEY, ""), timeout=15)
-        response.raise_for_status()
-        data = response.json()
-        
-        slots = []
-        for r in data.get('results', []):
-            start = parse_utc_iso(r['valid_from'])
-            end = parse_utc_iso(r['valid_to'])
-            price = r['value_inc_vat']
-            slots.append({
-                'start': start,
-                'end': end,
-                'price': price
-            })
-        
-        # Sort chronologically (earliest first)
-        slots.sort(key=lambda s: s['start'])
-        return slots
-    except Exception as e:
-        logging.error(f"Error fetching Octopus Agile rates: {e}")
-        return []
-
-# Fetch Solar Forecast from Forecast.Solar (free tier API)
-def fetch_solar_forecast():
-    url = f"https://api.forecast.solar/estimate/{config.LATITUDE}/{config.LONGITUDE}/{config.SOLAR_DECLINATION}/{config.SOLAR_AZIMUTH}/{config.SOLAR_KWP}"
-    logging.info(f"Fetching Solar Forecast from Forecast.Solar: {url}")
-    try:
-        response = requests.get(url, timeout=15)
-        if response.status_code == 429:
-            logging.warning("Forecast.Solar API rate-limited (too many requests). Using empty solar forecast.")
-            return []
-        response.raise_for_status()
-        data = response.json()
-        
-        wh_period = data.get('result', {}).get('watt_hours_period', {})
-        forecasts = []
-        for time_str, wh in wh_period.items():
-            dt_naive = datetime.fromisoformat(time_str)
-            dt_local = dt_naive.astimezone()
-            forecasts.append({
-                'time': dt_local,
-                'kwh': wh / 1000.0
-            })
-        forecasts.sort(key=lambda f: f['time'])
-        return forecasts
-    except Exception as e:
-        logging.error(f"Error fetching solar forecast: {e}. Assuming 0 solar generation.")
-        return []
-
-# Map hourly solar forecast to half-hourly Octopus slots
-def get_solar_kwh_for_slot(slot_start, slot_end, solar_forecasts):
-    local_end = slot_end.astimezone()
-    for f in solar_forecasts:
-        f_time = f['time']
-        if (f_time.year == local_end.year and 
-            f_time.month == local_end.month and 
-            f_time.day == local_end.day and 
-            f_time.hour == local_end.hour):
-            return f['kwh'] / 2.0
-    return 0.0
-
-# Read current charge-slot configuration from GivTCP (for the startup self-test).
-# Returns dict with slot1_start/end and slot2_start/end (values may be None if
-# GivTCP didn't return the expected field names — degrades gracefully).
-def read_inverter_charge_slots():
-    givtcp_url = getattr(config, 'GIVTCP_URL', None)
-    if not givtcp_url:
-        return None
-    url = f"{givtcp_url.rstrip('/')}/getCache"
-    try:
-        response = requests.get(url, timeout=10)
-        response.raise_for_status()
-        data = response.json()
-        
-        # GivTCP field naming varies between versions — try common variants
-        # In v3, we also have nested objects like raw.invertor.charge_slot_1 = {"start": "00:00", "end": "00:00"}
-        # Check raw.invertor.charge_slot_1 first
-        def _get_slot_v3(slot_num, field):
-            val = find_key_recursive(data, f"charge_slot_{slot_num}")
-            if isinstance(val, dict):
-                return val.get(field)
-            return None
-
-        s1 = _get_slot_v3(1, 'start')
-        e1 = _get_slot_v3(1, 'end')
-        s2 = _get_slot_v3(2, 'start')
-        e2 = _get_slot_v3(2, 'end')
-
-        if s1 is not None or e1 is not None:
-            return {
-                'slot1_start': s1,
-                'slot1_end': e1,
-                'slot2_start': s2,
-                'slot2_end': e2,
-            }
-
-        candidates_start1 = ["Charge_start_time_slot_1", "Charge_Start_Time_1",
-                             "Timeslots.Charge_start_time_slot_1", "charge_start_time_slot_1"]
-        candidates_end1 = ["Charge_end_time_slot_1", "Charge_End_Time_1",
-                           "charge_end_time_slot_1"]
-        candidates_start2 = ["Charge_start_time_slot_2", "Charge_Start_Time_2",
-                             "charge_start_time_slot_2"]
-        candidates_end2 = ["Charge_end_time_slot_2", "Charge_End_Time_2",
-                           "charge_end_time_slot_2"]
-        def _first_found(keys):
-            for k in keys:
-                v = find_key_recursive(data, k)
-                if v is not None:
-                    return v
-            return None
-        return {
-            'slot1_start': _first_found(candidates_start1),
-            'slot1_end': _first_found(candidates_end1),
-            'slot2_start': _first_found(candidates_start2),
-            'slot2_end': _first_found(candidates_end2),
-        }
-    except Exception as e:
-        logging.warning(f"Failed to read charge slots from GivTCP: {e}")
-        return None
-
-# Startup self-test — verifies the GivTCP write path by adding, reading back,
-# and clearing a test charge slot. Runs once on daemon startup when enabled.
-async def run_startup_write_test():
-    logging.info("=" * 40)
-    logging.info(" STARTUP WRITE-PATH SELF-TEST")
-    logging.info("=" * 40)
-
-    now_local = datetime.now().astimezone()
-    # Test slot: 2 hours in the future (won't collide with an active plan since
-    # planning runs are once daily at DAILY_PLAN_HOUR). 30 min duration.
-    test_start = (now_local + timedelta(hours=2)).replace(second=0, microsecond=0)
-    # Snap DOWN to nearest 30-min boundary
-    test_start = test_start.replace(minute=(test_start.minute // 30) * 30)
-    test_end = test_start + timedelta(minutes=30)
-    expected_start_hhmm = test_start.strftime("%H%M")
-    expected_end_hhmm = test_end.strftime("%H%M")
-
-    logging.info(f"Test slot: {test_start.strftime('%H:%M')} → {test_end.strftime('%H:%M')} (100%)")
-
-    try:
-        # Step 1: write the test slot
-        logging.info("[1/4] Writing test slot via GivTCP...")
-        ok = await set_inverter_charge_slots(test_start, test_end, charge_target=100)
-        if not ok:
-            logging.error("[1/4] FAIL — set_inverter_charge_slots returned False")
-            return False
-        logging.info("[1/4] PASS — write returned success")
-
-        await asyncio.sleep(8)  # let GivTCP cache propagate
-
-        # Step 2: read back and verify
-        logging.info("[2/4] Reading back charge slots from GivTCP...")
-        slots = read_inverter_charge_slots()
-        if slots is None:
-            logging.warning("[2/4] SKIP — could not read back (GivTCP fields not found or unreachable)")
-        else:
-            logging.info(f"[2/4] Read: slot1={slots.get('slot1_start')} → {slots.get('slot1_end')}, "
-                          f"slot2={slots.get('slot2_start')} → {slots.get('slot2_end')}")
-             # GivTCP returns times as "HH:MM:SS" or "HH:MM" — normalize to "HH:MM"
-            def _norm(v):
-                if v is None: return "00:00"
-                parts = str(v).split(':')
-                if len(parts) >= 2:
-                    return f"{parts[0].zfill(2)}:{parts[1].zfill(2)}"
-                # If no colon, try to parse HHMM
-                s = str(v).replace(":", "")
-                if len(s) >= 4:
-                    return f"{s[:2]}:{s[2:4]}"
-                return "00:00"
-
-            expected_start_hh_mm = test_start.strftime("%H:%M")
-            expected_end_hh_mm = test_end.strftime("%H:%M")
-
-            if _norm(slots.get('slot1_start')) == expected_start_hh_mm and \
-               _norm(slots.get('slot1_end')) == expected_end_hh_mm:
-                logging.info(f"[2/4] PASS — slot 1 matches expected {expected_start_hh_mm} → {expected_end_hh_mm}")
-            else:
-                logging.warning(
-                    f"[2/4] MISMATCH — expected slot1={expected_start_hh_mm} → {expected_end_hh_mm}, "
-                    f"got {_norm(slots.get('slot1_start'))} → {_norm(slots.get('slot1_end'))}. "
-                    f"(May be a field-name mismatch — check via GivEnergy app manually.)"
-                )
-
-        # Step 3: clear
-        logging.info("[3/4] Clearing test slot via GivTCP...")
-        ok = await set_inverter_charge_slots(None, None)
-        if not ok:
-            logging.error("[3/4] FAIL — clear returned False")
-            return False
-        logging.info("[3/4] PASS — clear returned success")
-
-        await asyncio.sleep(8)  # let GivTCP cache propagate clearing
-
-        # Step 4: read back and verify cleared
-        logging.info("[4/4] Reading back to verify slot cleared...")
-        slots = read_inverter_charge_slots()
-        if slots is None:
-            logging.warning("[4/4] SKIP — could not read back after clear")
-        else:
-            def _norm(v):
-                if v is None: return "00:00"
-                parts = str(v).split(':')
-                if len(parts) >= 2:
-                    return f"{parts[0].zfill(2)}:{parts[1].zfill(2)}"
-                return "00:00"
-            s1 = _norm(slots.get('slot1_start'))
-            e1 = _norm(slots.get('slot1_end'))
-            if s1 == "00:00" and e1 == "00:00":
-                logging.info("[4/4] PASS — slot 1 is cleared (00:00 → 00:00)")
-            else:
-                logging.warning(f"[4/4] slot 1 not cleared as expected: {s1} → {e1}")
-
-        logging.info("=" * 40)
-        logging.info(" WRITE-PATH SELF-TEST COMPLETE")
-        logging.info("=" * 40)
-        return True
-    except Exception as e:
-        logging.error(f"Startup write-test crashed: {e}", exc_info=True)
-        # Best-effort clear so we don't leave a stray slot behind
-        try:
-            await set_inverter_charge_slots(None, None)
-        except Exception:
-            pass
-        return False
-
-# Fetch live telemetry (SoC, PV Power, Load Power) from GivTCP
-async def get_inverter_telemetry():
-    givtcp_url = getattr(config, 'GIVTCP_URL', None)
-    if givtcp_url:
-        url = f"{givtcp_url.rstrip('/')}/getCache"
-        try:
-            response = requests.get(url, timeout=10)
-            response.raise_for_status()
-            data = response.json()
-            soc = find_key_recursive(data, "SOC")
-            pv_power = find_key_recursive(data, "PV_Power")
-            load_power = find_key_recursive(data, "Load_Power")
-            
-            telemetry = {}
-            if soc is not None:
-                telemetry['soc'] = int(soc)
-            if pv_power is not None:
-                telemetry['pv_power'] = float(pv_power)
-            if load_power is not None:
-                telemetry['load_power'] = float(load_power)
-                
-            if telemetry:
-                logging.info(
-                    f"GivTCP Live Telemetry: SoC={telemetry.get('soc', 'N/A')}% "
-                    f"| PV_Power={telemetry.get('pv_power', 'N/A')}W "
-                    f"| Load_Power={telemetry.get('load_power', 'N/A')}W"
-                )
-                return telemetry
-        except Exception as e:
-            logging.warning(f"Failed to fetch live GivTCP telemetry ({e}); falling back to static config.")
-    return None
-
-# Connect to Inverter and get State of Charge (SoC)
-async def get_inverter_soc():
-    # 1. Try GivTCP REST API if configured
-    givtcp_url = getattr(config, 'GIVTCP_URL', None)
-    if givtcp_url:
-        url = f"{givtcp_url.rstrip('/')}/getCache"
-        logging.info(f"Connecting to GivTCP REST API at {url} to fetch current SoC...")
-        try:
-            response = requests.get(url, timeout=10)
-            response.raise_for_status()
-            data = response.json()
-            soc = find_key_recursive(data, "SOC")
-            if soc is not None:
-                logging.info(f"GivTCP: Current battery State of Charge (SoC): {soc}%")
-                return int(soc)
-            else:
-                logging.warning("Could not find 'SOC' key in GivTCP cache response. Trying Modbus fallback...")
-        except Exception as e:
-            logging.warning(f"GivTCP API error: {e}. Trying Modbus fallback...")
-
-    # 2. Fall back to local Modbus TCP
-    if not HAS_MODBUS:
-        logging.error(
-            "SoC read FAILED — GivTCP unreachable AND Modbus package unavailable. "
-            "Cannot fetch battery state; aborting this run. Returning None."
-        )
-        return None
-
-
-    port = getattr(config, 'INVERTER_PORT', 8899)
-    logging.info(f"Connecting to GivEnergy Inverter at {config.INVERTER_IP}:{port} via Modbus TCP...")
-    client = Client(host=config.INVERTER_IP, port=port)
-    try:
-        await client.connect()
-        await client.refresh_plant(full_refresh=True)
-        soc = client.plant.inverter.battery_state_of_charge
-        logging.info(f"Modbus: Current battery State of Charge (SoC): {soc}%")
-        await client.close()
-        return soc
-    except Exception as e:
-        logging.error(f"Error communicating via Modbus: {e}. Falling back to 25% SoC.")
-        return 25
-
-# Write charge slots to Inverter
-async def set_inverter_charge_slots(slots_or_start, end_time=None, charge_target=100):
-    # Backward compatibility: if slots_or_start is a list of tuples/dicts, use it.
-    # Otherwise, treat slots_or_start and end_time as a single slot.
-    if isinstance(slots_or_start, list):
-        slots_list = slots_or_start
-    elif slots_or_start is not None and end_time is not None:
-        slots_list = [(slots_or_start, end_time)]
-    else:
-        slots_list = []
-
-    # 1. Try GivTCP REST API if configured
-    givtcp_url = getattr(config, 'GIVTCP_URL', None)
-    if givtcp_url:
-        base_url = givtcp_url.rstrip('/')
-        try:
-            if slots_list:
-                # Split any slots that span midnight
-                split_slots = []
-                for start_time, end_time in slots_list:
-                    if start_time.date() == end_time.date():
-                        split_slots.append((start_time, end_time))
-                    else:
-                        end_first = datetime.combine(start_time.date(), datetime.max.time(), tzinfo=start_time.tzinfo)
-                        start_second = datetime.combine(end_time.date(), datetime.min.time(), tzinfo=end_time.tzinfo)
-                        split_slots.append((start_time, end_first))
-                        split_slots.append((start_second, end_time))
-                
-                if len(split_slots) > 10:
-                    logging.warning(f"GivTCP: More than 10 slots generated ({len(split_slots)}). Limiting to top 10.")
-                    split_slots = split_slots[:10]
-
-                # Set slots
-                for i in range(1, 11):
-                    if i <= len(split_slots):
-                        s, e = split_slots[i - 1]
-                        s_str = s.strftime("%H:%M")
-                        e_str = e.strftime("%H:%M")
-                        logging.info(f"GivTCP: Setting slot {i}: {s_str} to {e_str}")
-                        r = requests.post(f"{base_url}/setChargeSlot", json={
-                            "start": s_str,
-                            "finish": e_str,
-                            "slot": str(i),
-                            "chargeToPercent": int(charge_target)
-                        }, timeout=10)
-                        r.raise_for_status()
-                    else:
-                        # Clear slot safely without chargeToPercent to prevent validation issues
-                        r = requests.post(f"{base_url}/setChargeSlot", json={
-                            "start": "00:00",
-                            "finish": "00:00",
-                            "slot": str(i)
-                        }, timeout=10)
-                        r.raise_for_status()
-            else:
-                logging.info("GivTCP: Disabling grid charging (clearing slots)...")
-                for i in range(1, 11):
-                    requests.post(f"{base_url}/setChargeSlot", json={
-                        "start": "00:00",
-                        "finish": "00:00",
-                        "slot": str(i)
-                    }, timeout=10)
-                
-                # Best-effort disable
-                for _path, _payload in [
-                    ("/enableChargeSchedule",   {"state": "disable"}),
-                    ("/setChargeEnable",        {"state": "disable"}),
-                ]:
-                    try:
-                        requests.post(f"{base_url}{_path}", json=_payload, timeout=10)
-                    except Exception:
-                        pass
-                logging.info("GivTCP: Configuration applied successfully.")
-                return True
-
-            # Enable charging AFTER slots are written
-            logging.info(f"GivTCP: Enabling grid charge and setting target to {charge_target}%...")
-            for _path, _payload in [
-                ("/setChargeTarget",        {"chargeToPercent": int(charge_target)}),
-                ("/enableChargeTarget",     {"state": "enable"}),
-                ("/enableChargeSchedule",   {"state": "enable"}),
-                ("/setChargeEnable",        {"state": "enable"}),
-            ]:
-                try:
-                    _r = requests.post(f"{base_url}{_path}", json=_payload, timeout=10)
-                    _r.raise_for_status()
-                except Exception as _e:
-                    logging.warning(f"GivTCP: {_path} unavailable ({_e}) — skipping.")
-
-            logging.info("GivTCP: Configuration applied successfully.")
-            return True
-        except Exception as e:
-            logging.error(f"GivTCP REST API write failed: {e}. Trying direct Modbus fallback...")
-
-    # 2. Fall back to local Modbus TCP
-    if not HAS_MODBUS:
-        logging.error(
-            "Inverter write FAILED — GivTCP unreachable AND Modbus package unavailable. "
-            "Charge slot was NOT applied to the inverter."
-        )
-        return False
-
-    port = getattr(config, 'INVERTER_PORT', 8899)
-    client = Client(host=config.INVERTER_IP, port=port)
-    try:
-        await client.connect()
-        try:
-            await client.refresh_plant(full_refresh=True)
-        except Exception as refresh_err:
-            logging.warning(f"Modbus: refresh_plant failed ({refresh_err}); continuing with write commands anyway.")
-
-        logging.info(f"Modbus: Setting charge target to {charge_target}%...")
-        await client.one_shot_command(commands.set_charge_target(charge_target))
-
-        def _slot_map():
-            try:
-                return client.plant.inverter.slot_map
-            except AttributeError:
-                return None
-
-        async def _write_slot(slot_num, ts):
-            sm = _slot_map()
-            if sm is not None:
-                try:
-                    await client.one_shot_command(commands.set_charge_slot(slot_num, ts, sm))
-                    return
-                except Exception:
-                    pass
-            await client.one_shot_command(commands.set_charge_slot(slot_num, ts))
-
-        if slots_list:
-            split_slots = []
-            for start_time, end_time in slots_list:
-                if start_time.date() == end_time.date():
-                    split_slots.append((start_time, end_time))
-                else:
-                    end_first = datetime.combine(start_time.date(), datetime.max.time(), tzinfo=start_time.tzinfo)
-                    start_second = datetime.combine(end_time.date(), datetime.min.time(), tzinfo=end_time.tzinfo)
-                    split_slots.append((start_time, end_first))
-                    split_slots.append((start_second, end_time))
-            
-            logging.info(f"Modbus: Programming charge slots (up to 2)...")
-            # Slot 1
-            if len(split_slots) >= 1:
-                s, e = split_slots[0]
-                ts1 = TimeSlot.from_components(s.hour, s.minute, e.hour, e.minute)
-                await _write_slot(1, ts1)
-            else:
-                await _write_slot(1, TimeSlot.from_components(0, 0, 0, 0))
-            
-            # Slot 2
-            if len(split_slots) >= 2:
-                s, e = split_slots[1]
-                ts2 = TimeSlot.from_components(s.hour, s.minute, e.hour, e.minute)
-                await _write_slot(2, ts2)
-            else:
-                await _write_slot(2, TimeSlot.from_components(0, 0, 0, 0))
-        else:
-            logging.info("Modbus: Clearing all charge slots...")
-            ts_clear = TimeSlot.from_components(0, 0, 0, 0)
-            await _write_slot(1, ts_clear)
-            await _write_slot(2, ts_clear)
-
-        logging.info("Modbus: Inverter configuration complete.")
-        await client.close()
-        return True
-    except Exception as e:
-        logging.error(f"Failed to configure inverter via Modbus: {e}")
-        try:
-            await client.close()
-        except Exception:
-            pass
-        return False
-
 # Optimization Engine
 async def run_optimization():
     logging.info(f"===== ENERGY OPTIMIZATION RUN =====")
@@ -990,8 +396,8 @@ async def run_optimization():
         logging.error("No upcoming Agile rate slots available. Aborting.")
         return
         
-    # 2. Fetch solar forecast
-    solar_forecasts = fetch_solar_forecast()
+    # 2. Fetch primary & shadow solar forecasts in parallel
+    solar_forecasts, solar_comparison = fetch_parallel_solar_forecasts()
     
     # 3. Get current battery SoC & telemetry
     telemetry = await get_inverter_telemetry()
@@ -1035,7 +441,9 @@ async def run_optimization():
             )
         else:
             solar = get_solar_kwh_for_slot(slot['start'], slot['end'], solar_forecasts)
-            load = (getattr(config, 'BASE_LOAD_W', 400) / 1000.0) * 0.5 # Default fallback to 400W
+            state_data = load_state()
+            load_history = state_data.get('load_profile_history')
+            load = get_load_kwh_for_slot(slot['start'], slot['end'], load_history)
         net = load - solar
         
         iboost_divert = 0.0
@@ -1082,6 +490,19 @@ async def run_optimization():
                 'kwh': import_needed,
                 'price': slot['price']
             })
+
+    # Save simulated SoC schedule for drift checks in monitor tick
+    planned_soc_schedule = [
+        {
+            'start': imp['slot']['start'].isoformat(),
+            'end': imp['slot']['end'].isoformat(),
+            'soc': round(imp['batt_soc'], 1)
+        }
+        for imp in imports
+    ]
+    cur_state = load_state()
+    cur_state['planned_soc_schedule'] = planned_soc_schedule
+    save_state(cur_state)
             
     # Print a beautiful simulation timeline
     logging.info("--- 24-Hour Base Simulation (No Grid Charge) ---")
@@ -1414,17 +835,65 @@ async def run_optimization():
                      export_rate=export_rate)
         await set_inverter_charge_slots(None, None)
 
-# ── Light monitor: cheap SoC check, no LLM, no inverter writes ──────────────
+# ── Light monitor: cheap SoC check + load profiling + SoC drift check ──────
 async def run_light_monitor():
     logging.info("--- Light monitor tick ---")
     try:
-        soc = await get_inverter_soc()
-        if soc is not None:
-            logging.info(f"Battery SoC: {soc}%  (no re-planning — next plan run scheduled per DAILY_PLAN_HOUR)")
+        telemetry = await get_inverter_telemetry()
+        realtime_soc = None
+        if telemetry and 'soc' in telemetry:
+            realtime_soc = telemetry['soc']
+            if 'load_power' in telemetry and telemetry['load_power'] is not None:
+                state = load_state()
+                now_local = datetime.now().astimezone()
+                slot_key = now_local.strftime("%H:%M")
+                slot_kwh = (telemetry['load_power'] / 1000.0) * 0.5
+                history_dict = state.setdefault('load_profile_history', {})
+                history_list = history_dict.setdefault(slot_key, [])
+                history_list.append(round(slot_kwh, 3))
+                if len(history_list) > 14:  # keep rolling 14 readings per half-hour slot
+                    history_dict[slot_key] = history_list[-14:]
+                save_state(state)
         else:
+            realtime_soc = await get_inverter_soc()
+
+        if realtime_soc is None:
             logging.warning("Could not read SoC from GivTCP.")
+            return False
+
+        state = load_state()
+        planned_schedule = state.get("planned_soc_schedule", [])
+        now_utc = datetime.now(timezone.utc)
+        drift_threshold = float(getattr(config, 'SOC_DRIFT_THRESHOLD_PCT', 15.0))
+
+        current_planned = None
+        for item in planned_schedule:
+            p_start = parse_utc_iso(item['start'])
+            p_end = parse_utc_iso(item['end'])
+            if p_start <= now_utc < p_end:
+                current_planned = item.get('soc')
+                break
+
+        if current_planned is not None:
+            drift = abs(realtime_soc - current_planned)
+            if drift > drift_threshold:
+                logging.warning(
+                    f"⚡ SoC DRIFT ALERT: real-time SoC ({realtime_soc}%) vs planned SoC ({current_planned:.0f}%) "
+                    f"differs by {drift:.1f}% (> threshold {drift_threshold:.1f}%). Triggering re-planning!"
+                )
+                return True
+            else:
+                logging.info(
+                    f"Battery SoC: {realtime_soc}% vs planned {current_planned:.0f}% "
+                    f"(drift: {drift:.1f}% <= threshold {drift_threshold:.1f}%) — no re-planning needed"
+                )
+        else:
+            logging.info(f"Battery SoC: {realtime_soc}%  (no active plan slot found for drift comparison)")
+
+        return False
     except Exception as e:
         logging.warning(f"Monitor read failed: {e}")
+        return False
 
 # ── End-of-day audit: summarise the day using persisted state + daily stats ──
 async def run_end_of_day_audit():
@@ -1565,7 +1034,17 @@ async def main():
                     save_state(state)
                 is_startup = False
             else:
-                await run_light_monitor()
+                replan_needed = await run_light_monitor()
+                if replan_needed:
+                    logging.info("===== RE-PLANNING RUN (triggered by SoC drift) =====")
+                    _last_plan.clear()
+                    await run_optimization()
+                    if _last_plan:
+                        state = load_state()
+                        state['last_plan'] = dict(_last_plan)
+                        state['last_plan_at'] = _last_plan.get('at')
+                        state['last_plan_date'] = today_str
+                        save_state(state)
 
         except Exception as e:
             logging.error(f"Unhandled exception in main loop: {e}", exc_info=True)

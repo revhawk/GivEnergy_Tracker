@@ -37,7 +37,7 @@ class TestSetInverterChargeSlotsGivTCP:
     @responses.activate
     async def test_same_day_window_populates_slot1_and_clears_slot2_to_10(self):
         # Mock expected endpoints
-        for path in ("/setChargeEnable", "/setChargeTarget", "/enableChargeTarget",
+        for path in ("/setBatteryMode", "/setChargeTarget", "/enableChargeTarget",
                      "/enableChargeSchedule", "/setChargeSlot"):
             responses.add(responses.POST, f"{GIVTCP_URL}{path}", json={"result": "ok"})
 
@@ -49,7 +49,7 @@ class TestSetInverterChargeSlotsGivTCP:
 
         # Verify calls fired
         paths = [c.request.url.replace(GIVTCP_URL, "") for c in responses.calls]
-        assert "/setChargeEnable" in paths
+        assert "/setBatteryMode" in paths
         assert "/setChargeTarget" in paths
         assert "/enableChargeTarget" in paths
         assert "/enableChargeSchedule" in paths
@@ -64,9 +64,9 @@ class TestSetInverterChargeSlotsGivTCP:
         for idx in slot_indices:
             assert idx < target_idx, "slots must be set before setChargeTarget"
 
-        # Enable should be "enable"
-        enable_call = next(c for c in responses.calls if c.request.url.endswith("/setChargeEnable"))
-        assert _body(enable_call) == {"state": "enable"}
+        # Battery mode should be "Timed Demand"
+        mode_call = next(c for c in responses.calls if c.request.url.endswith("/setBatteryMode"))
+        assert _body(mode_call) == {"mode": "Timed Demand"}
 
         schedule_call = next(c for c in responses.calls if c.request.url.endswith("/enableChargeSchedule"))
         assert _body(schedule_call) == {"state": "enable"}
@@ -91,7 +91,7 @@ class TestSetInverterChargeSlotsGivTCP:
 
     @responses.activate
     async def test_midnight_spanning_window_splits_across_two_slots(self):
-        for path in ("/setChargeEnable", "/setChargeTarget", "/enableChargeTarget",
+        for path in ("/setBatteryMode", "/setChargeTarget", "/enableChargeTarget",
                      "/enableChargeSchedule", "/setChargeSlot"):
             responses.add(responses.POST, f"{GIVTCP_URL}{path}", json={"result": "ok"})
 
@@ -116,14 +116,14 @@ class TestSetInverterChargeSlotsGivTCP:
 
     @responses.activate
     async def test_none_window_clears_all_slots_and_disables(self):
-        for path in ("/setChargeEnable", "/enableChargeSchedule", "/setChargeSlot"):
+        for path in ("/setBatteryMode", "/enableChargeSchedule", "/setChargeSlot"):
             responses.add(responses.POST, f"{GIVTCP_URL}{path}", json={"result": "ok"})
 
         ok = await optimiser.set_inverter_charge_slots(None, None)
         assert ok is True
 
-        enable_call = next(c for c in responses.calls if c.request.url.endswith("/setChargeEnable"))
-        assert _body(enable_call) == {"state": "disable"}
+        mode_call = next(c for c in responses.calls if c.request.url.endswith("/setBatteryMode"))
+        assert _body(mode_call) == {"mode": "Eco"}
 
         schedule_call = next(c for c in responses.calls if c.request.url.endswith("/enableChargeSchedule"))
         assert _body(schedule_call) == {"state": "disable"}
@@ -139,7 +139,7 @@ class TestSetInverterChargeSlotsGivTCP:
 
     @responses.activate
     async def test_target_percentage_defaults_to_100(self):
-        for path in ("/setChargeEnable", "/setChargeTarget", "/enableChargeTarget",
+        for path in ("/setBatteryMode", "/setChargeTarget", "/enableChargeTarget",
                      "/enableChargeSchedule", "/setChargeSlot"):
             responses.add(responses.POST, f"{GIVTCP_URL}{path}", json={"result": "ok"})
 

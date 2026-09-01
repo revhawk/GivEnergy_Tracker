@@ -11,6 +11,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.20] - 2026-09-01
+
+### Added
+- **Single Source Versioning**: Created `ha-addon/version.py` (`__version__ = "1.0.20"`) and synced `config.yaml` to ensure zero version drift.
+- **Modular Codebase Architecture**: Modularized `optimiser.py` into clean, human-readable sub-modules under `ha-addon/modules/`:
+  - `modules/givtcp.py`: GivTCP REST API v2/v3 endpoints (`/setChargeSlot`, `/setBatteryMode`, `/setChargeTarget`, telemetry).
+  - `modules/tariffs.py`: Octopus Agile import pricing & Outgoing export rate fetcher.
+  - `modules/solar.py`: Forecast.Solar API client with morning solar forecast damping (`0.65x` before 09:00).
+  - `modules/profiler.py`: Dynamic load profiling (`get_load_kwh_for_slot`) & Power Down window detector (`is_power_down_slot`).
+  - `modules/llm.py`: Smart ChatGPT veto validator (`chatgpt_veto_plan`) & daily summary generator.
+- **Octopus Octoplus Power Down Session Optimization**: Added support for active Power Down / Saving Session windows (`POWER_DOWN_WINDOWS`), enforcing 0.0 kWh grid import during sessions and automatically pre-charging battery at cheaper prior rates.
+- **Dynamic Re-Planning Trigger (SoC Drift Check)**: Added 30-minute telemetry check comparing live battery SoC with planned SoC schedule, triggering immediate re-planning if drift exceeds `SOC_DRIFT_THRESHOLD_PCT` (`15.0%`).
+- **GivTCP v2/v3 REST API Fixes**: Replaced deprecated `/setChargeEnable` with GivTCP REST API v2/v3 conventions (`/setChargeTarget` & `/setBatteryMode`).
+
+---
+
 ## [1.0.19] - 2026-08-17
 
 ### Added

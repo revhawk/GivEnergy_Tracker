@@ -48,8 +48,8 @@ def _post(url: str, path: str, payload: dict, dry_run: bool) -> None:
 
 def set_charge_slot(url: str, start_hhmm: str, end_hhmm: str, target: int, dry_run: bool) -> None:
     print(f"Setting charge slot: {start_hhmm} → {end_hhmm} (target {target}%)")
-    _post(url, "/setChargeEnable", {"state": "enable"}, dry_run)
     _post(url, "/setChargeTarget", {"chargeToPercent": str(target)}, dry_run)
+    _post(url, "/setBatteryMode", {"mode": "Timed Demand"}, dry_run)
     _post(url, "/setChargeSlot1",
           {"start": start_hhmm, "finish": end_hhmm, "chargeToPercent": str(target)}, dry_run)
     _post(url, "/setChargeSlot2",
@@ -61,7 +61,7 @@ def clear_charge_slots(url: str, dry_run: bool = False) -> None:
     try:
         _post(url, "/setChargeSlot1", {"start": "0000", "finish": "0000", "chargeToPercent": "0"}, dry_run)
         _post(url, "/setChargeSlot2", {"start": "0000", "finish": "0000", "chargeToPercent": "0"}, dry_run)
-        _post(url, "/setChargeEnable", {"state": "disable"}, dry_run)
+        _post(url, "/setBatteryMode", {"mode": "Eco"}, dry_run)
     except Exception as e:
         print(f"  ! clear failed: {e}", file=sys.stderr)
 
