@@ -1,4 +1,5 @@
 """GivTCP REST API & Modbus integration module."""
+import time
 import logging
 import asyncio
 import requests
@@ -290,28 +291,41 @@ async def set_inverter_charge_slots(slots_or_start, end_time=None, charge_target
                     split_slots = split_slots[:10]
 
                 for i in range(1, 11):
+                    time.sleep(0.2)  # Short pause between HTTP requests to prevent GivTCP API socket congestion
                     if i <= len(split_slots):
                         s, e = split_slots[i - 1]
                         s_str = s.strftime("%H:%M")
                         e_str = e.strftime("%H:%M")
                         logging.info(f"GivTCP: Setting slot {i}: {s_str} to {e_str}")
-                        r = requests.post(f"{base_url}/setChargeSlot", json={
+                        payload = {
                             "start": s_str,
                             "finish": e_str,
                             "slot": str(i),
                             "chargeToPercent": int(charge_target)
-                        }, timeout=10)
-                        r.raise_for_status()
+                        }
                     else:
-                        r = requests.post(f"{base_url}/setChargeSlot", json={
+                        payload = {
                             "start": "00:00",
                             "finish": "00:00",
                             "slot": str(i)
-                        }, timeout=10)
-                        r.raise_for_status()
+                        }
+                    
+                    # Retry logic (up to 3 attempts with 0.5s pause) for GivTCP 500 error robustness
+                    for attempt in range(1, 4):
+                        try:
+                            r = requests.post(f"{base_url}/setChargeSlot", json=payload, timeout=10)
+                            r.raise_for_status()
+                            break
+                        except Exception as req_err:
+                            if attempt < 3:
+                                logging.warning(f"GivTCP: Slot {i} set attempt {attempt} failed ({req_err}); retrying in 0.5s...")
+                                time.sleep(0.5)
+                            else:
+                                raise req_err
             else:
                 logging.info("GivTCP: Disabling grid charging (clearing slots)...")
                 for i in range(1, 11):
+                    time.sleep(0.2)
                     requests.post(f"{base_url}/setChargeSlot", json={
                         "start": "00:00",
                         "finish": "00:00",

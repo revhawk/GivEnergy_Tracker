@@ -100,7 +100,7 @@ def chatgpt_veto_plan(current_soc, battery_capacity_kwh, solar_total_kwh,
                 {"role": "user", "content": user_msg},
             ],
             max_tokens=150,
-            temperature=0.1,
+            temperature=0.3,
             response_format={"type": "json_object"},
         )
         content = response.choices[0].message.content.strip()

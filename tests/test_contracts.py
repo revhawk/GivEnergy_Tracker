@@ -34,12 +34,13 @@ class TestGivTCPContract:
     @pytest.mark.asyncio
     @responses.activate
     async def test_set_charge_slot_payload_contract(self):
-        responses.add(
-            responses.POST,
-            "http://192.0.2.1:6345/setChargeSlot",
-            json={"status": "success"},
-            status=200,
-        )
+        for _ in range(10):
+            responses.add(
+                responses.POST,
+                "http://192.0.2.1:6345/setChargeSlot",
+                json={"status": "success"},
+                status=200,
+            )
         responses.add(
             responses.POST,
             "http://192.0.2.1:6345/setChargeTarget",

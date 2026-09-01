@@ -38,8 +38,10 @@ class TestSetInverterChargeSlotsGivTCP:
     async def test_same_day_window_populates_slot1_and_clears_slot2_to_10(self):
         # Mock expected endpoints
         for path in ("/setBatteryMode", "/setChargeTarget", "/enableChargeTarget",
-                     "/enableChargeSchedule", "/setChargeSlot"):
+                     "/enableChargeSchedule"):
             responses.add(responses.POST, f"{GIVTCP_URL}{path}", json={"result": "ok"})
+        for _ in range(10):
+            responses.add(responses.POST, f"{GIVTCP_URL}/setChargeSlot", json={"result": "ok"})
 
         start = datetime(2026, 7, 4, 2, 0, tzinfo=timezone.utc)
         end = datetime(2026, 7, 4, 4, 30, tzinfo=timezone.utc)
@@ -92,8 +94,10 @@ class TestSetInverterChargeSlotsGivTCP:
     @responses.activate
     async def test_midnight_spanning_window_splits_across_two_slots(self):
         for path in ("/setBatteryMode", "/setChargeTarget", "/enableChargeTarget",
-                     "/enableChargeSchedule", "/setChargeSlot"):
+                     "/enableChargeSchedule"):
             responses.add(responses.POST, f"{GIVTCP_URL}{path}", json={"result": "ok"})
+        for _ in range(10):
+            responses.add(responses.POST, f"{GIVTCP_URL}/setChargeSlot", json={"result": "ok"})
 
         # 23:30 today → 02:00 tomorrow (crosses midnight)
         start = datetime(2026, 7, 4, 23, 30, tzinfo=timezone.utc)
@@ -116,8 +120,10 @@ class TestSetInverterChargeSlotsGivTCP:
 
     @responses.activate
     async def test_none_window_clears_all_slots_and_disables(self):
-        for path in ("/setBatteryMode", "/enableChargeSchedule", "/setChargeSlot"):
+        for path in ("/setBatteryMode", "/enableChargeSchedule"):
             responses.add(responses.POST, f"{GIVTCP_URL}{path}", json={"result": "ok"})
+        for _ in range(10):
+            responses.add(responses.POST, f"{GIVTCP_URL}/setChargeSlot", json={"result": "ok"})
 
         ok = await optimiser.set_inverter_charge_slots(None, None)
         assert ok is True
@@ -140,8 +146,10 @@ class TestSetInverterChargeSlotsGivTCP:
     @responses.activate
     async def test_target_percentage_defaults_to_100(self):
         for path in ("/setBatteryMode", "/setChargeTarget", "/enableChargeTarget",
-                     "/enableChargeSchedule", "/setChargeSlot"):
+                     "/enableChargeSchedule"):
             responses.add(responses.POST, f"{GIVTCP_URL}{path}", json={"result": "ok"})
+        for _ in range(10):
+            responses.add(responses.POST, f"{GIVTCP_URL}/setChargeSlot", json={"result": "ok"})
 
         start = datetime(2026, 7, 4, 3, 0, tzinfo=timezone.utc)
         end = datetime(2026, 7, 4, 5, 0, tzinfo=timezone.utc)
