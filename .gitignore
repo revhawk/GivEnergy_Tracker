@@ -10,6 +10,7 @@ _legacy/
 # Local Developer Setup & Implementation Docs — keep local, never publish
 LOCAL_SETUP.md
 DEVELOPMENT.md
+HARDWARE_STRATEGY_TODO.md
 
 # Python & Environment
 __pycache__/
@@ -18,6 +19,8 @@ __pycache__/
 *.pyd
 .python-version
 .venv/
+.scratch_venv/
+.*venv*/
 venv/
 ENV/
 env/

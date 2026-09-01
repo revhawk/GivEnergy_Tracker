@@ -176,3 +176,43 @@ class TestLLMVetoSchemaContract:
         assert "score" in parsed and isinstance(parsed["score"], int)
         assert "reason" in parsed and isinstance(parsed["reason"], str)
         assert 1 <= parsed["score"] <= 10
+
+
+class TestHiveContract:
+    @responses.activate
+    def test_hive_set_operation_mode_payload_contract(self, monkeypatch):
+        import hive
+        monkeypatch.setattr(hive, "SUPERVISOR_TOKEN", "dummy_token")
+        
+        responses.add(
+            responses.POST,
+            "http://supervisor/core/api/services/water_heater/set_operation_mode",
+            json={"result": "ok"},
+            status=200,
+        )
+
+        res = hive.set_hive_hot_water_mode("off")
+        assert res is True
+        assert len(responses.calls) == 1
+        payload = json.loads(responses.calls[0].request.body)
+        assert payload["entity_id"] == "water_heater.hive_hot_water"
+        assert payload["operation_mode"] == "off"
+
+    def test_evaluate_morning_shower_safety(self):
+        import hive
+        # Without sensor: default to False (keep gas on for safety)
+        assert hive.evaluate_morning_shower_safety(None) is False
+        # Cold tank (< 45C): False (keep gas on)
+        assert hive.evaluate_morning_shower_safety(38.0, min_required_c=45.0) is False
+        # Warm tank (>= 45C): True (safe to disable gas)
+        assert hive.evaluate_morning_shower_safety(52.0, min_required_c=45.0) is True
+
+    def test_should_suppress_gas_hot_water(self):
+        import hive
+        # Low solar & no pre-charge -> False (keep gas on, no cold shower)
+        assert hive.should_suppress_gas_hot_water(solar_today_kwh=5.0, grid_charged_overnight=False) is False
+        # High solar (>= 15 kWh) -> True (safe to pause gas)
+        assert hive.should_suppress_gas_hot_water(solar_today_kwh=22.0, grid_charged_overnight=False) is True
+        # Electric pre-charge -> True (safe to pause gas)
+        assert hive.should_suppress_gas_hot_water(solar_today_kwh=0.0, grid_charged_overnight=True) is True
+

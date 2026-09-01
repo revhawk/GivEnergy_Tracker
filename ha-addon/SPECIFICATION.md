@@ -1,6 +1,6 @@
 # Technical Specification & Architecture — GivEnergy Tariff Optimiser
 
-**Version:** 1.0.20  
+**Version:** 1.0.21  
 **Target Hardware:** GivEnergy Inverters (Gen 1, Gen 2, Gen 3, All-in-One)  
 **Target Platform:** Home Assistant Add-on Container (Linux ARM64 / AMD64)  
 
@@ -36,11 +36,14 @@ graph TD
         Meteo_Mod[solar_openmeteo.py - Shadow Solar]
         Profiler_Mod[profiler.py - Load & Power Down]
         LLM_Mod[llm.py - ChatGPT Veto & Audit]
+        Hive_Mod[hive.py - Decoupled Hive Controller v1.0.21 Spec]
     end
 
     subgraph Local Network
         GivTCP[GivTCP Service :6345]
         Inverter[GivEnergy Inverter]
+        HA_API[Home Assistant Core REST API]
+        Hive[Hive Hot Water Controller]
     end
 
     Agile --> Tariff_Mod
@@ -58,6 +61,9 @@ graph TD
     Optimiser --> LLM_Mod
     LLM_Mod <--> OpenAI
     Optimiser --> GivTCP_Mod
+    Optimiser -. v1.0.21 .-> Hive_Mod
+    Hive_Mod <--> HA_API
+    HA_API <--> Hive
 ```
 
 ---
@@ -147,6 +153,21 @@ sequenceDiagram
     "reason": "Charging at 25.72p/kWh (28.58p effective) avoids 50.88p peak rate, saving money."
   }
   ```
+
+### 4.7 Decoupled Hive Hot Water Module Contract (`hive.py` — v1.0.21 Spec)
+- **Module:** `hive.py` (decoupled, standalone module)
+- **Home Assistant Service Endpoint:** `POST /api/services/water_heater/set_operation_mode`
+- **Target Entity:** `water_heater.hive_hot_water` (configurable in `config.py` via `HIVE_WATER_HEATER_ENTITY`)
+- **Supported Modes:**
+  - `"off"`: Cancels Hive gas boiler schedule (used during plunge rates, electric pre-charge, or satisfied tank).
+  - `"schedule"`: Restores default Hive gas boiler schedule (used when tank temperature is low or no electric pre-charge occurred).
+
+### 4.8 Morning Shower Fail-Safe & Temperature Safety Specification (v1.0.21)
+- **Morning Shower Guarantee Rule:** A 6:00 AM warm shower is guaranteed at all times.
+- **Fail-Safe Check (`evaluate_morning_shower_safety`):**
+  1. If no tank temperature sensor is present $\rightarrow$ Default to `SAFE` (Hive remains on `"schedule"`; gas is NOT disabled).
+  2. If tank temperature $< 45.0^\circ\text{C}$ at 05:00 AM $\rightarrow$ Hive remains on `"schedule"` to allow gas boiler backup.
+  3. If tank temperature $\ge 45.0^\circ\text{C}$ at 05:00 AM (heated via overnight plunge or iBoost) $\rightarrow$ Hive is set to `"off"` to save gas.
 
 ---
 
