@@ -1,0 +1,212 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "GivEnergy Tariff Optimiser \u2014 Data Contracts & Schemas",
+    "version": "1.0.21.2",
+    "description": "Auto-generated OpenAPI specification from Pydantic v2 data models. Single source of truth for inverter telemetry, Octopus tariffs, GivTCP REST payloads, and ChatGPT AI veto validation."
+  },
+  "components": {
+    "schemas": {
+      "GivTCPWriteSlot": {
+        "description": "Payload contract for POST /setChargeSlot on GivTCP API.",
+        "properties": {
+          "start": {
+            "description": "Start time in HH:MM format",
+            "example": "02:30",
+            "title": "Start",
+            "type": "string"
+          },
+          "finish": {
+            "description": "Finish time in HH:MM format",
+            "example": "04:00",
+            "title": "Finish",
+            "type": "string"
+          },
+          "slot": {
+            "description": "Slot index string ('1' to '10')",
+            "example": "1",
+            "title": "Slot",
+            "type": "string"
+          },
+          "chargeToPercent": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Target charge percentage (1-100)",
+            "example": 100,
+            "title": "Chargetopercent"
+          }
+        },
+        "required": [
+          "start",
+          "finish",
+          "slot"
+        ],
+        "title": "GivTCPWriteSlot",
+        "type": "object"
+      },
+      "GivTCPTarget": {
+        "description": "Payload contract for POST /setChargeTarget on GivTCP API.",
+        "properties": {
+          "chargeToPercent": {
+            "description": "Battery target SoC %",
+            "example": 100,
+            "maximum": 100,
+            "minimum": 0,
+            "title": "Chargetopercent",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "chargeToPercent"
+        ],
+        "title": "GivTCPTarget",
+        "type": "object"
+      },
+      "GivTCPBatteryMode": {
+        "description": "Payload contract for POST /setBatteryMode on GivTCP API.",
+        "properties": {
+          "mode": {
+            "description": "Inverter battery mode: 'Timed Demand' or 'Eco'",
+            "example": "Timed Demand",
+            "title": "Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "mode"
+        ],
+        "title": "GivTCPBatteryMode",
+        "type": "object"
+      },
+      "InverterTelemetry": {
+        "description": "Inverter live telemetry contract parsed from GivTCP GET /getCache.",
+        "properties": {
+          "soc": {
+            "description": "Battery state of charge %",
+            "example": 45.0,
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Soc",
+            "type": "number"
+          },
+          "pv_power": {
+            "description": "Solar PV generation power in Watts",
+            "example": 1200.0,
+            "minimum": 0.0,
+            "title": "Pv Power",
+            "type": "number"
+          },
+          "load_power": {
+            "description": "Home electrical demand power in Watts",
+            "example": 450.0,
+            "minimum": 0.0,
+            "title": "Load Power",
+            "type": "number"
+          }
+        },
+        "required": [
+          "soc",
+          "pv_power",
+          "load_power"
+        ],
+        "title": "InverterTelemetry",
+        "type": "object"
+      },
+      "OctopusRateSlot": {
+        "description": "Octopus Agile import or Outgoing export half-hour rate contract.",
+        "properties": {
+          "valid_from": {
+            "description": "Slot start time in ISO 8601 UTC format",
+            "title": "Valid From",
+            "type": "string"
+          },
+          "valid_to": {
+            "description": "Slot end time in ISO 8601 UTC format",
+            "title": "Valid To",
+            "type": "string"
+          },
+          "value_inc_vat": {
+            "description": "Electricity price in pence per kWh",
+            "example": 15.42,
+            "title": "Value Inc Vat",
+            "type": "number"
+          }
+        },
+        "required": [
+          "valid_from",
+          "valid_to",
+          "value_inc_vat"
+        ],
+        "title": "OctopusRateSlot",
+        "type": "object"
+      },
+      "LLMVetoDecision": {
+        "description": "ChatGPT plan evaluation JSON response contract.",
+        "properties": {
+          "approve": {
+            "description": "Whether ChatGPT approves the grid charge plan",
+            "title": "Approve",
+            "type": "boolean"
+          },
+          "score": {
+            "description": "Plan economic quality score (1 to 10)",
+            "maximum": 10,
+            "minimum": 1,
+            "title": "Score",
+            "type": "integer"
+          },
+          "reason": {
+            "description": "Plain-English explanation of decision",
+            "minLength": 5,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "approve",
+          "score",
+          "reason"
+        ],
+        "title": "LLMVetoDecision",
+        "type": "object"
+      },
+      "HiveHotWaterState": {
+        "description": "Decoupled Hive hot water controller payload contract.",
+        "properties": {
+          "mode": {
+            "description": "Operation mode: 'off' or 'schedule'",
+            "example": "off",
+            "title": "Mode",
+            "type": "string"
+          },
+          "tank_temperature": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Cylinder temperature in \u00b0C if sensor present",
+            "example": 48.5,
+            "title": "Tank Temperature"
+          }
+        },
+        "required": [
+          "mode"
+        ],
+        "title": "HiveHotWaterState",
+        "type": "object"
+      }
+    }
+  }
+}

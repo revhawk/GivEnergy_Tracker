@@ -868,6 +868,10 @@ async def main():
     run_once = os.environ.get('RUN_ONCE', 'false').lower() in ('true', '1', 'yes')
     interval = int(os.environ.get('INTERVAL_MINUTES', 30))
 
+    # Silence noisy third-party HTTP debug logs
+    for _logger_name in ("urllib3", "httpx", "httpcore", "openai", "openai._base_client"):
+        logging.getLogger(_logger_name).setLevel(logging.WARNING)
+
     # ── Startup checks ───────────────────────────────────────────────────────
     # Fail loudly if config.yaml and __version__ disagree — prevents silent
     # version drift where HA reports one version and the running code is another.
@@ -912,14 +916,6 @@ async def main():
     audit_hour = int(os.environ.get('DAILY_AUDIT_HOUR', '23'))
     is_startup = True
     logging.info(f"Scheduling: daily plan at {plan_hour:02d}:00, audit at {audit_hour:02d}:00 (local time).")
-
-    # Optional startup self-test — verifies the GivTCP write path is working by
-    # briefly setting and clearing a test slot. Runs once per daemon startup.
-    if os.environ.get('STARTUP_WRITE_TEST', 'false').lower() in ('true', '1', 'yes'):
-        try:
-            await run_startup_write_test()
-        except Exception as e:
-            logging.error(f"Startup write-test errored (continuing anyway): {e}", exc_info=True)
 
     while True:
         try:

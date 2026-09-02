@@ -9,8 +9,11 @@ _legacy/
 
 # Local Developer Setup & Implementation Docs — keep local, never publish
 LOCAL_SETUP.md
+LOCAL_SETUP.html
 DEVELOPMENT.md
 HARDWARE_STRATEGY_TODO.md
+HARDWARE_STRATEGY_TODO.html
+.agents/
 
 # Python & Environment
 __pycache__/

@@ -54,37 +54,74 @@ When incrementing the version of this add-on for a release, the version number *
 
 ---
 
-## Options
+## ⏰ Daily Schedule & Timeline
 
-Configure these under the add-on's **Configuration** tab.
+Here is what happens throughout the day automatically once the add-on is installed:
 
-### `interval_minutes` *(int, default: 30)*
+```mermaid
+gantt
+    title Daily Optimiser Execution Timeline
+    dateFormat  HH:mm
+    axisFormat %H:%M
 
-How often the daemon wakes up. On each tick it decides whether to run the daily planner, the end-of-day audit, or a light monitor read.
+    section Octopus Tariff
+    Tomorrow's Rates Published (16:00-16:30) :milestone, m1, 16:30, 0min
 
-**Recommended:** `30` — matches Agile slot granularity.
+    section Daemon Tasks
+    Daily Planning Run (Fetch rates, solar & program inverter) :active, p1, 17:00, 30min
+    Light Monitor Checks (Periodically verify battery SoC) :m2, 17:30, 5h
+    End-of-Day Audit (ChatGPT Financial Savings Report) :crit, a1, 23:00, 30min
+    Inverter Executes Scheduled Overnight Charging :done, c1, 02:00, 3h
+```
 
-### `run_once` *(bool, default: false)*
+---
 
-Runs a single planning pass then exits. Useful for testing or triggering from a Home Assistant automation.
+## ⚙️ Configuration Options Guide (First-Time User)
 
-### `openai_api_key` *(string, default: "")*
+Configure these settings under the add-on's **Configuration** tab in Home Assistant.
 
-Your OpenAI API key for the ChatGPT plan-scoring and end-of-day audit features. Leave blank to disable — the deterministic planner works perfectly without it.
+### Quick Reference Table
 
-> ⚠️ **Storage note:** Home Assistant stores this in `/data/options.json` on the host filesystem in **plaintext** (it is *not* encrypted, contrary to what earlier versions of this document implied). Anyone with SSH/terminal access to the host can read it. This is a Home Assistant limitation, not an add-on choice — treat the key accordingly.
+| Option | Default | Required? | First-Time User Guidance |
+| :--- | :---: | :---: | :--- |
+| **`interval_minutes`** | `30` | Yes | **Leave as `30`**. Controls how often the add-on checks status. Matches Octopus 30-minute pricing slots. |
+| **`run_once`** | `false` | No | **Leave as `false`**. When `true`, runs 1 test pass then stops. Keep `false` for 24/7 automatic operation. |
+| **`openai_api_key`** | `""` | Optional | **OpenAI API Key** (`sk-...`). Enables ChatGPT plan scoring & daily audit report. Optional — planner works 100% without it. |
+| **`openai_model`** | `gpt-4o-mini` | Optional | **AI Model Selection**. Default (`gpt-4o-mini`) is fast, highly accurate, and costs less than 1p/month. |
+| **`daily_plan_hour`** | `17` | Yes | **Daily Planning Hour (5:00 PM)**. Octopus publishes rates at 16:30, so 17:00 programs your inverter 7 hours before night charging. |
+| **`daily_audit_hour`** | `23` | Yes | **Daily Audit Hour (11:00 PM)**. Summarizes today's actual performance and financial savings right before midnight. |
 
-### `openai_model` *(dropdown: gpt-4o-mini | gpt-4o | gpt-3.5-turbo, default: "gpt-4o-mini")*
+---
 
-The OpenAI model used for plan scoring/veto and end-of-day audits. Select from the UI dropdown list under the **Configuration** tab. Defaults to `gpt-4o-mini`.
+### Detailed Option Explanations
 
-### `daily_plan_hour` *(int 0–23, default: 17)*
+#### `interval_minutes` *(int, default: 30)*
+- **What it does:** Sets how often the background daemon wakes up to check battery status.
+- **Why it exists:** Aligns with Octopus Agile's 30-minute electricity pricing windows.
+- **First-Time User Advice:** Do not change this unless requested during troubleshooting.
 
-The hour of local time at which the tracker runs its daily planning pass. Tomorrow's Agile rates typically publish between 16:00 and 20:00, so `17` is a sensible default. If the plan hour hasn't yet been crossed on a fresh day, the tracker will still plan on startup with whatever rates are currently available.
+#### `run_once` *(bool, default: false)*
+- **What it does:** Executes a single optimization run on container start and immediately exits.
+- **Why it exists:** Designed for developer testing or Home Assistant automation triggers.
+- **First-Time User Advice:** Ensure this toggle is **OFF** (`false`) so the add-on runs 24/7 in the background.
 
-### `daily_audit_hour` *(int 0–23, default: 23)*
+#### `openai_api_key` *(string, default: "")*
+- **What it does:** Your private secret key from OpenAI (`sk-proj-...`).
+- **Why it exists:** Unlocks ChatGPT AI plan evaluation and English daily financial summary reports.
+- **First-Time User Advice:** Leave blank if you don't use OpenAI. The deterministic optimization engine works 100% standalone without an API key.
 
-The hour at which the end-of-day audit fires. It re-reads the day's plan snapshot and, if the OpenAI key is set, produces an English-language verdict.
+#### `openai_model` *(radio selection, default: "gpt-4o-mini")*
+- **What it does:** Selects which OpenAI model handles plan evaluation.
+- **Choices:** `gpt-4o-mini` (recommended, cheap & fast), `gpt-4o` (flagship model), `gpt-3.5-turbo` (legacy model).
+- **First-Time User Advice:** Select `gpt-4o-mini`.
+
+#### `daily_plan_hour` *(int 0–23, default: 17)*
+- **What it does:** The hour (0 to 23) when tomorrow's Agile charging plan is calculated and sent to your inverter.
+- **Why default is 17 (5:00 PM):** Octopus publishes tomorrow's 48 half-hour rates between 16:00 and 16:30 every afternoon. Planning at 17:00 programs your inverter 7+ hours before overnight charging begins.
+
+#### `daily_audit_hour` *(int 0–23, default: 23)*
+- **What it does:** The hour (11:00 PM) when the end-of-day audit fires to generate your daily financial savings report.
+- **First-Time User Advice:** Leave as `23`.
 
 ---
 
@@ -94,7 +131,7 @@ The hour at which the end-of-day audit fires. It re-reads the day's plan snapsho
 
 The daemon wakes every `interval_minutes` and picks one of three modes based on time-of-day and stored state:
 
-#### 1. Daily planner (fires once per day)
+#### 1. Daily planner (fires once per day at 17:00)
 
 Runs on startup and on the first tick after `daily_plan_hour` each new day. This is the only mode that does the full optimisation:
 

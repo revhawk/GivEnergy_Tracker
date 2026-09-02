@@ -73,12 +73,36 @@ Persisted state       ──┘                  └─► ChatGPT Veto (score) 
                                             │                 │
                                             └────────┬────────┘
                                                      ▼
-                                          state.json + rotating log
-                                                     │
-                          Every 30 min (light monitor): read SoC only
-                                                     │
-                       End of day (audit @ 23:00): ChatGPT verdict + suggestions
+### ⏰ Daily Execution Timeline
+
+```mermaid
+gantt
+    title Daily Optimiser Execution Timeline
+    dateFormat  HH:mm
+    axisFormat %H:%M
+
+    section Octopus Tariff
+    Tomorrow's Rates Published (16:00-16:30) :milestone, m1, 16:30, 0min
+
+    section Daemon Tasks
+    Daily Planning Run (Fetch rates, solar & program inverter) :active, p1, 17:00, 30min
+    Light Monitor Checks (Periodically verify battery SoC) :m2, 17:30, 5h
+    End-of-Day Audit (ChatGPT Financial Savings Report) :crit, a1, 23:00, 30min
+    Inverter Executes Scheduled Overnight Charging :done, c1, 02:00, 3h
 ```
+
+---
+
+## ⚙️ Configuration Options Quick Reference
+
+| Option | Default | Required? | First-Time User Guidance |
+| :--- | :---: | :---: | :--- |
+| **`interval_minutes`** | `30` | Yes | **Leave as `30`**. Wakeup check interval matching Octopus 30-minute tariff slots. |
+| **`run_once`** | `false` | No | **Leave as `false`**. When `true`, runs 1 test pass then stops. Keep `false` for 24/7 background mode. |
+| **`openai_api_key`** | `""` | Optional | **OpenAI API Key** (`sk-...`). Enables ChatGPT plan scoring & daily audit report. Optional. |
+| **`openai_model`** | `gpt-4o-mini` | Optional | **AI Model Selection**. Default (`gpt-4o-mini`) is cheap (< 1p/month), fast, and accurate. |
+| **`daily_plan_hour`** | `17` | Yes | **Daily Planning Hour (5:00 PM)**. Octopus publishes rates at 16:30, programming inverter 7h early. |
+| **`daily_audit_hour`** | `23` | Yes | **Daily Audit Hour (11:00 PM)**. Summarizes today's financial performance right before midnight. |
 
 ---
 

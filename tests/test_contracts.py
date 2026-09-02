@@ -30,6 +30,8 @@ class TestVersionContract:
         assert version.__version__ == yaml_ver, f"Version mismatch: version.py={version.__version__} vs config.yaml={yaml_ver}"
 
 
+import contracts
+
 class TestGivTCPContract:
     @pytest.mark.asyncio
     @responses.activate
@@ -72,20 +74,22 @@ class TestGivTCPContract:
         res = await givtcp.set_inverter_charge_slots(start, end, charge_target=100)
         assert res is True
 
-        # Verify POST payload contract for /setChargeSlot
+        # Verify POST payload contract for /setChargeSlot using Pydantic v2
         slot_calls = [c for c in responses.calls if "/setChargeSlot" in c.request.url]
         assert len(slot_calls) == 10
         payload1 = json.loads(slot_calls[0].request.body)
-        assert payload1["start"] == "02:30"
-        assert payload1["finish"] == "04:00"
-        assert payload1["slot"] == "1"
-        assert payload1["chargeToPercent"] == 100
+        validated_slot = contracts.GivTCPWriteSlot.model_validate(payload1)
+        assert validated_slot.start == "02:30"
+        assert validated_slot.finish == "04:00"
+        assert validated_slot.slot == "1"
+        assert validated_slot.chargeToPercent == 100
 
-        # Verify POST payload contract for /setBatteryMode
+        # Verify POST payload contract for /setBatteryMode using Pydantic v2
         mode_calls = [c for c in responses.calls if "/setBatteryMode" in c.request.url]
         assert len(mode_calls) >= 1
         mode_payload = json.loads(mode_calls[0].request.body)
-        assert mode_payload["mode"] == "Timed Demand"
+        validated_mode = contracts.GivTCPBatteryMode.model_validate(mode_payload)
+        assert validated_mode.mode == "Timed Demand"
 
 
 class TestOctopusTariffContract:
@@ -118,6 +122,9 @@ class TestOctopusTariffContract:
         assert "end" in rates[0]
         assert "price" in rates[0]
         assert rates[0]["price"] == 12.0
+        
+        # Pydantic v2 validation of raw Octopus slot item
+        contracts.OctopusRateSlot.model_validate(mock_response["results"][0])
 
 
 class TestSolarForecastContract:
@@ -171,12 +178,35 @@ class TestSolarForecastContract:
 class TestLLMVetoSchemaContract:
     def test_veto_response_schema_validation(self):
         json_response = '{"approve": true, "score": 9, "reason": "Pre-charging saves money vs 50p peak."}'
-        parsed = json.loads(json_response)
-        
-        assert "approve" in parsed and isinstance(parsed["approve"], bool)
-        assert "score" in parsed and isinstance(parsed["score"], int)
-        assert "reason" in parsed and isinstance(parsed["reason"], str)
-        assert 1 <= parsed["score"] <= 10
+        decision = contracts.LLMVetoDecision.model_validate_json(json_response)
+        assert decision.approve is True
+        assert decision.score == 9
+        assert "Pre-charging" in decision.reason
+
+
+class TestPydanticSchemaValidation:
+    """Explicit boundary verification tests using Pydantic v2 validation rules."""
+
+    def test_givtcp_write_slot_invalid_slot_index_raises(self):
+        with pytest.raises(Exception):
+            contracts.GivTCPWriteSlot(start="02:00", finish="04:00", slot="11")
+        with pytest.raises(Exception):
+            contracts.GivTCPWriteSlot(start="02:00", finish="04:00", slot="0")
+
+    def test_givtcp_target_invalid_percentage_raises(self):
+        with pytest.raises(Exception):
+            contracts.GivTCPTarget(chargeToPercent=150)
+        with pytest.raises(Exception):
+            contracts.GivTCPTarget(chargeToPercent=-10)
+
+    def test_inverter_telemetry_invalid_soc_raises(self):
+        with pytest.raises(Exception):
+            contracts.InverterTelemetry(soc=105.0, pv_power=0.0, load_power=400.0)
+
+    def test_llm_veto_invalid_score_raises(self):
+        with pytest.raises(Exception):
+            contracts.LLMVetoDecision(approve=True, score=15, reason="Score out of bounds")
+
 
 
 class TestHiveContract:
