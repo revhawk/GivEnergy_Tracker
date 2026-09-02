@@ -1,6 +1,6 @@
 # Technical Specification & Architecture — GivEnergy Tariff Optimiser
 
-**Version:** 1.0.21.2  
+**Version:** 1.0.21.3  
 **Target Hardware:** GivEnergy Inverters (Gen 1, Gen 2, Gen 3, All-in-One)  
 **Target Platform:** Home Assistant Add-on Container (Linux ARM64 / AMD64)  
 
@@ -169,6 +169,10 @@ sequenceDiagram
   2. If tank temperature $< 45.0^\circ\text{C}$ at 05:00 AM $\rightarrow$ Hive remains on `"schedule"` to allow gas boiler backup.
   3. If tank temperature $\ge 45.0^\circ\text{C}$ at 05:00 AM (heated via overnight plunge or iBoost) $\rightarrow$ Hive is set to `"off"` to save gas.
 
+### 4.9 Future Hardware Integration Roadmap & Planned Enhancements
+- **Direct iBoost Hardware Relay Override (Planned)**: Physical smart relay integration (e.g. Shelly / ESPHome relay contact) to programmatically override the iBoost controller during negative/plunge electricity rate slots ($< 0.0\text{p/kWh}$), forcing 3 kW immersion heating from cheap/negative grid power even when solar PV generation is 0 W.
+- **Dedicated Hot Water Cylinder Temperature Probes (Planned)**: Installation of multi-point 1-Wire DS18B20 or Zigbee cylinder probes (top/middle/bottom) to measure exact thermal stratification ($^\circ\text{C}$) and stored thermal energy ($\text{kWh}$). When missing, `evaluate_morning_shower_safety(tank_temp_c)` defaults to `SAFE` mode (keeping Hive gas boiler on `"schedule"`) to guarantee a 6:00 AM warm shower.
+
 ---
 
 ## 5. Physical Simulation Priority Order
@@ -224,4 +228,88 @@ To log contract test execution to a file or CI artifact:
 .venv/bin/pytest tests/test_contracts.py -v --junitxml=test-results/contracts.xml
 ```
 Test results are saved in `test-results/contracts.xml` and output to standard log streams.
+
+---
+
+## 8. Local Architectural Decision Records (ADRs)
+
+### ADR 0001: Single-Source Versioning Architecture
+- **Status:** Accepted
+- **Context:** Version numbers previously diverged across `version.py`, `config.yaml`, `SPECIFICATION.md`, and `openapi.json`.
+- **Decision:** Establish `version.py` as the single authoritative source of truth. Validate version sync on startup.
+- **Consequences:** Eliminates silent version drift; container startup fails gracefully if metadata files disagree.
+
+---
+
+### ADR 0002: GivTCP REST API Priority with Modbus Direct Fallback
+- **Status:** Accepted
+- **Context:** Local GivTCP REST API provides rich telemetry but socket timeouts or GivTCP crashes can prevent slot programming.
+- **Decision:** Issue GivTCP REST calls with 0.2s inter-request delay and 3-attempt retry loop. Fall back to `givenergy-modbus` TCP socket connection if REST API fails.
+- **Consequences:** Guaranteed inverter write execution even during transient GivTCP restarts.
+
+---
+
+### ADR 0003: Smart LLM Veto Engine with Negative Rate Override
+- **Status:** Accepted
+- **Context:** Deterministic mathematical planner generates optimal charge windows, but edge-case rate anomalies require intelligent sanity checking.
+- **Decision:** Pass candidate charge schedules to OpenAI ChatGPT (`gpt-4o-mini`). If proposed average price is negative ($< 0.0\text{p/kWh}$), automatically override LLM vetoes because negative rates pay the consumer to charge.
+- **Consequences:** Prevents hallucinated LLM rejections of free/negative electricity windows.
+
+---
+
+### ADR 0004: Octoplus Session Naming Standard (Power Down / Power Up)
+- **Status:** Accepted
+- **Context:** HomeAssistant-OctopusEnergy integration renamed `saving_sessions` to `power_down_sessions` and `free_electricity` to `power_up_sessions` under ADR 0004.
+- **Decision:** Support both new ADR 0004 entity names (`sensor.octopus_energy_power_down_sessions`) and legacy fallbacks until January 2027.
+- **Consequences:** Instant compatibility across all Home Assistant installations without breaking pre-ADR 0004 setups.
+
+---
+
+### ADR 0005: Pydantic v2 Type-Safe Data Contracts (`contracts.py`)
+- **Status:** Accepted
+- **Context:** Raw JSON dictionaries exchanged with GivTCP, Octopus API, and OpenAI can silently fail if schema keys drift.
+- **Decision:** Introduce Pydantic v2 data models (`InverterTelemetry`, `OctopusRateSlot`, `GivTCPWriteSlot`, `LLMVetoDecision`, `HiveHotWaterState`) with `json_schema_extra` examples and strict boundary validation.
+- **Consequences:** Type-safe runtime parsing, auto-generated OpenAPI 3.1.0 specification (`openapi.json`), zero deprecation warnings.
+
+---
+
+### ADR 0006: Decentralized State & Daily Telemetry Persistence (`state.py`)
+- **Status:** Accepted
+- **Context:** In-memory state loss across container restarts disrupted rolling load averages, planned SoC drift checks, and daily savings audits.
+- **Decision:** Encapsulate state IO into `state.py`, persisting state to `/share/nas_logs/givenergy_state.json` and daily metrics to `/share/nas_logs/givenergy_daily_stats.json`.
+- **Consequences:** 100% state persistence across add-on reboots, NAS Samba access for logging, rolling 14-day load profile history.
+
+---
+
+### ADR 0007: 24-Hour Battery Simulation & Arbitrage Engine (`simulation.py`)
+- **Status:** Accepted
+- **Context:** Monolithic `optimiser.py` combined simulation math, state IO, tariff parsing, and loop orchestration in a single 985-line file.
+- **Decision:** Decouple physical energy priority balance (Solar $\rightarrow$ Load $\rightarrow$ Battery $\rightarrow$ iBoost $\rightarrow$ Export) into `simulation.py`.
+- **Consequences:** Pure, testable simulation math isolated from daemon scheduling and HTTP I/O.
+
+---
+
+### ADR 0008: Octoplus Session Parsing & Event Entity Mapping (`octoplus.py`)
+- **Status:** Accepted
+- **Context:** Octoplus session parsing and entity resolution functions were buried inside daemon loop logic.
+- **Decision:** Extract Octoplus parsing, event detection, and entity name mapping into dedicated `octoplus.py` domain module.
+- **Consequences:** Reusable Octoplus event evaluation across optimization passes, light monitor checks, and manual automation triggers.
+
+---
+
+### ADR 0009: Configurable Verbose Debug Logging Toggle (`debug_logging`)
+- **Status:** Accepted
+- **Context:** Verbose HTTP transport libraries (`httpcore2`, `httpx2`, `urllib3`) flooded Home Assistant container logs with raw request header traces.
+- **Decision:** Introduce a `debug_logging: false` configuration option in `config.yaml` / `/data/options.json`. When `false` (default), force all third-party transport loggers to `WARNING` level.
+- **Consequences:** Clean, readable standard logs with 0 noise, while preserving full `DEBUG` level tracing when explicitly enabled.
+
+---
+
+### ADR 0010: Decoupled Hive Hot Water Gas Control & Morning Shower Guarantee (`hive.py`)
+- **Status:** Accepted
+- **Context:** Dual heating setups (electric pre-charge / iBoost immersion + gas boiler backup via Hive) require automated gas suppression during cheap electric hours without risking cold morning showers.
+- **Decision:** Decouple Hive interaction into standalone `hive.py`. Automatically pause gas (`"off"`) when electric pre-charging or high solar occurs, while evaluating a 6:00 AM fail-safe check ($\ge 45^\circ\text{C}$ threshold) to guarantee a hot shower.
+- **Consequences:** Maximizes gas cost savings, enforces morning shower temperature safety, and provides zero-lockin fallback (defaults to `"schedule"` if Supervisor token or temp sensor is unavailable).
+
+
 

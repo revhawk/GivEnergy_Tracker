@@ -73,6 +73,42 @@ Persisted state       ──┘                  └─► ChatGPT Veto (score) 
                                             │                 │
                                             └────────┬────────┘
                                                      ▼
+### 🏛️ Modular Domain Architecture
+
+```mermaid
+graph TD
+    subgraph Core Orchestration
+        OPTIMISER["optimiser.py (Daemon Orchestrator)"]
+    end
+
+    subgraph Domain Modules
+        CONTRACTS["contracts.py (Pydantic v2 Models)"]
+        STATE["state.py (State & Daily Stats)"]
+        SIMULATION["simulation.py (24h Simulation Engine)"]
+        OCTOPLUS["octoplus.py (Octoplus ADR 0004)"]
+        HIVE["hive.py (Hive Hot Water Controller)"]
+    end
+
+    subgraph External Services
+        GIVTCP["givtcp.py (GivTCP REST & Socket Handling)"]
+        TARIFFS["tariffs.py (Octopus API)"]
+        SOLAR["solar.py (Forecast.Solar & Open-Meteo)"]
+        LLM["llm.py (ChatGPT LLM Veto & Audit)"]
+    end
+
+    OPTIMISER --> CONTRACTS
+    OPTIMISER --> STATE
+    OPTIMISER --> SIMULATION
+    OPTIMISER --> OCTOPLUS
+    OPTIMISER --> HIVE
+    OPTIMISER --> GIVTCP
+    OPTIMISER --> TARIFFS
+    OPTIMISER --> SOLAR
+    OPTIMISER --> LLM
+```
+
+---
+
 ### ⏰ Daily Execution Timeline
 
 ```mermaid
@@ -93,16 +129,27 @@ gantt
 
 ---
 
+### 🚀 Future Hardware Roadmap & Planned Enhancements
+
+The add-on currently features software simulation and fail-safe logic for heating and hot water. Physical hardware controls will be enabled once hardware installation is finalized:
+
+- **⚡ Direct iBoost Hardware Relay Override (Planned)**: Physical smart relay integration (e.g. Shelly / ESPHome relay contact) to programmatically override the iBoost controller during negative/plunge electricity rate slots ($< 0.0\text{p/kWh}$), forcing 3 kW immersion heating from cheap/negative grid power even when solar PV generation is 0 W.
+- **🌡️ Hot Water Cylinder Temperature Sensors (Planned)**: Installation of multi-point 1-Wire DS18B20 or Zigbee cylinder probes (top/middle/bottom) to measure exact thermal stratification ($^\circ\text{C}$) and stored thermal energy ($\text{kWh}$). When missing, `evaluate_morning_shower_safety(tank_temp_c)` defaults to `SAFE` mode (keeping Hive gas boiler on `"schedule"`) to guarantee a 6:00 AM warm shower.
+
+---
+
 ## ⚙️ Configuration Options Quick Reference
 
 | Option | Default | Required? | First-Time User Guidance |
 | :--- | :---: | :---: | :--- |
 | **`interval_minutes`** | `30` | Yes | **Leave as `30`**. Wakeup check interval matching Octopus 30-minute tariff slots. |
 | **`run_once`** | `false` | No | **Leave as `false`**. When `true`, runs 1 test pass then stops. Keep `false` for 24/7 background mode. |
+| **`debug_logging`** | `false` | No | **Leave as `false`**. Keeps logs clean and concise. Set to `true` for verbose HTTP troubleshooting. |
 | **`openai_api_key`** | `""` | Optional | **OpenAI API Key** (`sk-...`). Enables ChatGPT plan scoring & daily audit report. Optional. |
 | **`openai_model`** | `gpt-4o-mini` | Optional | **AI Model Selection**. Default (`gpt-4o-mini`) is cheap (< 1p/month), fast, and accurate. |
 | **`daily_plan_hour`** | `17` | Yes | **Daily Planning Hour (5:00 PM)**. Octopus publishes rates at 16:30, programming inverter 7h early. |
 | **`daily_audit_hour`** | `23` | Yes | **Daily Audit Hour (11:00 PM)**. Summarizes today's financial performance right before midnight. |
+| **`hive_water_heater_entity`** | `water_heater.hive_hot_water` | Optional | **Hive Hot Water Entity**. Pauses gas hot water during electric pre-charge/solar immersion. |
 
 ---
 

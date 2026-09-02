@@ -54,6 +54,42 @@ When incrementing the version of this add-on for a release, the version number *
 
 ---
 
+## 🏛️ Modular Domain Architecture
+
+```mermaid
+graph TD
+    subgraph Core Orchestration
+        OPTIMISER["optimiser.py (Daemon Orchestrator)"]
+    end
+
+    subgraph Domain Modules
+        CONTRACTS["contracts.py (Pydantic v2 Models)"]
+        STATE["state.py (State & Daily Stats)"]
+        SIMULATION["simulation.py (24h Simulation Engine)"]
+        OCTOPLUS["octoplus.py (Octoplus ADR 0004)"]
+        HIVE["hive.py (Hive Hot Water Controller)"]
+    end
+
+    subgraph External Services
+        GIVTCP["givtcp.py (GivTCP REST & Socket Handling)"]
+        TARIFFS["tariffs.py (Octopus API)"]
+        SOLAR["solar.py (Forecast.Solar & Open-Meteo)"]
+        LLM["llm.py (ChatGPT LLM Veto & Audit)"]
+    end
+
+    OPTIMISER --> CONTRACTS
+    OPTIMISER --> STATE
+    OPTIMISER --> SIMULATION
+    OPTIMISER --> OCTOPLUS
+    OPTIMISER --> HIVE
+    OPTIMISER --> GIVTCP
+    OPTIMISER --> TARIFFS
+    OPTIMISER --> SOLAR
+    OPTIMISER --> LLM
+```
+
+---
+
 ## ⏰ Daily Schedule & Timeline
 
 Here is what happens throughout the day automatically once the add-on is installed:
@@ -86,10 +122,12 @@ Configure these settings under the add-on's **Configuration** tab in Home Assist
 | :--- | :---: | :---: | :--- |
 | **`interval_minutes`** | `30` | Yes | **Leave as `30`**. Controls how often the add-on checks status. Matches Octopus 30-minute pricing slots. |
 | **`run_once`** | `false` | No | **Leave as `false`**. When `true`, runs 1 test pass then stops. Keep `false` for 24/7 automatic operation. |
+| **`debug_logging`** | `false` | No | **Leave as `false`**. Keeps logs clean and concise. Set to `true` only for verbose HTTP troubleshooting. |
 | **`openai_api_key`** | `""` | Optional | **OpenAI API Key** (`sk-...`). Enables ChatGPT plan scoring & daily audit report. Optional — planner works 100% without it. |
-| **`openai_model`** | `gpt-4o-mini` | Optional | **AI Model Selection**. Default (`gpt-4o-mini`) is fast, highly accurate, and costs less than 1p/month. |
-| **`daily_plan_hour`** | `17` | Yes | **Daily Planning Hour (5:00 PM)**. Octopus publishes rates at 16:30, so 17:00 programs your inverter 7 hours before night charging. |
-| **`daily_audit_hour`** | `23` | Yes | **Daily Audit Hour (11:00 PM)**. Summarizes today's actual performance and financial savings right before midnight. |
+| **`openai_model`** | `gpt-4o-mini` | Optional | **AI Model Selection**. Default (`gpt-4o-mini`) is fast, cheap (< 1p/month), and accurate. |
+| **`daily_plan_hour`** | `17` | Yes | **Daily Planning Hour (5:00 PM)**. Octopus publishes rates at 16:30, programming inverter 7h early. |
+| **`daily_audit_hour`** | `23` | Yes | **Daily Audit Hour (11:00 PM)**. Calculates daily financial savings vs standard tariff. |
+| **`hive_water_heater_entity`** | `water_heater.hive_hot_water` | Optional | **Hive Hot Water Entity**. Pauses gas hot water during electric pre-charge/solar immersion. |
 
 ---
 
@@ -219,6 +257,20 @@ The add-on resolves entity names via `get_octoplus_entity_name()` and `parse_oct
 When multiple cheap sessions or Agile slots exist across the day:
 1. **Opportunistic / Arbitrage & Power Up (Free Electricity)**: Sub-threshold and free slots are merged into blocks and sorted by average price, programming up to the 10 cheapest charge blocks into GivTCP.
 2. **Deficit Charging**: The tracker evaluates contiguous charge windows alongside the cheapest $N$ non-contiguous slots, selecting non-contiguous blocks whenever they yield a lower overall cost.
+
+---
+
+## 🚀 Future Hardware Roadmap & Planned Enhancements
+
+The current add-on version (v1.0.21.3) includes software simulation and fail-safe logic for heating and hot water. The following hardware integrations are planned for upcoming releases once hardware installation is finalized:
+
+### 1. ⚡ Direct iBoost Hardware Relay Override (Planned)
+- **Current Software Behavior**: The add-on models iBoost hot water diversion in the 24-hour simulation when solar PV generation exceeds home demand and battery charge capacity.
+- **Planned Hardware Enhancement**: Physical smart relay integration (e.g. Shelly / ESPHome relay contact) to programmatically override the iBoost controller during negative/plunge electricity rate slots ($< 0.0\text{p/kWh}$). This will force 3 kW immersion heating from cheap/negative grid power even when solar PV generation is 0 W.
+
+### 2. 🌡️ Dedicated Hot Water Cylinder Temperature Probes (Planned)
+- **Current Software Behavior**: The `evaluate_morning_shower_safety(tank_temp_c)` function checks for a numerical temperature sensor entity in Home Assistant. If no sensor is installed, it defaults to `SAFE` mode (keeping Hive gas boiler on `"schedule"`) to guarantee a 6:00 AM warm shower.
+- **Planned Hardware Enhancement**: Installation of multi-point 1-Wire DS18B20 or Zigbee cylinder probes (top/middle/bottom) to measure exact thermal stratification ($^\circ\text{C}$) and stored thermal energy ($\text{kWh}$). Once installed, the tracker will dynamically calculate exact stored thermal energy before disabling gas heating.
 
 ---
 

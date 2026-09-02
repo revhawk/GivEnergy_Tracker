@@ -207,6 +207,24 @@ class TestPydanticSchemaValidation:
         with pytest.raises(Exception):
             contracts.LLMVetoDecision(approve=True, score=15, reason="Score out of bounds")
 
+    def test_octopus_rate_slot_negative_pricing_contract(self):
+        negative_slot = contracts.OctopusRateSlot(
+            value_exc_vat=-5.0,
+            value_inc_vat=-6.0,
+            valid_from="2026-09-02T02:00:00Z",
+            valid_to="2026-09-02T02:30:00Z",
+            payment_method=None
+        )
+        assert negative_slot.value_inc_vat == -6.0
+
+    def test_hive_hot_water_state_contract(self):
+        valid_state = contracts.HiveHotWaterState(
+            mode="off",
+            tank_temperature=48.5
+        )
+        assert valid_state.mode == "off"
+        assert valid_state.tank_temperature == 48.5
+
 
 
 class TestHiveContract:

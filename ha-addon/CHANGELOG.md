@@ -11,6 +11,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.21.3] - 2026-09-02
+
+### Senior Developer Code & Architectural Review
+- **Architecture Decomposition**: Passed Senior Developer review. Decomposed monolithic `optimiser.py` into high-cohesion domain modules: `simulation.py`, `state.py`, `octoplus.py`, and `hive.py`.
+- **Architectural Decision Records (ADRs 0001–0010)**: Formalized local ADRs in `SPECIFICATION.md` following the ADR 0004 standard.
+- **Contract & Option Testing**: Verified 100% test pass rate across 69 tests (`test_config_options.py`, `test_contracts.py`, `test_api_parsing.py`, `test_helpers.py`, `test_optimization.py`, `test_write_slots.py`).
+- **Future Hardware Roadmap**: Documented planned hardware extensions for direct iBoost physical relay override and DS18B20 hot water cylinder temperature probes.
+
+### Added
+- **Local Architectural Decision Records**: Added Section 8 (ADRs 0001 – 0010) in `ha-addon/SPECIFICATION.md`.
+- **Add-on Configuration Options Test Suite**: Created `tests/test_config_options.py` testing all Home Assistant UI options (`interval_minutes`, `run_once`, `debug_logging`, `openai_api_key`, `openai_model`, `daily_plan_hour`, `daily_audit_hour`).
+- **Expanded Pydantic v2 Contract Tests**: Extended `tests/test_contracts.py` with boundary validation for all Pydantic v2 data models.
+- **Hardware Integration Roadmap**: Documented planned hardware extensions in `DOCS.md`, `README.md`, and `SPECIFICATION.md`.
+
+---
+
 ## [1.0.20] - 2026-09-01
 
 ### Added
