@@ -311,5 +311,22 @@ Test results are saved in `test-results/contracts.xml` and output to standard lo
 - **Decision:** Decouple Hive interaction into standalone `hive.py`. Automatically pause gas (`"off"`) when electric pre-charging or high solar occurs, while evaluating a 6:00 AM fail-safe check ($\ge 45^\circ\text{C}$ threshold) to guarantee a hot shower.
 - **Consequences:** Maximizes gas cost savings, enforces morning shower temperature safety, and provides zero-lockin fallback (defaults to `"schedule"` if Supervisor token or temp sensor is unavailable).
 
+---
+
+### ADR 0011: Appliance Telemetry & Washing Machine Usage Dashboard (`appliance.py`)
+- **Status:** Accepted
+- **Context:** Weekday laundry running creates significant daytime electricity demand. Monitoring smart plug power sensors (`sensor.washing_machine_power`) enables accurate cycle energy tracking and optimal Agile wash window recommendations.
+- **Decision:** Encapsulate appliance telemetry, wash cycle state detection (`"idle"`, `"washing"`, `"spinning"`, `"heating"`), cycle cost calculation in pence, and Washing Machine Dashboard rendering into dedicated `appliance.py`.
+- **Consequences:** Provides real-time visibility into laundry costs, recommends the top 3 cheapest contiguous Agile wash windows, and feeds weekday laundry consumption into 24-hour load forecasting.
+
+---
+
+### ADR 0012: Early Afternoon Pre-Charge Evaluation for Evening Oven Cooking Peak
+- **Status:** Accepted
+- **Context:** Dinner preparation (16:00–18:00) involves heavy electric oven/hob usage. Evaluating peak battery survival at 16:00 is too late because cooking has already started and rates have jumped to 41.0p–50.9p/kWh.
+- **Decision:** Evaluate 16:00–20:00 cooking & evening peak demand early during afternoon planning passes (13:00–14:30). If battery SoC + expected solar is insufficient to cover oven cooking load, pre-charge the battery during cheap 25.9p Agile slots (e.g. 14:30).
+- **Consequences:** Guarantees full battery pre-charge at 25.9p before 16:00, completely avoiding 41.0p and 50.9p peak rates during dinner cooking.
+
+
 
 

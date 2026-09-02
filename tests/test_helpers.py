@@ -95,10 +95,15 @@ class TestGetLoadKwhForSlot:
         assert got == 0.60
 
     def test_daytime_load_baseline(self):
-        slot = self._slot("2026-07-03T14:00:00+01:00", "2026-07-03T14:30:00+01:00")
-        got = optimiser.get_load_kwh_for_slot(slot["start"], slot["end"])
-        # 700W * 0.5h / 1000 = 0.35 kWh
-        assert got == 0.35
+        # Weekday (Friday 2026-07-03): (700W + 400W laundry) * 0.5h / 1000 = 0.55 kWh
+        slot_weekday = self._slot("2026-07-03T14:00:00+01:00", "2026-07-03T14:30:00+01:00")
+        got_weekday = optimiser.get_load_kwh_for_slot(slot_weekday["start"], slot_weekday["end"])
+        assert got_weekday == 0.55
+
+        # Weekend (Saturday 2026-07-04): 700W * 0.5h / 1000 = 0.35 kWh
+        slot_weekend = self._slot("2026-07-04T14:00:00+01:00", "2026-07-04T14:30:00+01:00")
+        got_weekend = optimiser.get_load_kwh_for_slot(slot_weekend["start"], slot_weekend["end"])
+        assert got_weekend == 0.35
 
     def test_overnight_load_baseline(self):
         slot = self._slot("2026-07-03T02:00:00+01:00", "2026-07-03T02:30:00+01:00")

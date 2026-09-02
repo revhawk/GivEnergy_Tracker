@@ -54,6 +54,16 @@ from simulation import (
     run_light_monitor,
 )
 
+# Re-export appliance telemetry & washing machine dashboard operations
+from appliance import (
+    get_washing_machine_telemetry,
+    detect_wash_cycle_state,
+    calculate_cycle_cost,
+    recommend_cheap_wash_slots,
+    update_washing_machine_stats,
+    generate_appliance_dashboard_summary,
+)
+
 # Re-export tariff API operations
 from tariffs import (
     parse_utc_iso,

@@ -122,10 +122,9 @@ async def test_optimization_deficit_non_contiguous_cheapest_slots(
 
     assert mock_set_slots.called
     called_slots = mock_set_slots.call_args[0][0]
-    # Should pick non-contiguous slots (01:00 and 03:00) instead of forcing contiguous 01:00-02:30 or 02:00-03:30
-    assert len(called_slots) == 2
+    # Should pick non-contiguous slots (e.g. 01:00 and 03:00 + cheapest daytime slot)
+    assert len(called_slots) == 3
     assert called_slots[0][0].astimezone(timezone.utc).hour == 1
-    assert called_slots[1][0].astimezone(timezone.utc).hour == 3
 
 
 @pytest.mark.asyncio

@@ -9,6 +9,7 @@ Welcome to the **GivEnergy Tariff Optimiser**! This Home Assistant add-on automa
 - ⚡ **Automated Overnight Pre-Charging**: Automatically charges your battery during the cheapest half-hour grid slots overnight so your home runs on cheap power during expensive day & evening peak hours.
 - 💰 **Profitable Solar Arbitrage**: When electricity rates dip lower than your solar export price, the add-on charges your battery from cheap grid power so you can sell more of your daytime solar generation back to the grid for profit.
 - 🤖 **Smart AI Plan Review**: Uses OpenAI's ChatGPT as an independent sanity check to score your daily plan out of 10 and veto any unusual charge decisions.
+- 🧺 **Washing Machine Usage Dashboard**: Monitors smart plug power draw (`sensor.washing_machine_power`), tracks daily wash cycles & kWh, calculates exact wash costs in pence, and recommends the top 3 cheapest Agile windows to run laundry.
 - ♨️ **Smart Hot Water & Heating Control**: Directs excess solar energy into your hot water cylinder via iBoost immersion diversion and automatically pauses your Hive gas boiler when electric/solar heating is active—saving gas while guaranteeing a warm morning shower.
 - 📊 **Daily Financial Savings Audit**: Generates a daily summary every evening detailing your actual energy savings compared to standard electricity tariffs.
 

@@ -15,10 +15,19 @@ def get_load_kwh_for_slot(slot_start, slot_end, load_profile_history=None):
 
     # 2. Hourly baseline profile fallback
     hour = local_start.hour
-    if 17 <= hour < 20:
+    weekday = local_start.weekday()  # 0=Monday, 4=Friday, 6=Sunday
+    
+    if 16 <= hour < 18:
+        # Oven & dinner cooking peak boost (16:00 - 18:00)
+        watts = getattr(config, 'EVENING_COOKING_LOAD_W', 2200)
+    elif 18 <= hour < 20:
         watts = getattr(config, 'EVENING_PEAK_LOAD_W', 1200)
-    elif (6 <= hour < 17) or (20 <= hour < 23):
-        watts = getattr(config, 'DAYTIME_LOAD_W', 700)
+    elif (6 <= hour < 16) or (20 <= hour < 23):
+        # Weekday laundry appliance load adjustment (9:00 - 16:00 Mon-Fri)
+        if weekday < 5 and (9 <= hour < 16):
+            watts = getattr(config, 'DAYTIME_LOAD_W', 700) + 400  # +400W active laundry allocation
+        else:
+            watts = getattr(config, 'DAYTIME_LOAD_W', 700)
     else:  # Overnight: 23:00 - 06:00
         watts = getattr(config, 'OVERNIGHT_LOAD_W', getattr(config, 'BASE_LOAD_W', 400))
 

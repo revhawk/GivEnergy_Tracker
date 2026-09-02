@@ -3,7 +3,7 @@
 Single source of truth for all external API payload schemas, inverter telemetry,
 tariff rate structures, and ChatGPT LLM response validation.
 """
-from typing import List, Optional
+from typing import List, Optional, Literal
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -52,7 +52,33 @@ class LLMVetoDecision(BaseModel):
     reason: str = Field(..., min_length=5, description="Plain-English explanation of decision")
 
 
+class RecommendedSlot(BaseModel):
+    """Recommended charge slot model for AI Co-Planner."""
+    start: str = Field(..., description="Start time HH:MM")
+    end: str = Field(..., description="End time HH:MM")
+    reason: str = Field(..., description="Explanation for this slot choice")
+
+
+class LLMPlannerRecommendation(BaseModel):
+    """Structured AI Co-Planner recommendation contract."""
+    approve: bool = Field(..., description="Whether ChatGPT approves the overall plan strategy")
+    score: int = Field(..., ge=1, le=10, description="Plan economic quality score (1 to 10)")
+    recommended_action: Literal["charge", "no_charge", "override"] = Field(..., description="Proposed inverter action")
+    recommended_slots: List[RecommendedSlot] = Field(default_factory=list, description="List of proposed charge slots")
+    reasoning: str = Field(..., min_length=5, description="Detailed strategic reasoning")
+
+
+class WashingMachineTelemetry(BaseModel):
+    """Washing machine smart plug telemetry contract."""
+    state: str = Field(..., description="Current cycle state: 'idle', 'washing', 'spinning', 'heating'")
+    current_power_w: float = Field(0.0, ge=0.0, description="Real-time power draw in Watts")
+    cycles_today: int = Field(0, ge=0, description="Number of completed wash cycles today")
+    total_kwh_today: float = Field(0.0, ge=0.0, description="Total washing machine kWh today")
+    estimated_cost_today_p: float = Field(0.0, ge=0.0, description="Estimated total washing cost in pence")
+
+
 class HiveHotWaterState(BaseModel):
     """Decoupled Hive hot water controller payload contract."""
     mode: str = Field(..., description="Operation mode: 'off' or 'schedule'", json_schema_extra={"example": "off"})
     tank_temperature: Optional[float] = Field(None, description="Cylinder temperature in °C if sensor present", json_schema_extra={"example": 48.5})
+

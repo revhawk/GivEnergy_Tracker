@@ -11,6 +11,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.22.0] - 2026-09-02
+
+### Senior Developer Code & Architectural Review
+- **Appliance Telemetry & Washing Machine Dashboard (`appliance.py`)**: Created dedicated domain module (`ha-addon/appliance.py`) monitoring Home Assistant smart plug power sensors (`sensor.washing_machine_power`), detecting wash states (`idle`, `washing`, `spinning`, `heating`), calculating cycle costs in pence, and recommending cheap Agile wash windows.
+- **Oven Cooking Peak Pre-Charge (16:00–18:00)**: Evaluates 16:00–20:00 dinner preparation load early during afternoon runs (13:00–14:30), scheduling pre-charging at 25.9p (14:30) to guarantee full battery before 41.0p–50.9p peak rates start.
+- **Structured AI Co-Planner (`LLMPlannerRecommendation`)**: Upgraded ChatGPT from a simple veto engine to a structured Pydantic v2 Co-Planner that receives tariff, solar, cooking, and washing load context and returns executable slot recommendations.
+- **Architectural Decision Records (ADRs 0011–0012)**: Documented ADR 0011 (Appliance Telemetry & Washing Machine Dashboard) and ADR 0012 (Early Afternoon Pre-Charge Evaluation for Evening Oven Cooking Peak) in `ha-addon/SPECIFICATION.md`.
+- **Test Suite Execution**: 100% test pass rate across 74 tests in pytest (`tests/test_appliance.py`, `tests/test_config_options.py`, `tests/test_contracts.py`, `tests/test_api_parsing.py`, `tests/test_helpers.py`, `tests/test_optimization.py`, `tests/test_write_slots.py`).
+
+### Added
+- **Appliance Telemetry Module**: Created `ha-addon/appliance.py` for cycle detection, cost math, and Washing Machine Dashboard rendering.
+- **Washing Machine Test Suite**: Created `tests/test_appliance.py` testing wash cycle state detection, cost calculations, and slot recommendation algorithms.
+- **Pydantic v2 Appliance & Co-Planner Contracts**: Added `WashingMachineTelemetry`, `RecommendedSlot`, and `LLMPlannerRecommendation` to `ha-addon/contracts.py`.
+
+---
+
 ## [1.0.21.3] - 2026-09-02
 
 ### Senior Developer Code & Architectural Review
