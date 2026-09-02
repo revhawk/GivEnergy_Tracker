@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "GivEnergy Tariff Optimiser \u2014 Data Contracts & Schemas",
-    "version": "1.0.21.2",
+    "version": "1.0.21.3",
     "description": "Auto-generated OpenAPI specification from Pydantic v2 data models. Single source of truth for inverter telemetry, Octopus tariffs, GivTCP REST payloads, and ChatGPT AI veto validation."
   },
   "components": {

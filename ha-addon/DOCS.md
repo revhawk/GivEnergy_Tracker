@@ -1,348 +1,119 @@
-# GivEnergy Tariff Optimiser — Add-on Documentation
+# GivEnergy Tariff Optimiser — Add-on User Guide
 
-## Overview
-
-This add-on connects to your GivEnergy battery inverter via GivTCP and manages grid-charging around the Octopus Agile (import) and Outgoing Variable (export) tariffs. It:
-
-- Schedules the cheapest overnight charge window when your battery needs to be topped up
-- Opportunistically charges the battery from **any** Agile slot cheaper than your export rate (arbitrage), so imported cheap power lets more of your solar go to grid at the higher export price
-- Uses ChatGPT as an independent second opinion — it rates every plan out of 10 and can veto a poor charge decision
-- Produces a plain-English end-of-day audit summarising the day's decisions and estimated savings
-
-Since v1.0.3 the add-on runs **one planning pass per day** (not every 30 minutes) — the rest of the day is a lightweight status check. This keeps API usage and inverter traffic minimal.
+Welcome to the **GivEnergy Tariff Optimiser**! This Home Assistant add-on automates your GivEnergy battery storage, solar PV panels, and hot water heating around your dynamic **Octopus Energy** electricity tariffs (such as Octopus Agile and Outgoing Export).
 
 ---
 
-## 📥 Installation & Repository Setup
+## 🌟 What This Add-on Does For You
 
-### Option 1: 1-Click Add-on Store Setup
+- ⚡ **Automated Overnight Pre-Charging**: Automatically charges your battery during the cheapest half-hour grid slots overnight so your home runs on cheap power during expensive day & evening peak hours.
+- 💰 **Profitable Solar Arbitrage**: When electricity rates dip lower than your solar export price, the add-on charges your battery from cheap grid power so you can sell more of your daytime solar generation back to the grid for profit.
+- 🤖 **Smart AI Plan Review**: Uses OpenAI's ChatGPT as an independent sanity check to score your daily plan out of 10 and veto any unusual charge decisions.
+- ♨️ **Smart Hot Water & Heating Control**: Directs excess solar energy into your hot water cylinder via iBoost immersion diversion and automatically pauses your Hive gas boiler when electric/solar heating is active—saving gas while guaranteeing a warm morning shower.
+- 📊 **Daily Financial Savings Audit**: Generates a daily summary every evening detailing your actual energy savings compared to standard electricity tariffs.
 
-Click the button below to add this repository directly to your Home Assistant Add-on Store:
+---
 
-[![Open your Home Assistant instance and show the add-on store with a specific repository filled in.](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Frevhawk%2FGivEnergy_Tracker)
+## 🚀 Quick Setup Guide
 
-### Option 2: Manual Add-on Store Setup
+### 1. Installation
 
 1. In Home Assistant, go to **Settings → Add-ons → Add-on Store**.
-2. Click **⋮ (three dots) → Repositories** (top right).
-3. Paste the repository URL:
+2. Click **⋮ (three dots) → Repositories** in the top right.
+3. Add the repository URL:
    ```text
    https://github.com/revhawk/GivEnergy_Tracker
    ```
-4. Click **Add**, then select **GivEnergy Tariff Optimiser** from the store list to install.
+4. Find **GivEnergy Tariff Optimiser** in the store list and click **Install**.
+
+### 2. Configuration Settings
+
+Open the **Configuration** tab of the add-on to customize your settings:
+
+| Setting | Recommended Default | What It Means for You |
+| :--- | :---: | :--- |
+| **`interval_minutes`** | `30` | **Leave as `30`**. Wake-up check cadence matching Octopus 30-minute tariff slots. |
+| **`run_once`** | `false` | **Keep `false`** for 24/7 background mode. Set to `true` only if you want to run 1 test pass and exit. |
+| **`debug_logging`** | `false` | **Keep `false`** for clean, easy-to-read logs. Set to `true` if you need detailed HTTP connection traces for troubleshooting. |
+| **`openai_api_key`** | `""` *(Optional)* | Enter your OpenAI API key (`sk-proj-...`) to enable ChatGPT plan scoring & daily audit reports. Optional—the planner works 100% without it. |
+| **`openai_model`** | `gpt-4o-mini` | Select `gpt-4o-mini` (cheap, fast, and highly accurate). |
+| **`daily_plan_hour`** | `17` *(5:00 PM)* | The hour when tomorrow's charge plan is calculated. Octopus publishes rates at 16:30, so 17:00 programs your inverter 7 hours before night charging. |
+| **`daily_audit_hour`** | `23` *(11:00 PM)* | The hour when your daily financial savings report is generated. |
+| **`hive_water_heater_entity`** | `water_heater.hive_hot_water` | Your Hive hot water entity in Home Assistant. Automatically pauses gas boiler schedule when electric/solar heating is active. |
 
 ---
 
-## Version Control Checklist
+## ⏰ How Your System Works Throughout the Day
 
-When incrementing the version of this add-on for a release, the version number **must** be updated in `ha-addon/version.py` and `ha-addon/config.yaml` at the same time:
-
-1. **`ha-addon/version.py`**: Single source of truth for python code (`__version__ = "1.0.20"`).
-   ```python
-   __version__ = "1.0.20"
-   ```
-2. **`ha-addon/config.yaml`**: The `version:` field must match the target release (used by Home Assistant Add-on Store to detect updates).
-   ```yaml
-   version: "1.0.20"
-   ```
-3. **`ha-addon/CHANGELOG.md`**: Add the release header and list all notable changes.
-   ```markdown
-   ## [1.0.20] - 2026-09-01
-   ```
-
-*Note: Home Assistant validates `config.yaml` and `optimiser.py` versions on startup. If they do not match, the add-on will log a warning on startup.*
-
----
-
-## 🏛️ Modular Domain Architecture
-
-```mermaid
-graph TD
-    subgraph Core Orchestration
-        OPTIMISER["optimiser.py (Daemon Orchestrator)"]
-    end
-
-    subgraph Domain Modules
-        CONTRACTS["contracts.py (Pydantic v2 Models)"]
-        STATE["state.py (State & Daily Stats)"]
-        SIMULATION["simulation.py (24h Simulation Engine)"]
-        OCTOPLUS["octoplus.py (Octoplus ADR 0004)"]
-        HIVE["hive.py (Hive Hot Water Controller)"]
-    end
-
-    subgraph External Services
-        GIVTCP["givtcp.py (GivTCP REST & Socket Handling)"]
-        TARIFFS["tariffs.py (Octopus API)"]
-        SOLAR["solar.py (Forecast.Solar & Open-Meteo)"]
-        LLM["llm.py (ChatGPT LLM Veto & Audit)"]
-    end
-
-    OPTIMISER --> CONTRACTS
-    OPTIMISER --> STATE
-    OPTIMISER --> SIMULATION
-    OPTIMISER --> OCTOPLUS
-    OPTIMISER --> HIVE
-    OPTIMISER --> GIVTCP
-    OPTIMISER --> TARIFFS
-    OPTIMISER --> SOLAR
-    OPTIMISER --> LLM
-```
-
----
-
-## ⏰ Daily Schedule & Timeline
-
-Here is what happens throughout the day automatically once the add-on is installed:
+Once installed, the add-on runs quietly in the background without spamming your network or inverter:
 
 ```mermaid
 gantt
-    title Daily Optimiser Execution Timeline
+    title Daily Optimiser Schedule
     dateFormat  HH:mm
     axisFormat %H:%M
 
     section Octopus Tariff
     Tomorrow's Rates Published (16:00-16:30) :milestone, m1, 16:30, 0min
 
-    section Daemon Tasks
-    Daily Planning Run (Fetch rates, solar & program inverter) :active, p1, 17:00, 30min
-    Light Monitor Checks (Periodically verify battery SoC) :m2, 17:30, 5h
-    End-of-Day Audit (ChatGPT Financial Savings Report) :crit, a1, 23:00, 30min
+    section Add-on Tasks
+    Daily Planning Run (Calculates plan & programs inverter) :active, p1, 17:00, 30min
+    Light Status Checks (Periodic battery SoC checks) :m2, 17:30, 5h
+    Daily Financial Savings Audit (ChatGPT Audit Report) :crit, a1, 23:00, 30min
     Inverter Executes Scheduled Overnight Charging :done, c1, 02:00, 3h
 ```
 
----
+### The 3 Routine Modes:
 
-## ⚙️ Configuration Options Guide (First-Time User)
-
-Configure these settings under the add-on's **Configuration** tab in Home Assistant.
-
-### Quick Reference Table
-
-| Option | Default | Required? | First-Time User Guidance |
-| :--- | :---: | :---: | :--- |
-| **`interval_minutes`** | `30` | Yes | **Leave as `30`**. Controls how often the add-on checks status. Matches Octopus 30-minute pricing slots. |
-| **`run_once`** | `false` | No | **Leave as `false`**. When `true`, runs 1 test pass then stops. Keep `false` for 24/7 automatic operation. |
-| **`debug_logging`** | `false` | No | **Leave as `false`**. Keeps logs clean and concise. Set to `true` only for verbose HTTP troubleshooting. |
-| **`openai_api_key`** | `""` | Optional | **OpenAI API Key** (`sk-...`). Enables ChatGPT plan scoring & daily audit report. Optional — planner works 100% without it. |
-| **`openai_model`** | `gpt-4o-mini` | Optional | **AI Model Selection**. Default (`gpt-4o-mini`) is fast, cheap (< 1p/month), and accurate. |
-| **`daily_plan_hour`** | `17` | Yes | **Daily Planning Hour (5:00 PM)**. Octopus publishes rates at 16:30, programming inverter 7h early. |
-| **`daily_audit_hour`** | `23` | Yes | **Daily Audit Hour (11:00 PM)**. Calculates daily financial savings vs standard tariff. |
-| **`hive_water_heater_entity`** | `water_heater.hive_hot_water` | Optional | **Hive Hot Water Entity**. Pauses gas hot water during electric pre-charge/solar immersion. |
+1. **Daily Planner (Fires at 17:00)**: Fetches tomorrow's 48 Octopus Agile rates and solar forecasts, simulates 24 hours of home energy demand, programs optimal charge slots into your inverter via GivTCP, and pauses Hive gas boiler when appropriate.
+2. **Light Status Checks (Every 30 mins)**: Reads current battery percentage quietly without modifying inverter settings or making unnecessary internet calls.
+3. **Daily Savings Audit (Fires at 23:00)**: Calculates your estimated savings for the day and logs a clear summary report.
 
 ---
 
-### Detailed Option Explanations
+## 💡 How The Add-on Saves You Money
 
-#### `interval_minutes` *(int, default: 30)*
-- **What it does:** Sets how often the background daemon wakes up to check battery status.
-- **Why it exists:** Aligns with Octopus Agile's 30-minute electricity pricing windows.
-- **First-Time User Advice:** Do not change this unless requested during troubleshooting.
+### 1. Overnight Deficit Charging
+If tomorrow's solar forecast is low and won't cover your estimated home energy demand, the optimiser calculates exact shortfall kWh and schedules charging during the absolute cheapest overnight Agile slots.
 
-#### `run_once` *(bool, default: false)*
-- **What it does:** Executes a single optimization run on container start and immediately exits.
-- **Why it exists:** Designed for developer testing or Home Assistant automation triggers.
-- **First-Time User Advice:** Ensure this toggle is **OFF** (`false`) so the add-on runs 24/7 in the background.
+### 2. Solar Arbitrage
+When an Agile rate slot is cheaper than your export price (for example, import at 8p/kWh vs export at 12p/kWh), the tracker charges your battery from grid power. This frees up 100% of your daytime solar power to be exported to the grid for maximum profit.
 
-#### `openai_api_key` *(string, default: "")*
-- **What it does:** Your private secret key from OpenAI (`sk-proj-...`).
-- **Why it exists:** Unlocks ChatGPT AI plan evaluation and English daily financial summary reports.
-- **First-Time User Advice:** Leave blank if you don't use OpenAI. The deterministic optimization engine works 100% standalone without an API key.
+### 3. Octopus Octoplus Sessions (Power Down & Power Up)
+- **Power Down Sessions (Saving Sessions)**: Enforces 0.0 kWh grid import during peak demand events and pre-charges your battery beforehand at cheaper rates.
+- **Power Up Sessions (Free Electricity)**: Automatically schedules maximum battery charging during Octopus Free Electricity sessions.
 
-#### `openai_model` *(radio selection, default: "gpt-4o-mini")*
-- **What it does:** Selects which OpenAI model handles plan evaluation.
-- **Choices:** `gpt-4o-mini` (recommended, cheap & fast), `gpt-4o` (flagship model), `gpt-3.5-turbo` (legacy model).
-- **First-Time User Advice:** Select `gpt-4o-mini`.
-
-#### `daily_plan_hour` *(int 0–23, default: 17)*
-- **What it does:** The hour (0 to 23) when tomorrow's Agile charging plan is calculated and sent to your inverter.
-- **Why default is 17 (5:00 PM):** Octopus publishes tomorrow's 48 half-hour rates between 16:00 and 16:30 every afternoon. Planning at 17:00 programs your inverter 7+ hours before overnight charging begins.
-
-#### `daily_audit_hour` *(int 0–23, default: 23)*
-- **What it does:** The hour (11:00 PM) when the end-of-day audit fires to generate your daily financial savings report.
-- **First-Time User Advice:** Leave as `23`.
+### 4. Smart Hot Water Control
+- **Excess Solar Diversion**: Excess solar power beyond home load and battery capacity is directed into your hot water cylinder via iBoost.
+- **Gas Savings with Morning Shower Safety**: Pauses your Hive gas boiler when overnight electric pre-charging or solar heating is active. At 05:00 AM, it performs a temperature check ($\ge 45^\circ\text{C}$ threshold) to guarantee a hot morning shower.
 
 ---
 
-## How It Works
+## 🚀 Future Hardware Enhancements
 
-### The three modes
+The current add-on version includes full software simulation and fail-safe logic. Upcoming hardware integrations include:
 
-The daemon wakes every `interval_minutes` and picks one of three modes based on time-of-day and stored state:
-
-#### 1. Daily planner (fires once per day at 17:00)
-
-Runs on startup and on the first tick after `daily_plan_hour` each new day. This is the only mode that does the full optimisation:
-
-1. **Fetch Octopus Agile rates** for all upcoming half-hour slots (the public product endpoint — no auth needed).
-2. **Fetch the current Octopus Outgoing Variable export rate** (cached 6 hours).
-3. **Fetch solar forecast** from Forecast.Solar (primary) and Open-Meteo (shadow parallel provider).
-4. **Read current battery SoC** from GivTCP (with direct Modbus TCP as fallback).
-5. **Simulate 24 hours** of battery/solar/home-load evolution using dynamic load profiling (rolling half-hour telemetry history & hourly baseline profiles: overnight 400 W, daytime 700 W, evening peak 1200 W).
-6. **Decide the action:**
-   - **Deficit charge**: if the simulation predicts grid import is required, schedule the cheapest Agile slot combination that covers it.
-   - **Power Down session pre-charge**: if an Octoplus Power Down session is active (e.g. 18:00-19:00), enforce 0.0 kWh grid import and pre-charge battery at cheaper prior rates.
-   - **Arbitrage charge**: if any upcoming slot is priced below `(export_rate × 0.90 - ARBITRAGE_MARGIN_P)`, fill available battery capacity from that window.
-   - **Negative-rate override**: if any slot has a negative price (grid pays you), fill the battery aggressively.
-   - **No charge**: if none of the above are worthwhile, clear all charge slots (set Eco mode).
-7. **LLM veto**: send the plan to ChatGPT in a structured JSON prompt. It returns `approve` (bool), `score` (1–10), and `reason`. If it disapproves a charge plan, slots are cleared as a fallback. The LLM fails-open — a timeout or bad response defaults to approving the deterministic plan.
-8. **Write to inverter**: via GivTCP REST v2/v3 (`/setChargeSlot`, `/setChargeTarget`, `/setBatteryMode`), programming up to 10 slots and setting Timed Demand mode.
-9. **Persist snapshot**: the full plan (window, kWh, rates, LLM verdict) is written to state for the audit to read later.
-
-Total external calls per planning run: ~2 Octopus, 1 forecast.solar, 1 OpenAI. Under 5 seconds end-to-end.
-
-#### 2. Light monitor (fires every other tick)
-
-- Reads current SoC from GivTCP
-- Logs one line: `Battery SoC: XX%`
-- No LLM, no re-planning, no inverter writes.
-
-This is the boring, safe default that runs 46 times a day. It doesn't interfere with the plan already programmed into the inverter.
-
-#### 3. End-of-day audit (fires once per day)
-
-Runs on the first tick after `daily_audit_hour`:
-
-- Reloads the day's plan snapshot from state.
-- Reads daily statistics (charge windows scheduled, rates seen, SoC changes).
-- Sends the day's data to ChatGPT for an English-language verdict: what worked, estimated savings vs peak-rate baseline, suggestions for algorithm tuning.
-- Logs the report to file.
+- **⚡ Direct iBoost Immersion Relay Override**: Hardware relay contact integration to force 3 kW immersion hot water heating during negative/plunge electricity rate slots ($< 0.0\text{p/kWh}$).
+- **🌡️ Hot Water Cylinder Temperature Probes**: Integration with 1-Wire DS18B20 or Zigbee multi-point cylinder sensors to measure exact stored thermal energy ($\text{kWh}$).
 
 ---
 
-## The Algorithm's Economic Model
+## ❓ Frequently Asked Questions & Troubleshooting
 
-- **Import cost** = charge_kwh × avg_slot_price
-- **Export income** = 12p/kWh (currently — fetched live at each planning run)
-- **Round-trip battery efficiency** ≈ 90% (built into the arbitrage margin)
-- **Profit break-even** for arbitrage: `import_price < 12p × 0.90 ≈ 10.8p`
-- **Arbitrage margin** (`ARBITRAGE_MARGIN_P`, default 0.5p): reduces the threshold to `11.5p` and stops the tracker chasing marginal opportunities.
+### Why is no grid charging scheduled today?
+1. **Solar covers your needs**: Your solar forecast is strong enough to cover home load and fill your battery without needing grid power.
+2. **Import rates are higher than export**: Every import slot is above your export arbitrage threshold, so grid charging would cost more than exporting solar.
 
-If your export rate changes (Octopus updates the Outgoing Variable tariff), the tracker will pick it up automatically at the next planning run — no config edit required. The cached rate refreshes every 6 hours.
+### How do I check add-on logs?
+Go to **Settings → Add-ons → GivEnergy Tariff Optimiser → Log** tab.
 
----
-
-## Config file (`config.py`) — key knobs
-
-Edit `ha-addon/config.py` and **Rebuild** the add-on (not just Restart — `config.py` is baked into the image at build time).
-
-```python
-# Home load baseline
-BASE_LOAD_W = 1000   # Continuous home load in Watts. Set from your true overnight
-                     # draw — under-estimating causes the tracker to schedule too
-                     # little grid charge.
-
-# Export tariff (Octopus Outgoing Variable — verify via account API if it changes)
-EXPORT_PRODUCT_CODE     = "OUTGOING-VAR-24-10-26"
-EXPORT_TARIFF_CODE      = "E-1R-OUTGOING-VAR-24-10-26-E"
-EXPORT_RATE_P_FALLBACK  = 12.0
-ARBITRAGE_MARGIN_P      = 0.5   # Import must be below (export - margin) to arbitrage
-
-# Octopus Octoplus sessions (ADR 0004 compliance)
-OCTOPLUS_POWER_DOWN_ENTITY = "sensor.octopus_energy_power_down_sessions"
-OCTOPLUS_POWER_UP_ENTITY   = "sensor.octopus_energy_power_up_sessions"
-```
+If you have configured Network Storage at `/share/nas_logs/`, rotating logs and state files are saved automatically for long-term historical records:
+- `/share/nas_logs/givenergy_tracker.log`
+- `/share/nas_logs/givenergy_state.json`
+- `/share/nas_logs/givenergy_daily_stats.json`
 
 ---
 
-## Octoplus Session Integration (ADR 0004)
+## 💬 Support & Feedback
 
-Per `HomeAssistant-OctopusEnergy` ADR 0004:
-- **Saving Sessions** are renamed to **Power Down** (`sensor.octopus_energy_power_down_sessions`, `event.octopus_energy_octoplus_power_down_events`, `calendar.octopus_energy_octoplus_power_down_sessions`).
-- **Free Electricity Sessions** are renamed to **Power Up** (`sensor.octopus_energy_power_up_sessions`, `event.octopus_energy_octoplus_power_up_events`, `calendar.octopus_energy_octoplus_power_up_sessions`).
-
-The add-on resolves entity names via `get_octoplus_entity_name()` and `parse_octoplus_session()`, providing backwards compatibility for legacy `saving_sessions` and `free_electricity_sessions` entities until January 2027.
-
-### Multi-Slot & Non-Contiguous Optimisation
-
-When multiple cheap sessions or Agile slots exist across the day:
-1. **Opportunistic / Arbitrage & Power Up (Free Electricity)**: Sub-threshold and free slots are merged into blocks and sorted by average price, programming up to the 10 cheapest charge blocks into GivTCP.
-2. **Deficit Charging**: The tracker evaluates contiguous charge windows alongside the cheapest $N$ non-contiguous slots, selecting non-contiguous blocks whenever they yield a lower overall cost.
-
----
-
-## 🚀 Future Hardware Roadmap & Planned Enhancements
-
-The current add-on version (v1.0.21.3) includes software simulation and fail-safe logic for heating and hot water. The following hardware integrations are planned for upcoming releases once hardware installation is finalized:
-
-### 1. ⚡ Direct iBoost Hardware Relay Override (Planned)
-- **Current Software Behavior**: The add-on models iBoost hot water diversion in the 24-hour simulation when solar PV generation exceeds home demand and battery charge capacity.
-- **Planned Hardware Enhancement**: Physical smart relay integration (e.g. Shelly / ESPHome relay contact) to programmatically override the iBoost controller during negative/plunge electricity rate slots ($< 0.0\text{p/kWh}$). This will force 3 kW immersion heating from cheap/negative grid power even when solar PV generation is 0 W.
-
-### 2. 🌡️ Dedicated Hot Water Cylinder Temperature Probes (Planned)
-- **Current Software Behavior**: The `evaluate_morning_shower_safety(tank_temp_c)` function checks for a numerical temperature sensor entity in Home Assistant. If no sensor is installed, it defaults to `SAFE` mode (keeping Hive gas boiler on `"schedule"`) to guarantee a 6:00 AM warm shower.
-- **Planned Hardware Enhancement**: Installation of multi-point 1-Wire DS18B20 or Zigbee cylinder probes (top/middle/bottom) to measure exact thermal stratification ($^\circ\text{C}$) and stored thermal energy ($\text{kWh}$). Once installed, the tracker will dynamically calculate exact stored thermal energy before disabling gas heating.
-
----
-
-## Log locations
-
-The add-on writes to two places:
-
-- **HA add-on Log tab** — real-time, last few hundred lines.
-- **`/share/nas_logs/givenergy_tracker.log`** — rotating file, 5 MB × 3 backups, only present if Home Assistant Network Storage is mounted at `/share/nas_logs/`. See below.
-- **`/share/nas_logs/givenergy_state.json`** — the day's plan snapshot (audit reads this).
-- **`/share/nas_logs/givenergy_daily_stats.json`** — rolling daily statistics.
-
-### Enabling NAS-backed logs
-
-The add-on writes to `/share/nas_logs/` which is only available if you've added a Network Storage entry named `nas_logs` in **Settings → System → Storage**. If you haven't, logs stay in the add-on container (visible in the Log tab) but no persistent file is written — that's fine.
-
----
-
-## Troubleshooting
-
-### `Load 0.15` in every simulation row
-
-This is a symptom of the pre-1.0.3 default (`BASE_LOAD_W = 300`). If you see it after installing 1.0.3, the container is running a stale image — **Rebuild** the add-on (Configuration tab → ⋮ menu → Rebuild), don't just Restart. `config.py` is copied into the image at build time.
-
-### Startup config banner is missing
-
-Same issue — you're running a pre-1.0.3 image. Rebuild.
-
-### GivTCP connection errors
-
-The add-on tries `GIVTCP_URL` in `config.py` first. If unreachable, it falls back to direct Modbus TCP at `INVERTER_IP:INVERTER_PORT`. Update `GIVTCP_URL` in `config.py` to your GivTCP container's IP.
-
-### Forecast.Solar 429 responses
-
-The free tier is 12 calls/hour per IP. Since 1.0.3 the tracker only calls forecast.solar during the daily planner (once per day), so this should no longer be an issue.
-
-### No charge slots today
-
-Two common causes:
-
-1. **Today has no arbitrage-worthy slots** — every Agile rate is above `(export_rate − margin)`, so no import is cheaper than what you'd get by exporting solar. The tracker correctly does nothing.
-2. **Solar forecast covers home load** — with `BASE_LOAD_W` set correctly, the tracker still won't schedule a charge if solar alone can meet the day's demand plus fill the battery.
-
-Look at the log for `Total Grid Import Needed` and the arbitrage section. If `Total Grid Import Needed` is nonzero but no slot appears, check for an `LLM VETOED` line — the model may have overridden the plan.
-
-### ChatGPT audit is not appearing
-
-- Check `openai_api_key` is set in the Configuration tab
-- Check your OpenAI account has active credit
-- Check that the startup banner shows `✓ OpenAI API connected successfully`
-
----
-
-## Local Development & Testing
-
-To set up a local testing environment in `.venv` and execute unit tests:
-
-```bash
-# 1. Create & activate Python virtual environment
-python3 -m venv .venv
-source .venv/bin/activate
-
-# 2. Install requirements for both add-on and test suite
-pip install -r ha-addon/requirements.txt -r tests/requirements.txt
-
-# 3. Run unit test suite
-pytest -v
-```
-
----
-
-## Support
-
-- Issues: please include the last ~50 lines of the addon log when reporting bugs.
-- The tracker logs are safe to paste publicly (no secrets are written) — but double-check before sharing.
+For updates, questions, or issues, visit the [GivEnergy Tracker GitHub Repository](https://github.com/revhawk/GivEnergy_Tracker).
