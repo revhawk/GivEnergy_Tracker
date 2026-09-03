@@ -39,10 +39,10 @@ def get_openai_model():
 
 def chatgpt_veto_plan(current_soc, battery_capacity_kwh, solar_total_kwh,
                      export_rate, upcoming_slots, charge_start, charge_end,
-                     required_kwh, avg_price):
-    """Structured decision validator. Returns (approve: bool, score: int|None, reason: str). Fails open."""
+                     required_kwh, avg_price, day_classification=None):
+    """Structured decision validator & weather risk co-planner. Returns (approve: bool, score: int|None, reason: str, weather_commentary: str). Fails open."""
     if _openai_client is None:
-        return True, None, "LLM disabled"
+        return True, None, "LLM disabled", "LLM disabled"
 
     rates_lines = "\n".join(
         f"  {s['start'].astimezone().strftime('%H:%M')}  {s['price']:.2f}p"
@@ -64,24 +64,32 @@ def chatgpt_veto_plan(current_soc, battery_capacity_kwh, solar_total_kwh,
     arbitrage_break_even = export_rate * 0.90
     effective_charge_cost = (avg_price / 0.90) if avg_price > 0 else avg_price
 
+    class_str = str(day_classification.value if hasattr(day_classification, 'value') else day_classification) if day_classification else "WEATHER_ADAPTIVE"
+
     system_msg = (
         f"You validate battery charging plans for a UK home with solar + battery.\n\n"
         f"HARD FACTS — MUST BE FOLLOWED EXACTLY:\n"
         f"1. Import tariff: Octopus Agile (half-hourly rates). Prices can go NEGATIVE (grid pays us to import energy).\n"
         f"2. Export tariff: Octopus Outgoing at {export_rate:.2f}p/kWh (FLAT all day).\n"
         f"3. Battery round-trip efficiency ≈ 90% (10% energy loss when charging and discharging).\n"
-        f"4. TWO VALID CHARGING MODES:\n"
+        f"4. WEATHER-ADAPTIVE DAY CLASSIFICATION: {class_str}\n"
+        f"   - HIGH_SOLAR_SELF_CONSUMPTION: Solar generation is high. Suppress grid charging unless import rate < 0p.\n"
+        f"   - LOW_SOLAR_GRID_PRECHARGE: Solar generation is low. Pre-charge battery during cheap Agile slots to avoid peak rates.\n"
+        f"   - NEGATIVE_RATE_OPPORTUNITY: Import rates are negative. Grid pays us to charge.\n"
+        f"5. TWO VALID CHARGING MODES:\n"
         f"   a) ARBITRAGE: Charge when import price < {arbitrage_break_even:.2f}p/kWh (export_rate × 0.90).\n"
         f"   b) DEFICIT / POWER-DOWN PRE-CHARGE: Charge at cheaper rates (e.g. {avg_price:.2f}p/kWh) to cover peak home load or Octoplus Power Down slots later when peak import rates reach {max_upcoming_price:.2f}p/kWh. "
         f"Effective charge cost is {avg_price:.2f}p / 0.90 = {effective_charge_cost:.2f}p/kWh. "
         f"If {effective_charge_cost:.2f}p < {max_upcoming_price:.2f}p, PRE-CHARGING SAVES MONEY and MUST BE APPROVED.\n"
-        f"5. ALWAYS approve charging when import rate is negative or when pre-charging avoids higher peak import rates later.\n\n"
+        f"6. ALWAYS approve charging when import rate is negative or when pre-charging avoids higher peak import rates later.\n\n"
         f"Reply ONLY with valid JSON:\n"
-        f"  'approve' (bool) - would you apply this action?\n"
-        f"  'score'   (int 1-10) - 1=terrible, 10=optimal\n"
-        f"  'reason'  (string ≤ 120 chars) - reference concrete numbers from data."
+        f"  'approve': (bool)\n"
+        f"  'score': (int 1-10)\n"
+        f"  'reason': (string ≤ 120 chars) - reference concrete numbers.\n"
+        f"  'weather_risk_commentary': (string ≤ 150 chars) - evaluate solar forecast risk and cloud cover buffer."
     )
     user_msg = (
+        f"Day Classification: {class_str}\n"
         f"Battery: {current_soc}% of {battery_capacity_kwh} kWh\n"
         f"Solar forecast today: {solar_total_kwh:.1f} kWh\n"
         f"Flat export rate: {export_rate:.2f}p/kWh  |  Arbitrage break-even: {arbitrage_break_even:.2f}p/kWh\n"
@@ -89,7 +97,7 @@ def chatgpt_veto_plan(current_soc, battery_capacity_kwh, solar_total_kwh,
         f"Proposed pre-charge avg price: {avg_price:.2f}p/kWh  (Effective post-90% efficiency: {effective_charge_cost:.2f}p/kWh)\n"
         f"Upcoming Agile rates:\n{rates_lines}\n\n"
         f"Proposed action: {action}\n\n"
-        f"Rate 1-10 and approve=true if this action is economically sound (either arbitrage or peak deficit/Power Down pre-charge)."
+        f"Rate 1-10 and approve=true if this action is economically sound."
     )
 
     try:
@@ -99,7 +107,7 @@ def chatgpt_veto_plan(current_soc, battery_capacity_kwh, solar_total_kwh,
                 {"role": "system", "content": system_msg},
                 {"role": "user", "content": user_msg},
             ],
-            max_tokens=150,
+            max_tokens=200,
             temperature=0.3,
             response_format={"type": "json_object"},
         )
@@ -112,10 +120,11 @@ def chatgpt_veto_plan(current_soc, battery_capacity_kwh, solar_total_kwh,
         else:
             score = None
         reason = str(parsed.get("reason", ""))[:200]
-        return approve, score, reason
+        weather_commentary = str(parsed.get("weather_risk_commentary", parsed.get("weather_commentary", "Solar forecast aligns with strategy.")))[:200]
+        return approve, score, reason, weather_commentary
     except Exception as e:
         logging.warning(f"ChatGPT veto call failed ({e}); defaulting to approve=True")
-        return True, None, f"LLM error: {e}"
+        return True, None, f"LLM error: {e}", "LLM disabled/error"
 
 
 def generate_daily_summary(stats):

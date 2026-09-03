@@ -45,6 +45,17 @@ class OctopusRateSlot(BaseModel):
     value_inc_vat: float = Field(..., description="Electricity price in pence per kWh", json_schema_extra={"example": 15.42})
 
 
+from enum import Enum
+
+
+class DayClassification(str, Enum):
+    """Weather-adaptive day classification model."""
+    HIGH_SOLAR_SELF_CONSUMPTION = "HIGH_SOLAR_SELF_CONSUMPTION"
+    MEDIUM_SOLAR_PARTIAL_PRECHARGE = "MEDIUM_SOLAR_PARTIAL_PRECHARGE"
+    LOW_SOLAR_GRID_PRECHARGE = "LOW_SOLAR_GRID_PRECHARGE"
+    NEGATIVE_RATE_OPPORTUNITY = "NEGATIVE_RATE_OPPORTUNITY"
+
+
 class LLMVetoDecision(BaseModel):
     """ChatGPT plan evaluation JSON response contract."""
     approve: bool = Field(..., description="Whether ChatGPT approves the grid charge plan")
@@ -64,6 +75,8 @@ class LLMPlannerRecommendation(BaseModel):
     approve: bool = Field(..., description="Whether ChatGPT approves the overall plan strategy")
     score: int = Field(..., ge=1, le=10, description="Plan economic quality score (1 to 10)")
     recommended_action: Literal["charge", "no_charge", "override"] = Field(..., description="Proposed inverter action")
+    day_classification: Optional[DayClassification] = Field(None, description="Weather-adaptive day classification")
+    weather_risk_commentary: Optional[str] = Field(None, description="AI commentary on solar forecast risk and cloud cover cushions")
     recommended_slots: List[RecommendedSlot] = Field(default_factory=list, description="List of proposed charge slots")
     reasoning: str = Field(..., min_length=5, description="Detailed strategic reasoning")
 

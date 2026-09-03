@@ -272,6 +272,7 @@ async def set_inverter_charge_slots(slots_or_start, end_time=None, charge_target
         slots_list = []
 
     givtcp_url = getattr(config, 'GIVTCP_URL', None)
+    givtcp_timeout = float(getattr(config, 'GIVTCP_TIMEOUT', 25.0) if config else 25.0)
     if givtcp_url:
         base_url = givtcp_url.rstrip('/')
         try:
@@ -310,16 +311,16 @@ async def set_inverter_charge_slots(slots_or_start, end_time=None, charge_target
                             "slot": str(i)
                         }
                     
-                    # Retry logic (up to 3 attempts with 0.5s pause) for GivTCP 500 error robustness
+                    # Retry logic (up to 3 attempts with 1.0s pause) for GivTCP 500/timeout error robustness
                     for attempt in range(1, 4):
                         try:
-                            r = requests.post(f"{base_url}/setChargeSlot", json=payload, timeout=10)
+                            r = requests.post(f"{base_url}/setChargeSlot", json=payload, timeout=givtcp_timeout)
                             r.raise_for_status()
                             break
                         except Exception as req_err:
                             if attempt < 3:
-                                logging.warning(f"GivTCP: Slot {i} set attempt {attempt} failed ({req_err}); retrying in 0.5s...")
-                                time.sleep(0.5)
+                                logging.warning(f"GivTCP: Slot {i} set attempt {attempt} failed ({req_err}); retrying in 1.0s...")
+                                time.sleep(1.0)
                             else:
                                 raise req_err
             else:
@@ -330,14 +331,14 @@ async def set_inverter_charge_slots(slots_or_start, end_time=None, charge_target
                         "start": "00:00",
                         "finish": "00:00",
                         "slot": str(i)
-                    }, timeout=10)
+                    }, timeout=givtcp_timeout)
 
                 for _path, _payload in [
                     ("/setBatteryMode",         {"mode": "Eco"}),
                     ("/enableChargeSchedule",   {"state": "disable"}),
                 ]:
                     try:
-                        requests.post(f"{base_url}{_path}", json=_payload, timeout=10)
+                        requests.post(f"{base_url}{_path}", json=_payload, timeout=givtcp_timeout)
                     except Exception:
                         pass
                 logging.info("GivTCP: Configuration applied successfully.")
@@ -351,7 +352,7 @@ async def set_inverter_charge_slots(slots_or_start, end_time=None, charge_target
                 ("/enableChargeSchedule",   {"state": "enable"}),
             ]:
                 try:
-                    _r = requests.post(f"{base_url}{_path}", json=_payload, timeout=10)
+                    _r = requests.post(f"{base_url}{_path}", json=_payload, timeout=givtcp_timeout)
                     _r.raise_for_status()
                 except Exception as _e:
                     logging.warning(f"GivTCP: {_path} unavailable ({_e}) — skipping.")

@@ -76,6 +76,16 @@ async def run_light_monitor():
                 break
 
         now_time_str = datetime.now().astimezone().strftime("%H:%M:%S")
+        if isinstance(telemetry, dict) and telemetry.get('pv_power') is not None:
+            pv_w = telemetry.get('pv_power', 0.0)
+            load_w = telemetry.get('load_power', 0.0)
+            surplus_w = pv_w - load_w
+            if pv_w >= 2000.0 and surplus_w >= 1500.0 and realtime_soc < 98:
+                logging.info(
+                    f"⏰ [{now_time_str}] ☀️ [SOLAR GUARD 30-MIN TICK] Live PV Power ({pv_w:.0f}W) generates {surplus_w:.0f}W surplus! "
+                    f"Battery is charging 100% from free solar power."
+                )
+
         if current_planned is not None:
             drift = abs(realtime_soc - current_planned)
             if drift > drift_threshold:
@@ -267,13 +277,43 @@ async def run_optimization():
         logging.info(f"⚡ NEGATIVE RATE ALERT: {len(negative_slots)} slot(s) — grid pays YOU!")
         for ns in negative_slots[:8]:
             local_t = ns['start'].astimezone().strftime('%m-%d %H:%M')
-            logging.info(f"   {local_t}  {ns['price']:.2f}p/kWh  ← free money!")
-    elif arbitrage_slots:
-        logging.info(f"💰 Arbitrage opportunity: {len(arbitrage_slots)} slot(s) below {arbitrage_threshold:.2f}p")
-        for a in arbitrage_slots[:6]:
-            local_t = a['start'].astimezone().strftime('%m-%d %H:%M')
-            profit = export_rate - a['price']
-            logging.info(f"   {local_t}  {a['price']:.2f}p/kWh  (profit: {profit:.2f}p/kWh vs export)")
+    # Weather-Adaptive Day Classification
+    battery_capacity = float(getattr(config, 'BATTERY_CAPACITY_KWH', 9.5))
+    available_capacity_kwh = max(0.0, (100.0 - current_soc) / 100.0 * battery_capacity)
+    
+    daytime_solar_surplus_kwh = sum(
+        max(0.0, s.get('solar_kwh', 0.0) - s.get('load_kwh', 0.0))
+        for s in upcoming_slots if s['start'].astimezone().hour < 16
+    )
+
+    solar_self_sufficient = (daytime_solar_surplus_kwh >= available_capacity_kwh and available_capacity_kwh > 0.3)
+
+    medium_solar_day = (0.40 * available_capacity_kwh <= daytime_solar_surplus_kwh < available_capacity_kwh and available_capacity_kwh > 0.3)
+
+    if negative_slots:
+        day_classification = "NEGATIVE_RATE_OPPORTUNITY"
+    elif solar_self_sufficient:
+        day_classification = "HIGH_SOLAR_SELF_CONSUMPTION"
+    elif medium_solar_day:
+        day_classification = "MEDIUM_SOLAR_PARTIAL_PRECHARGE"
+    else:
+        day_classification = "LOW_SOLAR_GRID_PRECHARGE"
+
+    logging.info(f"☀️ [DAY CLASSIFICATION] {day_classification} (Forecast Surplus: {daytime_solar_surplus_kwh:.2f} kWh | Deficit: {available_capacity_kwh:.2f} kWh)")
+
+    if medium_solar_day and arbitrage_slots:
+        logging.info(
+            f"☀️ [MEDIUM SOLAR DAY] Solar surplus ({daytime_solar_surplus_kwh:.2f} kWh) will cover ~{(daytime_solar_surplus_kwh / max(0.1, available_capacity_kwh)) * 100:.0f}% of battery deficit. "
+            f"Partial pre-charging active; leaving top headroom to capture live solar surges!"
+        )
+
+    if solar_self_sufficient and arbitrage_slots:
+        logging.info(
+            f"☀️ [SOLAR SELF-SUFFICIENCY GUARD] Daytime solar surplus ({daytime_solar_surplus_kwh:.2f} kWh) "
+            f"is sufficient to fill remaining battery space ({available_capacity_kwh:.2f} kWh) for FREE (0p) before 16:00! "
+            f"Grid arbitrage pre-charging suppressed."
+        )
+        arbitrage_slots = []
 
     if negative_slots or arbitrage_slots:
         logging.info(f"   Battery space available: {available_capacity_kwh:.1f} kWh  (SoC: {current_soc}%)")
@@ -286,13 +326,19 @@ async def run_optimization():
 
     if total_import_kwh <= 0.2 and not force_opportunistic_charge:
         logging.info("Battery + solar sufficient AND no profitable import slots. Grid charging not required.")
-        approve, score, reason = chatgpt_veto_fn(
+        veto_res = chatgpt_veto_fn(
             current_soc, battery_capacity, total_solar_kwh, export_rate,
-            upcoming_slots, None, None, 0, 0
+            upcoming_slots, None, None, 0, 0, day_classification
         )
+        approve, score, reason = veto_res[0], veto_res[1], veto_res[2]
+        weather_commentary = veto_res[3] if len(veto_res) > 3 else "N/A"
+
         score_str = f"{score}/10" if score is not None else "n/a"
         logging.info(f"LLM opinion (no-charge): approve={approve}  score={score_str}  reason={reason}")
+        if weather_commentary and weather_commentary != "N/A":
+            logging.info(f"LLM weather commentary: {weather_commentary}")
         record_plan_fn(action="no_charge", branch="solar_sufficient",
+                     day_classification=day_classification, weather_risk_commentary=weather_commentary,
                      current_soc=current_soc, solar_forecast_kwh=total_solar_kwh,
                      export_rate=export_rate,
                      min_rate=min(s['price'] for s in upcoming_slots) if upcoming_slots else None,
@@ -312,13 +358,19 @@ async def run_optimization():
 
     if required_charge_kwh <= 0.2:
         logging.info("Battery is already too full to accept significant grid charge.")
-        approve, score, reason = chatgpt_veto_fn(
+        veto_res = chatgpt_veto_fn(
             current_soc, battery_capacity, total_solar_kwh, export_rate,
-            upcoming_slots, None, None, 0, 0
+            upcoming_slots, None, None, 0, 0, day_classification
         )
+        approve, score, reason = veto_res[0], veto_res[1], veto_res[2]
+        weather_commentary = veto_res[3] if len(veto_res) > 3 else "N/A"
+
         score_str = f"{score}/10" if score is not None else "n/a"
         logging.info(f"LLM opinion (battery-full): approve={approve}  score={score_str}  reason={reason}")
+        if weather_commentary and weather_commentary != "N/A":
+            logging.info(f"LLM weather commentary: {weather_commentary}")
         record_plan_fn(action="no_charge", branch="battery_full",
+                     day_classification=day_classification, weather_risk_commentary=weather_commentary,
                      current_soc=current_soc, solar_forecast_kwh=total_solar_kwh,
                      export_rate=export_rate,
                      min_rate=min(s['price'] for s in upcoming_slots) if upcoming_slots else None,
@@ -364,10 +416,13 @@ async def run_optimization():
             total_avg_price = sum(b['avg_price'] for b in merged_blocks) / len(merged_blocks)
             slots_tuples = [(b['start'].astimezone(), b['end'].astimezone()) for b in merged_blocks]
 
-            approve, score, reason = chatgpt_veto_fn(
+            veto_res = chatgpt_veto_fn(
                 current_soc, battery_capacity, total_solar_kwh, export_rate,
-                upcoming_slots, slots_tuples, None, required_charge_kwh, total_avg_price
+                upcoming_slots, slots_tuples, None, required_charge_kwh, total_avg_price, day_classification
             )
+            approve, score, reason = veto_res[0], veto_res[1], veto_res[2]
+            weather_commentary = veto_res[3] if len(veto_res) > 3 else "N/A"
+
             score_str = f"{score}/10" if score is not None else "n/a"
 
             if total_avg_price < 0.0:
@@ -458,10 +513,13 @@ async def run_optimization():
         charge_cost_p = required_charge_kwh * min_window_cost
         logging.info(f"Economics: charge {required_charge_kwh:.1f} kWh × {min_window_cost:.2f}p = {charge_cost_p:.0f}p")
 
-        approve, score, reason = chatgpt_veto_fn(
+        veto_res = chatgpt_veto_fn(
             current_soc, battery_capacity, total_solar_kwh, export_rate,
-            upcoming_slots, slots_tuples, None, required_charge_kwh, min_window_cost
+            upcoming_slots, slots_tuples, None, required_charge_kwh, min_window_cost, day_classification
         )
+        approve, score, reason = veto_res[0], veto_res[1], veto_res[2]
+        weather_commentary = veto_res[3] if len(veto_res) > 3 else "N/A"
+
         score_str = f"{score}/10" if score is not None else "n/a"
         if min_window_cost < 0.0:
             logging.info(f"LLM veto response: approve={approve}  score={score_str}  reason={reason}")
@@ -502,10 +560,13 @@ async def run_optimization():
         charge_cost_p = required_charge_kwh * min_window_cost
         logging.info(f"Economics: charge {required_charge_kwh:.1f} kWh × {min_window_cost:.2f}p = {charge_cost_p:.0f}p")
 
-        approve, score, reason = chatgpt_veto_fn(
+        veto_res = chatgpt_veto_fn(
             current_soc, battery_capacity, total_solar_kwh, export_rate,
-            upcoming_slots, local_start, local_end, required_charge_kwh, min_window_cost
+            upcoming_slots, local_start, local_end, required_charge_kwh, min_window_cost, day_classification
         )
+        approve, score, reason = veto_res[0], veto_res[1], veto_res[2]
+        weather_commentary = veto_res[3] if len(veto_res) > 3 else "N/A"
+
         score_str = f"{score}/10" if score is not None else "n/a"
         
         if min_window_cost < 0.0:

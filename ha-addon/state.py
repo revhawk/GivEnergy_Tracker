@@ -148,6 +148,12 @@ def update_daily_stats(stats, run_data):
     stats['iboost_kwh_forecast'] = max(
         stats.get('iboost_kwh_forecast', 0), run_data.get('iboost_kwh', 0))
 
+    if run_data.get('day_classification'):
+        val = run_data['day_classification']
+        stats['day_classification'] = val.value if hasattr(val, 'value') else str(val)
+    if run_data.get('weather_risk_commentary'):
+        stats['weather_risk_commentary'] = str(run_data['weather_risk_commentary'])
+
     if run_data.get('min_rate') is not None:
         stats['min_rate_seen'] = min(stats.get('min_rate_seen', float('inf')), run_data['min_rate'])
     if run_data.get('max_rate') is not None:
@@ -165,3 +171,18 @@ def update_daily_stats(stats, run_data):
         stats['no_charge_runs'] = stats.get('no_charge_runs', 0) + 1
 
     return stats
+
+
+def archive_daily_stats_history(stats, date_str=None):
+    """Archive complete daily performance summary, solar generation, and ChatGPT audits into date-stamped JSON."""
+    try:
+        dt = date_str or stats.get('date') or datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        os.makedirs(HISTORY_DIR, exist_ok=True)
+        archive_path = os.path.join(HISTORY_DIR, f"daily_stats_{dt}.json")
+        with open(archive_path, 'w') as f:
+            json.dump(stats, f, indent=2, default=str)
+        logging.info(f"✓ Daily stats archived to {archive_path}")
+        return archive_path
+    except Exception as e:
+        logging.warning(f"Could not archive daily stats history: {e}")
+        return None

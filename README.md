@@ -20,7 +20,7 @@ A Home Assistant add-on that automatically schedules your GivEnergy battery to c
 - 🔄 **Dynamic SoC Drift Re-Planning** — periodic 30-minute light monitor tick checks live SoC against planned schedule, triggering immediate re-planning if drift > `15.0%`
 - 🧩 **Flattened Modular Architecture** — clean separation into `givtcp.py`, `tariffs.py`, `solar.py`, `solar_openmeteo.py`, `profiler.py`, and `llm.py`
 - 📋 **Technical Specification & Contract Testing** — formal [`SPECIFICATION.md`](file:///home/reg/Coding/GivEnergy_Tracker/ha-addon/SPECIFICATION.md) and API contract test suite (`tests/test_contracts.py`)
-- 🏷️ **Single-Source Versioning** — `version.py` (`1.0.20`) synced with `config.yaml` to ensure zero version drift
+- 🏷️ **Single-Source Versioning** — `version.py` (`1.0.22.4`) synced with `config.yaml` to ensure zero version drift
 - 🏠 **Native Home Assistant add-on** — installs directly from a local repository
 
 ---

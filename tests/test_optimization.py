@@ -167,4 +167,38 @@ async def test_light_monitor_soc_drift_within_threshold_no_replan(mock_load_stat
     assert replan_needed is False
 
 
+@pytest.mark.asyncio
+async def test_day_classification_contract_and_history_logging(tmp_path):
+    from contracts import DayClassification, LLMPlannerRecommendation
+    import state
+
+    rec = LLMPlannerRecommendation(
+        approve=True,
+        score=9,
+        recommended_action="no_charge",
+        day_classification=DayClassification.HIGH_SOLAR_SELF_CONSUMPTION,
+        weather_risk_commentary="Solar surplus exceeds battery space. Free solar charging approved.",
+        reasoning="High solar generation forecast."
+    )
+
+    assert rec.day_classification == DayClassification.HIGH_SOLAR_SELF_CONSUMPTION
+    assert "Free solar" in rec.weather_risk_commentary
+
+    stats = state.init_daily_stats("2026-09-03", 50.0)
+    updated = state.update_daily_stats(stats, {
+        "soc": 50.0,
+        "day_classification": rec.day_classification,
+        "weather_risk_commentary": rec.weather_risk_commentary
+    })
+
+    assert updated["day_classification"] == "HIGH_SOLAR_SELF_CONSUMPTION"
+    assert "Free solar" in updated["weather_risk_commentary"]
+
+    with patch.object(state, 'HISTORY_DIR', str(tmp_path)):
+        path = state.archive_daily_stats_history(updated, "2026-09-03")
+        assert path is not None
+        assert "2026-09-03" in path
+
+
+
 

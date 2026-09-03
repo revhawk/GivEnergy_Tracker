@@ -7,7 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [Unreleased]
+## [1.0.22.4] - 2026-09-03
+
+### Senior Developer Code & Architectural Review
+- **Weather-Adaptive Day Classifier (`DayClassification`)**: Implemented dynamic day classification (`HIGH_SOLAR_SELF_CONSUMPTION`, `MEDIUM_SOLAR_PARTIAL_PRECHARGE`, `LOW_SOLAR_GRID_PRECHARGE`, `NEGATIVE_RATE_OPPORTUNITY`) based on live solar forecast vs house load & battery space, eliminating fixed calendar seasons.
+- **ChatGPT AI Co-Pilot & Weather Risk Commentary**: Updated OpenAI integration to evaluate weather risk, cloud cover cushions, and day classification.
+- **Daily Performance & AI Learning Archive**: Implemented `archive_daily_stats_history` storing daily metrics and AI recommendations in `/share/nas_logs/history/daily_stats_YYYY-MM-DD.json`.
+- **GivTCP REST API Robustness**: Extended HTTP timeout to 25s (`GIVTCP_TIMEOUT`) with 1.0s backoff pause to prevent GivTCP slot write timeouts.
+- **Test Suite Execution**: 100% test pass rate across 77 tests in pytest (`test_optimization.py`, `test_state_logging.py`, `test_appliance.py`, `test_config_options.py`, `test_contracts.py`, `test_api_parsing.py`, `test_helpers.py`, `test_write_slots.py`).
+
+### Added
+- **Weather-Adaptive Classifier**: `DayClassification` Pydantic v2 model & `MEDIUM_SOLAR_PARTIAL_PRECHARGE` headroom allocation.
+- **ChatGPT Weather Risk Commentary**: Structured AI recommendation field for solar forecast risk evaluation.
+- **Daily History JSON Archiver**: Persistent daily stats stored in `/share/nas_logs/history/`.
+
+### Fixed
+- **GivTCP Slot Timeout**: Increased HTTP REST timeout from 10s to 25s to avoid socket read timeouts during multi-slot writes.
 
 ---
 
