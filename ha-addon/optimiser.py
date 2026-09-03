@@ -38,6 +38,7 @@ from state import (
     save_daily_stats,
     init_daily_stats,
     update_daily_stats,
+    archive_daily_stats_history,
     _record_plan,
     _last_plan,
 )
@@ -220,6 +221,8 @@ async def main():
                     await run_end_of_day_audit()
                     state['last_audit_date'] = today_str
                     save_state(state)
+                    daily_stats = load_daily_stats()
+                    archive_daily_stats_history(daily_stats)
                 except Exception as e:
                     logging.error(f"Audit failed: {e}", exc_info=True)
 

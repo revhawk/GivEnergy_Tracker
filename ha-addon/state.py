@@ -23,10 +23,10 @@ _last_plan = {}
 
 
 def setup_logging():
-    """Setup console and optional NAS rotating file loggers."""
+    """Setup console and daily midnight rotating file loggers (retaining 90 days of history)."""
     log_level_str = getattr(config, 'LOG_LEVEL', 'INFO').upper() if config else 'INFO'
     log_level = getattr(logging, log_level_str, logging.INFO)
-    log_file = getattr(config, 'LOG_FILE_PATH', None) if config else None
+    log_file = getattr(config, 'LOG_FILE_PATH', '/share/nas_logs/givenergy_tracker.log') if config else '/share/nas_logs/givenergy_tracker.log'
     
     logger = logging.getLogger()
     logger.setLevel(logging.DEBUG)  # Root captures everything, handlers filter
@@ -41,20 +41,35 @@ def setup_logging():
     console_handler.setFormatter(console_formatter)
     logger.addHandler(console_handler)
     
-    if log_file and not any(isinstance(h, RotatingFileHandler) for h in logger.handlers):
+    if log_file and not any(isinstance(h, (RotatingFileHandler, TimedRotatingFileHandler)) for h in logger.handlers):
         try:
             log_dir = os.path.dirname(log_file)
             if log_dir and not os.path.exists(log_dir):
                 os.makedirs(log_dir, exist_ok=True)
                 
-            file_handler = RotatingFileHandler(log_file, maxBytes=5 * 1024 * 1024, backupCount=3)
+            # Midnight rotation: creates daily log files (e.g. givenergy_tracker.log.2026-09-02) keeping 90 days
+            file_handler = TimedRotatingFileHandler(log_file, when='midnight', interval=1, backupCount=90, encoding='utf-8')
             file_handler.setLevel(log_level)
             file_formatter = logging.Formatter('%(asctime)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
             file_handler.setFormatter(file_formatter)
             logger.addHandler(file_handler)
-            logging.info(f"File logging successfully directed to: {log_file}")
+            logging.info(f"Daily logging active (retaining 90 days of logs at: {log_file})")
         except Exception as e:
             print(f"Error initializing file logger at {log_file}: {e}", file=sys.stderr)
+
+
+def archive_daily_stats_history(stats):
+    """Archive daily execution stats and ChatGPT financial audit into /share/nas_logs/history/."""
+    try:
+        date_str = stats.get('date') or datetime.now().astimezone().date().isoformat()
+        history_dir = "/share/nas_logs/history"
+        os.makedirs(history_dir, exist_ok=True)
+        archive_path = os.path.join(history_dir, f"daily_stats_{date_str}.json")
+        with open(archive_path, 'w') as f:
+            json.dump(stats, f, indent=2, default=str)
+        logging.info(f"📊 Archived daily performance record to: {archive_path}")
+    except Exception as e:
+        logging.warning(f"Could not archive daily stats history: {e}")
 
 
 def _record_plan(**fields):

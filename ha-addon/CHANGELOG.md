@@ -11,6 +11,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.22.2] - 2026-09-03
+
+### Senior Developer Code & Architectural Review
+- **Daily Midnight Log Rotation (`TimedRotatingFileHandler`)**: Upgraded `state.py` logging setup to use `TimedRotatingFileHandler` rotating daily at midnight (`when='midnight'`), retaining 90 days of date-stamped log files (`/share/nas_logs/givenergy_tracker.log.YYYY-MM-DD`).
+- **Daily Performance Record Archiving (`/share/nas_logs/history/`)**: Implemented `archive_daily_stats_history()` to archive complete daily financial summaries, solar generation, grid import/export kWh, and ChatGPT audit reports into date-stamped JSON files (`/share/nas_logs/history/daily_stats_YYYY-MM-DD.json`) every evening at 23:00.
+- **Test Suite Execution**: 100% test pass rate across 74 tests in pytest (`test_appliance.py`, `test_config_options.py`, `test_contracts.py`, `test_api_parsing.py`, `test_helpers.py`, `test_optimization.py`, `test_write_slots.py`).
+
+### Added
+- **Daily Log Rotation**: Midnight rotation keeping 90 days of complete daily log files on your NAS.
+- **Historical Daily Performance Archive**: Created `/share/nas_logs/history/daily_stats_YYYY-MM-DD.json` for long-term financial performance comparison.
+
+---
+
 ## [1.0.22.1] - 2026-09-03
 
 ### Senior Developer Code & Architectural Review
