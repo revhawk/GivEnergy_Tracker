@@ -282,8 +282,8 @@ async def run_optimization():
     available_capacity_kwh = max(0.0, (100.0 - current_soc) / 100.0 * battery_capacity)
     
     daytime_solar_surplus_kwh = sum(
-        max(0.0, s.get('solar_kwh', 0.0) - s.get('load_kwh', 0.0))
-        for s in upcoming_slots if s['start'].astimezone().hour < 16
+        max(0.0, imp['solar'] - imp['load'])
+        for imp in imports if imp['slot']['start'].astimezone().hour < 16
     )
 
     solar_self_sufficient = (daytime_solar_surplus_kwh >= available_capacity_kwh and available_capacity_kwh > 0.3)

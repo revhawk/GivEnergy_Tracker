@@ -73,21 +73,39 @@ gantt
 
 ---
 
-## 💡 How The Add-on Saves You Money
+## 🌤️ Weather-Adaptive Solar Strategy & Export Arbitrage
 
-### 1. Overnight Deficit Charging
-If tomorrow's solar forecast is low and won't cover your estimated home energy demand, the optimiser calculates exact shortfall kWh and schedules charging during the absolute cheapest overnight Agile slots.
+For full architectural details, see the dedicated [Weather-Adaptive Solar & Arbitrage Guide](file:///home/reg/Coding/GivEnergy_Tracker/ha-addon/ARBITRAGE_AND_WEATHER.md) subpage.
 
-### 2. Solar Arbitrage
-When an Agile rate slot is cheaper than your export price (for example, import at 8p/kWh vs export at 12p/kWh), the tracker charges your battery from grid power. This frees up 100% of your daytime solar power to be exported to the grid for maximum profit.
+The add-on uses a **4-Tier Day Classifier** to dynamically adapt to daily UK weather without static calendar months:
 
-### 3. Octopus Octoplus Sessions (Power Down & Power Up)
-- **Power Down Sessions (Saving Sessions)**: Enforces 0.0 kWh grid import during peak demand events and pre-charges your battery beforehand at cheaper rates.
-- **Power Up Sessions (Free Electricity)**: Automatically schedules maximum battery charging during Octopus Free Electricity sessions.
+```mermaid
+flowchart TD
+    A[Daily Planning Run at 17:00] --> B[Calculate Net Solar Surplus\nForecast Solar − House Load]
+    
+    B --> C{Agile Rates Negative < 0p?}
+    C -->|YES| D[⚡ NEGATIVE_RATE_OPPORTUNITY\nImport Grid Power (Grid pays you!)]
+    
+    C -->|NO| E{Net Solar Surplus vs Battery Space?}
+    
+    E -->|Surplus ≥ Battery Deficit| F[☀️ HIGH_SOLAR_SELF_CONSUMPTION\n0 W Grid Draw\nFree solar PV fills battery]
+    
+    E -->|Surplus 40% to 99% of Deficit| G[⛅ MEDIUM_SOLAR_PARTIAL_PRECHARGE\nPartial Pre-Charge for Peak Hours\nLeaves 30%-50% headroom for solar surges]
+    
+    E -->|Surplus < 40% of Deficit| H[🌧️ LOW_SOLAR_GRID_PRECHARGE\nFull Grid Pre-Charge\nGuarantees 100% SoC before 16:00 peak]
+```
 
-### 4. Smart Hot Water Control
-- **Excess Solar Diversion**: Excess solar power beyond home load and battery capacity is directed into your hot water cylinder via iBoost.
-- **Gas Savings with Morning Shower Safety**: Pauses your Hive gas boiler when overnight electric pre-charging or solar heating is active. At 05:00 AM, it performs a temperature check ($\ge 45^\circ\text{C}$ threshold) to guarantee a hot morning shower.
+### How The Add-on Saves You Money:
+
+1. **Overnight & Midday Deficit Charging**: If tomorrow's solar forecast is low (`LOW_SOLAR_GRID_PRECHARGE`), the optimiser pre-charges the battery during cheap Agile slots to protect against 45p–50p peak evening rates.
+2. **Medium Solar Headroom (`MEDIUM_SOLAR_PARTIAL_PRECHARGE`)**: On partial solar days, partial pre-charging covers peak demand while leaving **30%–50% top battery headroom** to capture live daytime solar surges (like a 7.1 kW solar surge when the oven is running!).
+3. **High Solar Self-Consumption (`HIGH_SOLAR_SELF_CONSUMPTION`)**: On sunny days, grid charging is **suppressed (0 W grid draw)** so your battery fills 100% for free.
+4. **Octopus Octoplus Sessions (Power Down & Power Up)**:
+   - **Power Down Sessions (Saving Sessions)**: Enforces 0.0 kWh grid import during peak demand events and pre-charges your battery beforehand at cheaper rates.
+   - **Power Up Sessions (Free Electricity)**: Automatically schedules maximum battery charging during Octopus Free Electricity sessions.
+5. **Smart Hot Water Control**:
+   - **Excess Solar Diversion**: Excess solar power beyond home load and battery capacity is directed into your hot water cylinder via iBoost.
+   - **Gas Savings with Morning Shower Safety**: Pauses your Hive gas boiler when electric pre-charging or solar heating is active, performing a 05:00 AM temperature check ($\ge 45^\circ\text{C}$) for shower safety.
 
 ---
 

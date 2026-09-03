@@ -129,6 +129,28 @@ gantt
 
 ---
 
+### 🌤️ Weather-Adaptive Solar Strategy & Export Arbitrage
+
+For full technical details, see the dedicated [Weather-Adaptive Solar Strategy & Arbitrage Guide](file:///home/reg/Coding/GivEnergy_Tracker/ha-addon/ARBITRAGE_AND_WEATHER.md) subpage.
+
+```mermaid
+flowchart TD
+    A[Daily Planning Run at 17:00] --> B[Calculate Net Solar Surplus\nForecast Solar − House Load]
+    
+    B --> C{Agile Rates Negative < 0p?}
+    C -->|YES| D[⚡ NEGATIVE_RATE_OPPORTUNITY\nImport Grid Power (Grid pays you!)]
+    
+    C -->|NO| E{Net Solar Surplus vs Battery Space?}
+    
+    E -->|Surplus ≥ Battery Deficit| F[☀️ HIGH_SOLAR_SELF_CONSUMPTION\n0 W Grid Draw\nFree solar PV fills battery]
+    
+    E -->|Surplus 40% to 99% of Deficit| G[⛅ MEDIUM_SOLAR_PARTIAL_PRECHARGE\nPartial Pre-Charge for Peak Hours\nLeaves 30%-50% headroom for solar surges]
+    
+    E -->|Surplus < 40% of Deficit| H[🌧️ LOW_SOLAR_GRID_PRECHARGE\nFull Grid Pre-Charge\nGuarantees 100% SoC before 16:00 peak]
+```
+
+---
+
 ### 🚀 Future Hardware Roadmap & Planned Enhancements
 
 The add-on currently features software simulation and fail-safe logic for heating and hot water. Physical hardware controls will be enabled once hardware installation is finalized:
