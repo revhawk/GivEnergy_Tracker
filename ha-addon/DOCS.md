@@ -40,6 +40,7 @@ Open the **Configuration** tab of the add-on to customize your settings:
 | **`openai_model`** | `gpt-4o-mini` | Select `gpt-4o-mini` (cheap, fast, and highly accurate). |
 | **`daily_plan_hour`** | `17` *(5:00 PM)* | The hour when tomorrow's charge plan is calculated. Octopus publishes rates at 16:30, so 17:00 programs your inverter 7 hours before night charging. |
 | **`daily_audit_hour`** | `23` *(11:00 PM)* | The hour when your daily financial savings report is generated. |
+| **`log_file_path`** | `/share/nas_logs/givenergy_tracker.log` | **NAS Log Location**. The network / SMB file path where timestamped logs and daily performance history (`/share/nas_logs/history/`) are saved. |
 | **`hive_water_heater_entity`** | `water_heater.hive_hot_water` | Your Hive hot water entity in Home Assistant. Automatically pauses gas boiler schedule when electric/solar heating is active. |
 
 ---
@@ -105,13 +106,28 @@ The current add-on version includes full software simulation and fail-safe logic
 1. **Solar covers your needs**: Your solar forecast is strong enough to cover home load and fill your battery without needing grid power.
 2. **Import rates are higher than export**: Every import slot is above your export arbitrage threshold, so grid charging would cost more than exporting solar.
 
-### How do I check add-on logs?
-Go to **Settings → Add-ons → GivEnergy Tariff Optimiser → Log** tab.
+### How do I check add-on logs and access NAS files?
+Go to **Settings → Add-ons → GivEnergy Tariff Optimiser → Log** tab in Home Assistant.
 
-If you have configured Network Storage at `/share/nas_logs/`, rotating logs and state files are saved automatically for long-term historical records:
-- `/share/nas_logs/givenergy_tracker.log`
-- `/share/nas_logs/givenergy_state.json`
-- `/share/nas_logs/givenergy_daily_stats.json`
+For long-term storage, your add-on saves timestamped logs and performance history into `/share/nas_logs/`.
+
+#### 🎛️ 1. Setting the NAS Log Location in Home Assistant UI
+In the add-on **Configuration** tab, enter the path as a Unix-style Home Assistant container path:
+- **HA UI Setting (`log_file_path`)**: `/share/nas_logs/givenergy_tracker.log` *(Default)*
+
+#### 📂 2. Accessing NAS Files from Your PC / Mac (Windows vs Unix Style)
+
+| Operating System / Client | Network / Folder Access Path |
+| :--- | :--- |
+| **🪟 Windows File Explorer** | `\\<YOUR_HA_IP>\share\nas_logs\` *(e.g. `\\192.168.1.96\share\nas_logs\`)* |
+| **🐧 Linux / Unix System** | `/share/nas_logs/` or `smb://192.168.1.96/share/nas_logs/` |
+| **🍎 macOS Finder** | `smb://192.168.1.96/share/nas_logs/` *(Go → Connect to Server)* |
+| **🏠 Home Assistant File Editor** | Open **File Editor** add-on $\rightarrow$ navigate to `/share/nas_logs/` |
+
+Files generated in your NAS directory:
+- **`givenergy_tracker.log`**: Full timestamped log file (`YYYY-MM-DD HH:MM:SS - INFO - ...`).
+- **`history/daily_stats_YYYY-MM-DD.json`**: Historical performance summaries and ChatGPT audit reports for each day.
+- **`givenergy_state.json`**: Rolling 14-day load profile history and planned SoC schedule.
 
 ---
 

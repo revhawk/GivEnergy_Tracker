@@ -225,7 +225,7 @@ Then edit `config.py` with your Octopus API key, MPANs, meter serial, geographic
 2. Go to the **Configuration** tab and set your options (`interval_minutes`, `openai_api_key`, `daily_plan_hour`, `daily_audit_hour`, `startup_write_test`)
 3. Click **Start**
 4. Watch the **Log** tab. On first startup you should see:
-   - Version banner: `GivEnergy Tariff Optimiser v1.0.22.2`
+   - Version banner: `GivEnergy Tariff Optimiser v1.0.22.3`
    - Effective config dump (verifies your `config.py` values)
    - First planning run (`===== DAILY PLANNING RUN (first plan since startup) =====`)
 
@@ -236,7 +236,7 @@ After you edit any file on the HA host (either by editing directly or SMB-copyin
 1. Bump `version:` in `ha-addon/config.yaml` AND `__version__` in `ha-addon/version.py` (they must match)
 2. **Reload the add-on store** — Settings → Add-ons → Add-on Store → ⋮ → **Check for updates**. This is the step most easily forgotten — HA caches version metadata and won't detect the change without this refresh.
 3. Click **Update** on the add-on card (or ⋮ → **Rebuild** if you want to force a fresh image build)
-4. Confirm the log banner shows the new version `v1.0.22.2`
+4. Confirm the log banner shows the new version `v1.0.22.3`
 
 ---
 
@@ -252,6 +252,7 @@ After you edit any file on the HA host (either by editing directly or SMB-copyin
 | `openai_model` | dropdown | `"gpt-4o-mini"` | OpenAI model selector (`gpt-4o-mini`, `gpt-4o`, `gpt-3.5-turbo`) |
 | `daily_plan_hour` | int | `17` | Local hour to fire the daily planner (typically after Octopus publishes tomorrow's rates) |
 | `daily_audit_hour` | int | `23` | Local hour to fire the end-of-day audit |
+| `log_file_path` | str | `"/share/nas_logs/givenergy_tracker.log"` | Network / SMB path for timestamped logs and daily performance history (`/share/nas_logs/history/`) |
 
 ### `config.py` Settings
 

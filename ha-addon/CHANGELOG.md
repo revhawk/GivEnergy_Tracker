@@ -11,6 +11,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.22.3] - 2026-09-03
+
+### Senior Developer Code & Architectural Review
+- **Import Fix (`TimedRotatingFileHandler`)**: Added `from logging.handlers import TimedRotatingFileHandler` to `ha-addon/state.py` line 11, fixing startup `NameError`.
+- **Logging Contract Test Suite (`tests/test_state_logging.py`)**: Created dedicated test suite validating `setup_logging()` initialization and `archive_daily_stats_history()` contract to prevent any logger startup exceptions or missing import regressions.
+- **Home Assistant UI Configuration (`log_file_path`)**: Added `log_file_path` option to `ha-addon/config.yaml` schema, enabling non-technical users to customize their NAS log share path directly from the Home Assistant UI without touching python code.
+- **Mandatory Test Review Policy**: Added Rule 4 to `.agents/AGENTS.md` requiring test suite expansion whenever code or dependencies are modified.
+- **Test Suite Execution**: 100% test pass rate across 76 tests in pytest (`test_state_logging.py`, `test_appliance.py`, `test_config_options.py`, `test_contracts.py`, `test_api_parsing.py`, `test_helpers.py`, `test_optimization.py`, `test_write_slots.py`).
+
+### Added
+- **Dedicated Logger Contract Tests**: `tests/test_state_logging.py` covering handler setups and JSON archiving.
+- **UI NAS Path Setting**: `log_file_path` added to `config.yaml` UI configuration schema.
+
+### Fixed
+- **NameError on Startup**: Fixed missing `TimedRotatingFileHandler` import in `ha-addon/state.py`.
+
+---
+
 ## [1.0.22.2] - 2026-09-03
 
 ### Senior Developer Code & Architectural Review

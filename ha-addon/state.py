@@ -8,7 +8,7 @@ import os
 import sys
 import json
 import logging
-from logging.handlers import RotatingFileHandler
+from logging.handlers import RotatingFileHandler, TimedRotatingFileHandler
 from datetime import datetime, timezone
 
 try:
@@ -18,6 +18,7 @@ except ImportError:
 
 STATE_FILE = "/share/nas_logs/givenergy_state.json"
 STATS_FILE = "/share/nas_logs/givenergy_daily_stats.json"
+HISTORY_DIR = "/share/nas_logs/history"
 
 _last_plan = {}
 
@@ -59,10 +60,10 @@ def setup_logging():
 
 
 def archive_daily_stats_history(stats):
-    """Archive daily execution stats and ChatGPT financial audit into /share/nas_logs/history/."""
+    """Archive daily execution stats and ChatGPT financial audit into HISTORY_DIR."""
     try:
         date_str = stats.get('date') or datetime.now().astimezone().date().isoformat()
-        history_dir = "/share/nas_logs/history"
+        history_dir = getattr(config, 'HISTORY_DIR', HISTORY_DIR) if config else HISTORY_DIR
         os.makedirs(history_dir, exist_ok=True)
         archive_path = os.path.join(history_dir, f"daily_stats_{date_str}.json")
         with open(archive_path, 'w') as f:
