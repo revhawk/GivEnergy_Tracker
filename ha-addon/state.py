@@ -31,13 +31,15 @@ def setup_logging():
     logger = logging.getLogger()
     logger.setLevel(logging.DEBUG)  # Root captures everything, handlers filter
     
-    # Avoid duplicate handlers on re-setup
-    if not any(isinstance(h, logging.StreamHandler) and not isinstance(h, RotatingFileHandler) for h in logger.handlers):
-        console_handler = logging.StreamHandler(sys.stdout)
-        console_handler.setLevel(log_level)
-        console_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
-        console_handler.setFormatter(console_formatter)
-        logger.addHandler(console_handler)
+    # Clear default root handlers to enforce timestamp formatting
+    for h in list(logger.handlers):
+        logger.removeHandler(h)
+        
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setLevel(log_level)
+    console_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+    console_handler.setFormatter(console_formatter)
+    logger.addHandler(console_handler)
     
     if log_file and not any(isinstance(h, RotatingFileHandler) for h in logger.handlers):
         try:

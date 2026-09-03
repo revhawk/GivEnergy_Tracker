@@ -11,6 +11,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.22.1] - 2026-09-03
+
+### Senior Developer Code & Architectural Review
+- **Explicit Telemetry Timestamps (`[HH:MM:SS]`)**: Updated `state.py` (`setup_logging`) and `simulation.py` (`run_light_monitor`) to enforce `%(asctime)s` formatting across stdout and log files, appending explicit local time headers `⏰ [HH:MM:SS]` to every light monitor telemetry check.
+- **Test Suite Execution**: 100% test pass rate across 74 tests in pytest (`test_appliance.py`, `test_config_options.py`, `test_contracts.py`, `test_api_parsing.py`, `test_helpers.py`, `test_optimization.py`, `test_write_slots.py`).
+
+### Added
+- **Explicit Telemetry Timestamping**: Every 30-minute status check log now includes the exact local time stamp (e.g. `11:30:00 - INFO - ⏰ [11:30:00] Battery SoC: 43% vs planned 28%...`).
+
+---
+
 ## [1.0.22.0] - 2026-09-02
 
 ### Senior Developer Code & Architectural Review

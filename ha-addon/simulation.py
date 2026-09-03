@@ -75,21 +75,22 @@ async def run_light_monitor():
                 current_planned = item.get('soc')
                 break
 
+        now_time_str = datetime.now().astimezone().strftime("%H:%M:%S")
         if current_planned is not None:
             drift = abs(realtime_soc - current_planned)
             if drift > drift_threshold:
                 logging.warning(
-                    f"⚡ SoC DRIFT ALERT: real-time SoC ({realtime_soc}%) vs planned SoC ({current_planned:.0f}%) "
+                    f"⏰ [{now_time_str}] ⚡ SoC DRIFT ALERT: real-time SoC ({realtime_soc}%) vs planned SoC ({current_planned:.0f}%) "
                     f"differs by {drift:.1f}% (> threshold {drift_threshold:.1f}%). Triggering re-planning!"
                 )
                 return True
             else:
                 logging.info(
-                    f"Battery SoC: {realtime_soc}% vs planned {current_planned:.0f}% "
+                    f"⏰ [{now_time_str}] Battery SoC: {realtime_soc}% vs planned {current_planned:.0f}% "
                     f"(drift: {drift:.1f}% <= threshold {drift_threshold:.1f}%) — no re-planning needed"
                 )
         else:
-            logging.info(f"Battery SoC: {realtime_soc}%  (no active plan slot found for drift comparison)")
+            logging.info(f"⏰ [{now_time_str}] Battery SoC: {realtime_soc}%  (no active plan slot found for drift comparison)")
 
         return False
     except Exception as e:
