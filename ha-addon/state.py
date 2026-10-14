@@ -62,7 +62,7 @@ def setup_logging():
 def archive_daily_stats_history(stats):
     """Archive daily execution stats and ChatGPT financial audit into HISTORY_DIR."""
     try:
-        date_str = stats.get('date') or datetime.now().astimezone().date().isoformat()
+        date_str = os.path.basename(str(stats.get('date') or datetime.now().astimezone().date().isoformat()).strip())
         history_dir = getattr(config, 'HISTORY_DIR', HISTORY_DIR) if config else HISTORY_DIR
         os.makedirs(history_dir, exist_ok=True)
         archive_path = os.path.join(history_dir, f"daily_stats_{date_str}.json")

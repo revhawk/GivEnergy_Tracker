@@ -1,0 +1,40 @@
+#include <tunables/global>
+
+profile addon_givenergy_tracker flags=(attach_disconnected, mediate_deleted) {
+  #include <abstractions/base>
+
+  # Network Access (GivTCP local REST, Octopus API, Solar Forecast APIs, OpenAI)
+  network inet,
+  network inet6,
+  network tcp,
+  network udp,
+
+  # Binary Execution & Shell Scripts
+  /init ix,
+  /bin/{,sh,bash} mix,
+  /usr/bin/** mix,
+  /usr/sbin/** mix,
+
+  # Python Runtime & System Libraries
+  /usr/local/bin/** mix,
+  /usr/local/lib/** rm,
+  /lib/** rm,
+  /usr/lib/** rm,
+  /etc/ld.so.cache r,
+  /etc/resolv.conf r,
+  /etc/hosts r,
+  /etc/ssl/** r,
+  /etc/pki/** r,
+  /dev/null rw,
+  /dev/urandom r,
+  /dev/random r,
+
+  # Process & System Metrics
+  @{PROC}/** r,
+  @{PROC}/sys/net/** r,
+
+  # Add-on Storage Mounts (/data options and /share nas_logs)
+  /data/** rwk,
+  /share/** rwk,
+}
+

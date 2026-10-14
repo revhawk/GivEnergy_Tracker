@@ -161,7 +161,7 @@ def build_plan_candidates(day_classification, current_soc, battery_capacity,
         target_soc_opt2 = 90
     elif day_classification == "NEGATIVE_RATE_OPPORTUNITY":
         target_soc_opt1 = 100
-        target_soc_opt2 = 80
+        target_soc_opt2 = 100
     else:  # HIGH_SOLAR_SELF_CONSUMPTION
         target_soc_opt1 = int(current_soc)
         target_soc_opt2 = min(60, int(current_soc) + 10)
@@ -172,6 +172,7 @@ def build_plan_candidates(day_classification, current_soc, battery_capacity,
         opt1_strategy = "negative_rates"
         opt1_name = "Negative Rate Full Charge (Grid Pays You)"
         target_soc_opt1 = 100
+        target_soc_opt2 = 100
         kwh_opt1 = max(0.0, (100.0 - current_soc) / 100.0 * battery_capacity)
     elif arbitrage_slots and day_classification != "MEDIUM_SOLAR_PARTIAL_PRECHARGE":
         opt1_slots_raw = arbitrage_slots
@@ -232,6 +233,9 @@ def build_plan_candidates(day_classification, current_soc, battery_capacity,
         'slots': slots_opt1,
         'slots_desc': desc_opt1,
         'rationale': (
+            f"Negative rate import pays you to consume power (avg {avg_price_opt1:.2f}p/kWh). "
+            f"Fills battery to 100% capacity so subsequent solar generation is 100% exported at {export_rate:.2f}p/kWh for double profit."
+            if opt1_strategy == "negative_rates" else
             f"Pre-charges during cheapest window (avg {avg_price_opt1:.2f}p). "
             f"Guarantees {target_soc_opt1}% defensive floor to avoid 4% collapse if overcast, "
             f"while preserving {headroom_opt1:.1f} kWh ({headroom_opt1/max(0.1, battery_capacity)*100:.0f}%) headroom for sunny bursts."
@@ -565,6 +569,8 @@ async def run_optimization():
 
     slots_to_apply = selected_candidate.get('slots', [])
     target_soc_to_apply = selected_candidate.get('target_soc', 100)
+    if selected_candidate.get('strategy') == "negative_rates" or selected_candidate.get('avg_price', 0.0) < 0.0:
+        target_soc_to_apply = 100
 
     score_str = f"{score}/10" if score is not None else "n/a"
     logging.info(

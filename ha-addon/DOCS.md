@@ -137,9 +137,9 @@ In the add-on **Configuration** tab, enter the path as a Unix-style Home Assista
 
 | Operating System / Client | Network / Folder Access Path |
 | :--- | :--- |
-| **🪟 Windows File Explorer** | `\\<YOUR_HA_IP>\share\nas_logs\` *(e.g. `\\192.168.1.96\share\nas_logs\`)* |
-| **🐧 Linux / Unix System** | `/share/nas_logs/` or `smb://192.168.1.96/share/nas_logs/` |
-| **🍎 macOS Finder** | `smb://192.168.1.96/share/nas_logs/` *(Go → Connect to Server)* |
+| **🪟 Windows File Explorer** | `\\<YOUR_HA_IP>\share\nas_logs\` *(e.g. `\\homeassistant.local\share\nas_logs\`)* |
+| **🐧 Linux / Unix System** | `/share/nas_logs/` or `smb://homeassistant.local/share/nas_logs/` |
+| **🍎 macOS Finder** | `smb://homeassistant.local/share/nas_logs/` *(Go → Connect to Server)* |
 | **🏠 Home Assistant File Editor** | Open **File Editor** add-on $\rightarrow$ navigate to `/share/nas_logs/` |
 
 Files generated in your NAS directory:

@@ -25,7 +25,8 @@ def get_load_kwh_for_slot(slot_start, slot_end, load_profile_history=None):
     elif (6 <= hour < 16) or (20 <= hour < 23):
         # Weekday laundry appliance load adjustment (9:00 - 16:00 Mon-Fri)
         if weekday < 5 and (9 <= hour < 16):
-            watts = getattr(config, 'DAYTIME_LOAD_W', 700) + 400  # +400W active laundry allocation
+            laundry_w = getattr(config, 'LAUNDRY_ACTIVE_LOAD_W', 400)
+            watts = getattr(config, 'DAYTIME_LOAD_W', 700) + laundry_w
         else:
             watts = getattr(config, 'DAYTIME_LOAD_W', 700)
     else:  # Overnight: 23:00 - 06:00

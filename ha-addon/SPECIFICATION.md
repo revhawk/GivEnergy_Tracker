@@ -1,6 +1,6 @@
 # Technical Specification & Architecture — GivEnergy Tariff Optimiser
 
-**Version:** 1.0.21.3  
+**Version:** 1.0.23  
 **Target Hardware:** GivEnergy Inverters (Gen 1, Gen 2, Gen 3, All-in-One)  
 **Target Platform:** Home Assistant Add-on Container (Linux ARM64 / AMD64)  
 
@@ -27,7 +27,7 @@ graph TD
     end
 
     subgraph GivEnergy Tariff Optimiser Add-on
-        Version[version.py - v1.0.20]
+        Version[version.py - v1.0.23]
         Config[config.py - Settings]
         Optimiser[optimiser.py - Main Loop & Engine]
         GivTCP_Mod[givtcp.py - GivTCP REST v2/v3]
@@ -111,7 +111,7 @@ sequenceDiagram
 
 ### 4.1 Single-Source Versioning Contract (`version.py`)
 - **Module:** `version.py`
-- **Variable:** `__version__ = "1.0.20"`
+- **Variable:** `__version__ = "1.0.23"`
 - **Contract:** MUST match `version:` field in `ha-addon/config.yaml`. Validated during daemon initialization.
 
 ### 4.2 GivTCP REST v2/v3 Contract (`givtcp.py`)
@@ -237,6 +237,7 @@ Contract tests in `tests/test_contracts.py` explicitly record compliance with AP
 | `test_veto_response_schema_validation` | `llm.py` | Validates OpenAI ChatGPT response JSON schema (`approve: bool`, `score: int 1-10`, `reason: str`) |
 | `test_candidate_plan_option_schema` | `contracts.py` | Validates `CandidatePlanOption` Pydantic v2 data model schema and bounds |
 | `test_llm_candidate_selection_schema` | `contracts.py` | Validates `LLMCandidateSelection` Pydantic v2 data model schema and approval logic |
+| `tests/test_llm.py` | `llm.py` | Validates OpenAI connection, candidate selection, fail-open fallbacks, and daily summaries |
 
 ### Logging Test Execution
 To log contract test execution to a file or CI artifact:

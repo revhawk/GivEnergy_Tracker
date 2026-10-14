@@ -43,9 +43,9 @@ OCTOPLUS_FREE_ELECTRICITY_FALLBACK_ENTITY = "sensor.octopus_energy_free_electric
 # Home energy limits
 MAX_BATTERY_CHARGE_RATE = 3000     # Max GivEnergy charge speed in Watts
 IBOOST_MAX_DIVERT_RATE = 3000      # Standard UK immersion heater load cap (W)
-BASE_LOAD_W = 1000                 # Continuous home load in Watts.
-                                   # Set from your true overnight draw;
-                                   # under-estimating causes skipped charges.
+BASE_LOAD_W = 1000                 # Continuous home base load (W). Set from overnight draw.
+DAYTIME_LOAD_W = 700               # General daytime baseline load (W)
+LAUNDRY_ACTIVE_LOAD_W = 600        # Additional daytime laundry allocation (W) for washing machine & tumble dryer (9:00 - 16:00 Mon-Fri)
 
 # Battery capacity
 BATTERY_CAPACITY_KWH = 9.5         # Total battery capacity in kWh

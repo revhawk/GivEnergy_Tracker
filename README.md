@@ -6,6 +6,18 @@ A Home Assistant add-on that automatically schedules your GivEnergy battery to c
 
 ---
 
+## 📖 Documentation Quick Links
+
+| Guide | Description | Target Audience |
+| :--- | :--- | :--- |
+| 🛠️ [**Setup & Installation Guide**](SETUP.md) | Step-by-step setup, configuration options, prerequisites, and first-run checklist | New Installations & Setup |
+| 📘 [**End-User Guide & Operations**](ha-addon/DOCS.md) | How charging works, candidate strategies, daily savings, washing machine dashboard | Daily Home Users |
+| ☀️ [**Solar & Weather Strategy**](ha-addon/ARBITRAGE_AND_WEATHER.md) | Weather-adaptive day classification, autumn headroom, and export arbitrage | Solar & Energy Enthusiasts |
+| 📐 [**Architecture & Living Specification**](ha-addon/SPECIFICATION.md) | Living ADRs, Pydantic contracts, OpenAPI 3.1.0 spec, and contract test suite | Developers & Integrators |
+| 📜 [**Changelog & Releases**](ha-addon/CHANGELOG.md) | Version history, senior developer reviews, and ADR summaries | Release Tracking |
+
+---
+
 ## ✨ Features
 
 - 🔋 **Reads live battery SoC** via GivTCP REST API v2/v3 (falls back to direct Modbus TCP)
@@ -32,7 +44,7 @@ For complete API contracts, component specifications, and Mermaid sequence diagr
 ```
 GivEnergy_Tracker/
 ├── ha-addon/                      ← The Home Assistant add-on package
-│   ├── version.py                 ← Single source of truth for version (__version__ = "1.0.20")
+│   ├── version.py                 ← Single source of truth for version (__version__ = "1.0.23")
 │   ├── config.yaml                ← Add-on manifest (name, version, options)
 │   ├── Dockerfile                 ← Builds the add-on container (python:3.11-slim)
 │   ├── run.sh                     ← Entrypoint: reads HA options, launches optimiser
@@ -55,24 +67,42 @@ GivEnergy_Tracker/
 └── .gitignore
 ```
 
-### Data Flow
+### 🔄 Daily Data Flow Architecture
 
+```mermaid
+flowchart TD
+    subgraph Inputs ["Input Telemetry & Data Sources"]
+        T1["Octopus Agile Rates (48 slots)"]
+        T2["Octopus Outgoing Export Rate"]
+        T3["Parallel Solar Forecasts\n(Forecast.Solar + Open-Meteo)"]
+        T4["GivTCP Live Battery SoC & Capacity"]
+        T5["Historical Load Profile & Persisted State"]
+    end
+
+    subgraph Simulation ["simulation.py (Deterministic Physics Engine)"]
+        ENG["24-Hour Energy Balance Simulation\nSolar → Load → Battery → iBoost → Export"]
+        GEN["Multi-Candidate Generator\n• Option 1: Defensive Autumn Headroom (55% SoC)\n• Option 2: Overcast Full Pre-Charge (95% SoC)\n• Option 3: Pure Solar Self-Consumption"]
+        ENG --> GEN
+    end
+
+    subgraph LLMCoPilot ["llm.py (AI Energy Strategist)"]
+        AI["ChatGPT (gpt-4o-mini)\nEvaluates Solar Spread, Day Classification & Economics"]
+    end
+
+    subgraph HardwareExecution ["Execution & Inverter Hardware"]
+        GIV["GivTCP REST API v2/v3\nPrograms Inverter Registers & Charge Slots"]
+        NAS["NAS Share (/share/nas_logs)\nPersists State, Telemetry & Daily Audits"]
+    end
+
+    T1 & T2 & T3 & T4 & T5 --> ENG
+    GEN -->|Candidate Plans| AI
+    AI -->|Selected Candidate ID & Approval| GIV
+    GEN -.->|Safe Fallback if AI offline| GIV
+    GIV --> NAS
 ```
-                            Once per day (daily planner @ 17:00)
-Octopus Agile rates   ──┐
-Octopus Export rate   ──┤
-Forecast.Solar        ──┼──► optimiser.py ─┬─► Deterministic Plan  ─┐
-GivTCP (SoC)          ──┤     Simulation   │   (arbitrage + deficit)│
-Persisted state       ──┘                  └─► ChatGPT Veto (score) ┘
-                                                    │
-                                            ┌───────┴─────────┐
-                                     approve│                 │veto
-                                            ▼                 ▼
-                                     GivTCP REST         Clear slots
-                                     (write plan)             │
-                                            │                 │
-                                            └────────┬────────┘
-                                                     ▼
+
+---
+
 ### 🏛️ Modular Domain Architecture
 
 ```mermaid
@@ -247,7 +277,7 @@ Then edit `config.py` with your Octopus API key, MPANs, meter serial, geographic
 2. Go to the **Configuration** tab and set your options (`interval_minutes`, `openai_api_key`, `daily_plan_hour`, `daily_audit_hour`, `startup_write_test`)
 3. Click **Start**
 4. Watch the **Log** tab. On first startup you should see:
-   - Version banner: `GivEnergy Tariff Optimiser v1.0.22.3`
+   - Version banner: `GivEnergy Tariff Optimiser v1.0.23`
    - Effective config dump (verifies your `config.py` values)
    - First planning run (`===== DAILY PLANNING RUN (first plan since startup) =====`)
 
@@ -258,7 +288,7 @@ After you edit any file on the HA host (either by editing directly or SMB-copyin
 1. Bump `version:` in `ha-addon/config.yaml` AND `__version__` in `ha-addon/version.py` (they must match)
 2. **Reload the add-on store** — Settings → Add-ons → Add-on Store → ⋮ → **Check for updates**. This is the step most easily forgotten — HA caches version metadata and won't detect the change without this refresh.
 3. Click **Update** on the add-on card (or ⋮ → **Rebuild** if you want to force a fresh image build)
-4. Confirm the log banner shows the new version `v1.0.22.3`
+4. Confirm the log banner shows the new version `v1.0.23`
 
 ---
 

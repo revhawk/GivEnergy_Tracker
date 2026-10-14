@@ -3,6 +3,12 @@
 ha-addon/config.py
 config.py
 ha-addon/options.json
+options.json
+**/options.json
+.env
+.env.*
+*.env
+secrets.yaml
 
 # Local backup of the pre-restructure files and secrets — never publish
 _legacy/
@@ -27,13 +33,20 @@ __pycache__/
 venv/
 ENV/
 env/
+dist/
+build/
+*.egg-info/
 
 # Editors & Operating System
 .vscode/
 .idea/
 .DS_Store
+Thumbs.db
+ehthumbs.db
 *.swp
 *~
+*.sublime-project
+*.sublime-workspace
 
 # Test, Coverage & Log Artefacts
 .pytest_cache/
@@ -41,11 +54,22 @@ env/
 .ruff_cache/
 htmlcov/
 .coverage
+.coverage.*
+coverage.xml
 *.log
 test-results/
 junit-*.xml
 
-# Temporary & State Files
+# Temporary, State & NAS Telemetry Files
 *.tmp
 *.bak
 state.json
+givenergy_state.json
+givenergy_daily_stats.json
+daily_stats_*.json
+nas_logs/
+history/
+share/
+data/
+*.sqlite3
+*.db
