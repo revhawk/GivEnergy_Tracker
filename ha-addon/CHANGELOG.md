@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.23.4] - 2026-10-14
+
+### Fixed
+- **Post-16:00 Re-Planning NameError Fix**: Added missing `timedelta` import to `ha-addon/simulation.py`. Fixed critical runtime `NameError: name 'timedelta' is not defined` triggered when calculating tomorrow's daytime dip slots during evening re-planning (hours >= 16:00).
+- **Regression Test Coverage**: Added `test_build_plan_candidates_post_1600_uses_tomorrow_timedelta` to `tests/test_optimization.py` validating candidate generation for afternoon/evening re-plans.
+
 ## [1.0.23.3] - 2026-10-14
 
 ### Fixed

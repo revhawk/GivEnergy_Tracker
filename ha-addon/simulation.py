@@ -8,7 +8,7 @@ optimal grid charge windows and arbitrage opportunities.
 import sys
 import math
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 try:
     import config

@@ -248,6 +248,40 @@ async def test_build_plan_candidates_medium_solar_autumn_headroom():
 
 
 @pytest.mark.asyncio
+async def test_build_plan_candidates_post_1600_uses_tomorrow_timedelta():
+    """Verify build_plan_candidates handles evening/post-16:00 runs where timedelta is needed for tomorrow's dip."""
+    from simulation import build_plan_candidates
+    from datetime import datetime, timezone, timedelta
+
+    today = datetime.now(timezone.utc).replace(hour=17, minute=0, second=0, microsecond=0)
+    tomorrow = today + timedelta(days=1)
+
+    slots = [
+        {"start": today, "end": today + timedelta(minutes=30), "price": 45.0},
+        {"start": today + timedelta(hours=1), "end": today + timedelta(hours=1, minutes=30), "price": 48.0},
+        {"start": tomorrow.replace(hour=11, minute=0), "end": tomorrow.replace(hour=11, minute=30), "price": 12.0},
+        {"start": tomorrow.replace(hour=12, minute=0), "end": tomorrow.replace(hour=12, minute=30), "price": 11.5},
+    ]
+
+    candidates = build_plan_candidates(
+        day_classification="MEDIUM_SOLAR_PARTIAL_PRECHARGE",
+        current_soc=40.0,
+        battery_capacity=9.5,
+        upcoming_slots=slots,
+        total_solar_kwh=10.0,
+        solar_comparison={"diff_kwh": 1.0},
+        export_rate=12.0,
+        total_import_kwh=2.0
+    )
+
+    assert len(candidates) == 3
+    c2 = candidates[1]
+    assert c2['id'] == 2
+    assert len(c2['slots']) > 0
+    assert c2['slots'][0][0].date() == tomorrow.date()
+
+
+@pytest.mark.asyncio
 async def test_build_plan_candidates_low_solar_overcast_safety():
     from simulation import build_plan_candidates
     slots = [_make_slot(2, 0, 10.0), _make_slot(3, 0, 10.5)]
