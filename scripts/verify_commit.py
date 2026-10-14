@@ -184,11 +184,11 @@ def check_license_and_permissions() -> bool:
     dockerfile = HA_ADDON / "Dockerfile"
     if dockerfile.exists():
         df_text = dockerfile.read_text()
-        if 'CMD [ "/bin/bash", "/app/run.sh" ]' not in df_text:
-            log_fail("Dockerfile CMD must explicitly invoke /bin/bash to prevent permission crashes.")
+        if 'CMD [ "/run.sh" ]' not in df_text:
+            log_fail("Dockerfile CMD must use standard '/run.sh' entrypoint format.")
             ok = False
         else:
-            log_pass("Dockerfile explicitly executes CMD with /bin/bash.")
+            log_pass("Dockerfile executes standard CMD [ \"/run.sh\" ].")
 
     # 4. Valid Least-Privilege AppArmor profile (Rating 8)
     apparmor = HA_ADDON / "apparmor.txt"

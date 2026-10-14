@@ -32,7 +32,7 @@ A Home Assistant add-on that automatically schedules your GivEnergy battery to c
 - 🔄 **Dynamic SoC Drift Re-Planning** — periodic 30-minute light monitor tick checks live SoC against planned schedule, triggering immediate re-planning if drift > `15.0%`
 - 🧩 **Flattened Modular Architecture** — clean separation into `givtcp.py`, `tariffs.py`, `solar.py`, `solar_openmeteo.py`, `profiler.py`, and `llm.py`
 - 📋 **Technical Specification & Contract Testing** — formal [`SPECIFICATION.md`](file:///home/reg/Coding/GivEnergy_Tracker/ha-addon/SPECIFICATION.md) and API contract test suite (`tests/test_contracts.py`)
-- 🏷️ **Single-Source Versioning** — `version.py` (`1.0.23.2`) synced with `config.yaml` to ensure zero version drift
+- 🏷️ **Single-Source Versioning** — `version.py` (`1.0.23.3`) synced with `config.yaml` to ensure zero version drift
 - 🏠 **Native Home Assistant add-on** — installs directly from a local repository
 
 ---
@@ -44,7 +44,7 @@ For complete API contracts, component specifications, and Mermaid sequence diagr
 ```
 GivEnergy_Tracker/
 ├── ha-addon/                      ← The Home Assistant add-on package
-│   ├── version.py                 ← Single source of truth for version (__version__ = "1.0.23.2")
+│   ├── version.py                 ← Single source of truth for version (__version__ = "1.0.23.3")
 │   ├── config.yaml                ← Add-on manifest (name, version, options)
 │   ├── Dockerfile                 ← Builds the add-on container (python:3.11-slim)
 │   ├── run.sh                     ← Entrypoint: reads HA options, launches optimiser
@@ -277,7 +277,7 @@ Then edit `config.py` with your Octopus API key, MPANs, meter serial, geographic
 2. Go to the **Configuration** tab and set your options (`interval_minutes`, `openai_api_key`, `daily_plan_hour`, `daily_audit_hour`, `startup_write_test`)
 3. Click **Start**
 4. Watch the **Log** tab. On first startup you should see:
-   - Version banner: `GivEnergy Tariff Optimiser v1.0.23.2`
+   - Version banner: `GivEnergy Tariff Optimiser v1.0.23.3`
    - Effective config dump (verifies your `config.py` values)
    - First planning run (`===== DAILY PLANNING RUN (first plan since startup) =====`)
 
@@ -288,7 +288,7 @@ After you edit any file on the HA host (either by editing directly or SMB-copyin
 1. Bump `version:` in `ha-addon/config.yaml` AND `__version__` in `ha-addon/version.py` (they must match)
 2. **Reload the add-on store** — Settings → Add-ons → Add-on Store → ⋮ → **Check for updates**. This is the step most easily forgotten — HA caches version metadata and won't detect the change without this refresh.
 3. Click **Update** on the add-on card (or ⋮ → **Rebuild** if you want to force a fresh image build)
-4. Confirm the log banner shows the new version `v1.0.23.2`
+4. Confirm the log banner shows the new version `v1.0.23.3`
 
 ---
 

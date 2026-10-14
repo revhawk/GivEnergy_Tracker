@@ -1,5 +1,6 @@
-#!/usr/bin/env bash
+#!/bin/bash
 set -e
+cd /app
 
 # ── Locate config.py ────────────────────────────────────────────────────────
 # config.py contains secrets (API keys, IPs) and is never shipped in the image.

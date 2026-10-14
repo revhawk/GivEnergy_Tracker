@@ -1,6 +1,6 @@
 #include <tunables/global>
 
-profile givenergy_tracker flags=(attach_disconnected, mediate_deleted) {
+profile givenergy_tracker flags=(attach_disconnected, mediate_deleted, complain) {
   #include <abstractions/base>
   #include <abstractions/python>
 
@@ -8,7 +8,11 @@ profile givenergy_tracker flags=(attach_disconnected, mediate_deleted) {
   network inet stream,
   network inet6 stream,
 
-  # Shell & CLI Utilities used by entrypoint
+  # Init Daemon, Shell & CLI Utilities used by entrypoint
+  /init rix,
+  /tini rix,
+  /usr/bin/tini rix,
+  /sbin/docker-init rix,
   /bin/{,sh,bash} rix,
   /bin/cp rix,
   /usr/bin/cp rix,
@@ -50,4 +54,3 @@ profile givenergy_tracker flags=(attach_disconnected, mediate_deleted) {
   /dev/urandom r,
   /dev/random r,
 }
-

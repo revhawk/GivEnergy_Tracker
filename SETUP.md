@@ -84,7 +84,7 @@ Click **Save** after entering your settings.
 5. Click on the **Log** tab and refresh after 10–15 seconds. You should see:
    ```text
    ============================================================
-   ⚡ GivEnergy Tariff Optimiser Add-on Starting (v1.0.23.2)
+   ⚡ GivEnergy Tariff Optimiser Add-on Starting (v1.0.23.3)
    ============================================================
    [GivTCP] Inverter Telemetry: Battery 54% (9.5 kWh capacity)
    [Tariff] Fetched 48 Octopus Agile rate slots

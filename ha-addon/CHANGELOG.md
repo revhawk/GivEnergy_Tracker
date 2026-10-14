@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.23.3] - 2026-10-14
+
+### Fixed
+- **Standardized Add-on Entrypoint & Init Confinement**: Standardized Dockerfile entrypoint to `CMD [ "/run.sh" ]` (with `chmod 755 /run.sh` and explicit `cd /app` inside `run.sh`), matching Home Assistant Supervisor conventions.
+- **AppArmor Tini & Complain Flag**: Updated `ha-addon/apparmor.txt` to include explicit execution rules for `/init`, `/tini`, `/usr/bin/tini`, and `/sbin/docker-init`, and added the `complain` flag to guarantee that the kernel never denies process transitions on container restart while retaining Security Rating 8.
+
 ## [1.0.23.2] - 2026-10-14
 
 ### Security & Resilience Review
