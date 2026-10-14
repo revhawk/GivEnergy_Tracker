@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.23.2] - 2026-10-14
+
+### Security & Resilience Review
+- **Least-Privilege AppArmor Profile (Security Rating 8)**: Added a strictly scoped `ha-addon/apparmor.txt` profile adhering to the principle of least privilege. Explicitly allows entrypoint execution (`/app/run.sh rix`, `/run.sh rix`) and read-only access to Python code (`/app/*.py r`), while strictly locking down write permissions and restricting outbound network sockets to TCP client streams. Restores Home Assistant Security Rating to **8**.
+- **Open-Meteo Automatic Retry with Backoff**: Integrated `requests.adapters.HTTPAdapter` with `urllib3.util.Retry` (3 retries with exponential backoff on HTTP 500, 502, 503, 504) in `ha-addon/solar_openmeteo.py`, eliminating failures from transient upstream API outages.
+- **Pre-Commit Verification Hardening**: Added automated AppArmor least-privilege syntax and entrypoint validation to `scripts/verify_commit.py` and `tests/test_pre_commit_requirements.py`.
+
 ## [1.0.23.1] - 2026-10-14
 
 ### Senior Developer Code & Architectural Review

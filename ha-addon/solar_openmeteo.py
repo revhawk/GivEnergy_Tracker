@@ -1,6 +1,8 @@
 """Open-Meteo Solar API integration module (Free, open-source solar irradiance model)."""
 import logging
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util import Retry
 from datetime import datetime, timezone
 
 import config
@@ -21,7 +23,15 @@ def fetch_openmeteo_solar_forecast():
     )
     logging.info(f"Fetching parallel solar forecast from Open-Meteo: {url}")
     try:
-        response = requests.get(url, headers={"User-Agent": "GivEnergyTracker/1.0"}, timeout=15)
+        session = requests.Session()
+        retries = Retry(
+            total=3,
+            backoff_factor=1,
+            status_forcelist=[500, 502, 503, 504],
+            raise_on_status=False
+        )
+        session.mount("https://", HTTPAdapter(max_retries=retries))
+        response = session.get(url, headers={"User-Agent": "GivEnergyTracker/1.0"}, timeout=15)
         response.raise_for_status()
         data = response.json()
 

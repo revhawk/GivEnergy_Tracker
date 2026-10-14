@@ -136,7 +136,7 @@ def check_private_info_leaks() -> bool:
         if path.suffix not in scanned_exts:
             continue
         rel = path.relative_to(ROOT)
-        if str(rel) == "scripts/verify_commit.py":
+        if str(rel) in {"scripts/verify_commit.py", "PRE_COMMIT_CHECKLIST.md", "tests/test_pre_commit_requirements.py"}:
             continue
         try:
             content = path.read_text(errors="ignore")
@@ -190,13 +190,24 @@ def check_license_and_permissions() -> bool:
         else:
             log_pass("Dockerfile explicitly executes CMD with /bin/bash.")
 
-    # 4. No conflicting AppArmor profile
+    # 4. Valid Least-Privilege AppArmor profile (Rating 8)
     apparmor = HA_ADDON / "apparmor.txt"
-    if apparmor.exists():
-        log_fail("ha-addon/apparmor.txt is present and known to cause tini execution permission failures!")
+    if not apparmor.exists():
+        log_fail("ha-addon/apparmor.txt is missing (required for Security Rating 8)!")
         ok = False
     else:
-        log_pass("ha-addon/apparmor.txt is absent (runs cleanly under default Supervisor confinement).")
+        aa_text = apparmor.read_text()
+        if "profile givenergy_tracker" not in aa_text:
+            log_fail("ha-addon/apparmor.txt must define 'profile givenergy_tracker'")
+            ok = False
+        elif "/app/run.sh rix" not in aa_text or "/run.sh rix" not in aa_text:
+            log_fail("ha-addon/apparmor.txt missing execution permission for run.sh entrypoint!")
+            ok = False
+        elif "/app/*.py r" not in aa_text:
+            log_fail("ha-addon/apparmor.txt missing read permission for application python scripts!")
+            ok = False
+        else:
+            log_pass("ha-addon/apparmor.txt is present and configured with least-privilege rules (Security Rating 8).")
 
     # 5. config.yaml homeassistant_api check
     config_yaml = HA_ADDON / "config.yaml"

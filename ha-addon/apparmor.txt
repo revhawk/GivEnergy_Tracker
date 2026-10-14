@@ -1,0 +1,53 @@
+#include <tunables/global>
+
+profile givenergy_tracker flags=(attach_disconnected, mediate_deleted) {
+  #include <abstractions/base>
+  #include <abstractions/python>
+
+  # Outbound Network Streams (GivTCP, Octopus, Forecast.Solar, Open-Meteo, OpenAI)
+  network inet stream,
+  network inet6 stream,
+
+  # Shell & CLI Utilities used by entrypoint
+  /bin/{,sh,bash} rix,
+  /bin/cp rix,
+  /usr/bin/cp rix,
+  /usr/bin/jq rix,
+  /usr/bin/python3* rix,
+
+  # Add-on Application Entrypoint (Strict Least Privilege)
+  /run.sh rix,
+  /app/run.sh rix,
+
+  # Application Code (Read-Only — cannot be overwritten at runtime)
+  /app/*.py r,
+  /app/requirements.txt r,
+  /app/config.py.example r,
+
+  # Runtime Config & Python Bytecode
+  /app/config.py rw,
+  /app/__pycache__/** rwk,
+
+  # Add-on Storage Mounts (Scoped strictly to config and logging)
+  /data/options.json r,
+  /data/config.py r,
+  /share/givenergy_config.py r,
+  /share/nas_logs/** rwk,
+
+  # System TLS, DNS & Dynamic Libraries
+  /etc/ssl/** r,
+  /etc/resolv.conf r,
+  /etc/hosts r,
+  /etc/nsswitch.conf r,
+  /etc/ld.so.cache r,
+  /lib/** rm,
+  /usr/lib/** rm,
+  /usr/local/lib/** rm,
+
+  # Process & Pseudo-filesystems
+  @{PROC}/** r,
+  /dev/null rw,
+  /dev/urandom r,
+  /dev/random r,
+}
+
