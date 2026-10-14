@@ -45,7 +45,8 @@ MAX_BATTERY_CHARGE_RATE = 3000     # Max GivEnergy charge speed in Watts
 IBOOST_MAX_DIVERT_RATE = 3000      # Standard UK immersion heater load cap (W)
 BASE_LOAD_W = 1000                 # Continuous home base load (W). Set from overnight draw.
 DAYTIME_LOAD_W = 700               # General daytime baseline load (W)
-LAUNDRY_ACTIVE_LOAD_W = 600        # Additional daytime laundry allocation (W) for washing machine & tumble dryer (9:00 - 16:00 Mon-Fri)
+LAUNDRY_ACTIVE_LOAD_W = 800        # Daytime washing machine allocation (W) (9:00 - 16:00 Mon-Fri)
+TUMBLE_DRYER_LOAD_W = 1000         # Daytime tumble dryer allocation (W) for households running multiple cycles daily
 
 # Battery capacity
 BATTERY_CAPACITY_KWH = 9.5         # Total battery capacity in kWh

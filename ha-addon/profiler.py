@@ -8,8 +8,12 @@ def get_load_kwh_for_slot(slot_start, slot_end, load_profile_history=None):
     slot_key = local_start.strftime("%H:%M")
 
     # 1. Check historical telemetry rolling average if available
+    # Partitions by weekday vs weekend to prevent quiet weekends diluting heavy weekday laundry
     if load_profile_history and isinstance(load_profile_history, dict):
-        history = load_profile_history.get(slot_key)
+        day_type = "weekday" if local_start.weekday() < 5 else "weekend"
+        history = load_profile_history.get(f"{day_type}_{slot_key}")
+        if not history or not isinstance(history, list) or len(history) == 0:
+            history = load_profile_history.get(slot_key)
         if history and isinstance(history, list) and len(history) > 0:
             return float(sum(history) / len(history))
 
@@ -23,10 +27,11 @@ def get_load_kwh_for_slot(slot_start, slot_end, load_profile_history=None):
     elif 18 <= hour < 20:
         watts = getattr(config, 'EVENING_PEAK_LOAD_W', 1200)
     elif (6 <= hour < 16) or (20 <= hour < 23):
-        # Weekday laundry appliance load adjustment (9:00 - 16:00 Mon-Fri)
+        # Weekday laundry & tumble dryer appliance load adjustment (9:00 - 16:00 Mon-Fri)
         if weekday < 5 and (9 <= hour < 16):
             laundry_w = getattr(config, 'LAUNDRY_ACTIVE_LOAD_W', 400)
-            watts = getattr(config, 'DAYTIME_LOAD_W', 700) + laundry_w
+            dryer_w = getattr(config, 'TUMBLE_DRYER_LOAD_W', 0)
+            watts = getattr(config, 'DAYTIME_LOAD_W', 700) + laundry_w + dryer_w
         else:
             watts = getattr(config, 'DAYTIME_LOAD_W', 700)
     else:  # Overnight: 23:00 - 06:00

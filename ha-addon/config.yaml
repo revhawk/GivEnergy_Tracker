@@ -9,6 +9,7 @@ arch:
   - armv7
 startup: "services"
 boot: "auto"
+homeassistant_api: true
 map:
   - share:rw   # mounts /share — needed for config file, NAS logging, state persistence
   - data:rw    # mounts /data  — addon data dir (options.json + config.py fallback)

@@ -9,7 +9,7 @@ only the `requests` package (no add-on rebuild needed).
 
 Usage:
     python3 scripts/test_write_slot.py
-    python3 scripts/test_write_slot.py --url http://homeassistant.local:8099
+    python3 scripts/test_write_slot.py --url http://homeassistant.local:6345
     python3 scripts/test_write_slot.py --start-in-minutes 120 --duration-minutes 30
     python3 scripts/test_write_slot.py --dry-run       # print calls, don't send
 
@@ -33,7 +33,7 @@ from datetime import datetime, timedelta
 import requests
 
 
-DEFAULT_URL = "http://localhost:8099"
+DEFAULT_URL = "http://localhost:6345"
 
 
 def _post(url: str, path: str, payload: dict, dry_run: bool) -> None:

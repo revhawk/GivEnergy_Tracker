@@ -117,6 +117,28 @@ class TestGetLoadKwhForSlot:
         got = optimiser.get_load_kwh_for_slot(slot["start"], slot["end"], history)
         assert abs(got - 0.60) < 1e-4
 
+    def test_weekday_partitioned_load_history(self):
+        # Friday (weekday) vs Saturday (weekend) with partitioned history
+        slot_weekday = self._slot("2026-07-03T14:00:00+01:00", "2026-07-03T14:30:00+01:00")
+        slot_weekend = self._slot("2026-07-04T14:00:00+01:00", "2026-07-04T14:30:00+01:00")
+        history = {
+            "weekday_14:00": [1.15, 1.25],
+            "weekend_14:00": [0.35, 0.45],
+            "14:00": [0.55]
+        }
+        got_weekday = optimiser.get_load_kwh_for_slot(slot_weekday["start"], slot_weekday["end"], history)
+        got_weekend = optimiser.get_load_kwh_for_slot(slot_weekend["start"], slot_weekend["end"], history)
+        assert abs(got_weekday - 1.20) < 1e-4
+        assert abs(got_weekend - 0.40) < 1e-4
+
+    def test_tumble_dryer_load_custom_config(self, monkeypatch):
+        slot_weekday = self._slot("2026-07-03T14:00:00+01:00", "2026-07-03T14:30:00+01:00")
+        import config
+        monkeypatch.setattr(config, "TUMBLE_DRYER_LOAD_W", 1000, raising=False)
+        # (700W daytime + 400W laundry + 1000W dryer) * 0.5h / 1000 = 1.05 kWh
+        got = optimiser.get_load_kwh_for_slot(slot_weekday["start"], slot_weekday["end"])
+        assert abs(got - 1.05) < 1e-4
+
 
 class TestIsPowerDownSlot:
     def _slot(self, start_iso, end_iso):

@@ -137,9 +137,9 @@ sequenceDiagram
   Log format: `☀️ [PARALLEL SOLAR COMPARISON] Primary (Forecast.Solar): X.XX kWh | Secondary (Open-Meteo): Y.YY kWh | Diff: Z.ZZ kWh`.
 
 ### 4.5 Dynamic Load & Power Down Profiler (`profiler.py`)
-- **Load Profiler:** Evaluates half-hour rolling historical averages (`load_profile_history["HH:MM"]`). Falls back to hourly baselines:
+- **Load Profiler:** Evaluates half-hour rolling historical averages partitioned by day type (`load_profile_history["weekday_HH:MM"]` and `load_profile_history["weekend_HH:MM"]`), with backward-compatible fallback to `HH:MM`. Falls back to hourly baselines:
   - Overnight (23:00 - 06:00): 400 W (`0.20 kWh`)
-  - Daytime (06:00 - 17:00 & 20:00 - 23:00): 700 W (`0.35 kWh`)
+  - Daytime (06:00 - 17:00 & 20:00 - 23:00): 700 W baseline (`0.35 kWh`), plus `LAUNDRY_ACTIVE_LOAD_W` (default 400 W) and `TUMBLE_DRYER_LOAD_W` (configurable, e.g. 1000 W) on weekdays (09:00 - 16:00)
   - Evening Peak (17:00 - 20:00): 1200 W (`0.60 kWh`)
 - **Power Down Detector:** Evaluates `POWER_DOWN_WINDOWS` (e.g. `[("18:00", "19:00")]`). Enforces `0.0 kWh` grid import during window.
 

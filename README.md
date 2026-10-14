@@ -512,7 +512,9 @@ Test targets and coverage are documented in [`tests/README.md`](tests/README.md)
 
 ## 📜 Licence
 
-This project is licensed under the Apache 2.0 License — see [LICENSE](LICENSE) for details.
+This project is licensed under the GNU General Public License v3.0 (GPLv3) — see [LICENSE](LICENSE) for details.
+
+Copyright (C) 2026 Reg Hawkins (revhawk). All derivative works and modifications must remain free and open source under the GPLv3.
 
 ---
 

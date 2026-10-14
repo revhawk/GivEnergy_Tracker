@@ -47,11 +47,21 @@ async def run_light_monitor():
                 cur_state = load_state_fn()
                 now_local = datetime.now().astimezone()
                 slot_key = now_local.strftime("%H:%M")
+                day_type = "weekday" if now_local.weekday() < 5 else "weekend"
+                part_key = f"{day_type}_{slot_key}"
                 slot_kwh = (telemetry['load_power'] / 1000.0) * 0.5
                 history_dict = cur_state.setdefault('load_profile_history', {})
+                
+                # Update partitioned history (retains 14 weekday/weekend readings)
+                part_list = history_dict.setdefault(part_key, [])
+                part_list.append(round(slot_kwh, 3))
+                if len(part_list) > 14:
+                    history_dict[part_key] = part_list[-14:]
+                    
+                # Update legacy non-partitioned key for backward compatibility
                 history_list = history_dict.setdefault(slot_key, [])
                 history_list.append(round(slot_kwh, 3))
-                if len(history_list) > 14:  # keep rolling 14 readings per half-hour slot
+                if len(history_list) > 14:
                     history_dict[slot_key] = history_list[-14:]
                 save_state_fn(cur_state)
         else:
@@ -166,7 +176,34 @@ def build_plan_candidates(day_classification, current_soc, battery_capacity,
         target_soc_opt1 = int(current_soc)
         target_soc_opt2 = min(60, int(current_soc) + 10)
 
-    # 1. OPTION 1: Overnight / Early Morning Pre-Charge (00:00 - 07:00 or Arbitrage/Negative slots)
+    # Determine pre-peak candidate slots relative to current execution time
+    now_dt = upcoming_slots[0]['start'].astimezone() if upcoming_slots else datetime.now().astimezone()
+    if now_dt.hour < 7:
+        pre_peak_slots = [
+            s for s in upcoming_slots
+            if s['start'].astimezone().date() == now_dt.date() and s['start'].astimezone().hour < 7
+        ]
+        if not pre_peak_slots:
+            pre_peak_slots = [
+                s for s in upcoming_slots
+                if s['start'].astimezone().date() == now_dt.date() and s['start'].astimezone().hour < 16
+            ]
+    elif 7 <= now_dt.hour < 16:
+        # Daytime re-plan (e.g. 10:00): candidate slots MUST fall today before the 16:00 peak!
+        pre_peak_slots = [
+            s for s in upcoming_slots
+            if s['start'].astimezone().date() == now_dt.date() and s['start'].astimezone().hour < 16
+        ]
+    else:
+        # Evening (>= 16:00): look for overnight slots before 07:00 tomorrow
+        pre_peak_slots = [s for s in upcoming_slots if s['start'].astimezone().hour < 7]
+
+    if not pre_peak_slots:
+        pre_peak_slots = [s for s in upcoming_slots if s['start'].astimezone().hour < 16]
+    if not pre_peak_slots:
+        pre_peak_slots = list(upcoming_slots)
+
+    # 1. OPTION 1: Overnight / Early Morning Pre-Charge (or Pre-Peak Defensive Window)
     if negative_slots:
         opt1_slots_raw = negative_slots
         opt1_strategy = "negative_rates"
@@ -181,19 +218,15 @@ def build_plan_candidates(day_classification, current_soc, battery_capacity,
         target_soc_opt1 = max(target_soc_opt1, 95)
         kwh_opt1 = max(0.0, (target_soc_opt1 - current_soc) / 100.0 * battery_capacity)
     elif total_import_kwh > 0.2:
-        opt1_slots_raw = [s for s in upcoming_slots if s['start'].astimezone().hour < 7]
-        if not opt1_slots_raw:
-            opt1_slots_raw = [s for s in upcoming_slots if s['start'].astimezone().hour < 16]
+        opt1_slots_raw = pre_peak_slots
         opt1_strategy = "scheduled"
         opt1_name = f"Optimal Deficit Pre-Charge"
         kwh_opt1 = min(total_import_kwh * 1.10, battery_capacity * (100.0 - current_soc) / 100.0)
         target_soc_opt1 = min(100, int(current_soc + (kwh_opt1 / battery_capacity) * 100))
     else:
-        opt1_slots_raw = [s for s in upcoming_slots if s['start'].astimezone().hour < 7]
-        if not opt1_slots_raw:
-            opt1_slots_raw = [s for s in upcoming_slots if s['start'].astimezone().hour < 16]
-        opt1_strategy = "overnight_defensive"
-        opt1_name = f"Overnight Defensive Pre-Charge (Target {target_soc_opt1}%)"
+        opt1_slots_raw = pre_peak_slots
+        opt1_strategy = "midday_defensive" if (7 <= now_dt.hour < 16) else "overnight_defensive"
+        opt1_name = f"Defensive Pre-Charge (Target {target_soc_opt1}%)"
         kwh_opt1 = max(0.0, (target_soc_opt1 - current_soc) / 100.0 * battery_capacity)
 
     slots_needed_opt1 = math.ceil(kwh_opt1 / max_charge_kwh_per_slot) if kwh_opt1 > 0 else 0
@@ -243,7 +276,19 @@ def build_plan_candidates(day_classification, current_soc, battery_capacity,
     })
 
     # 2. OPTION 2: Midday Dip Window (10:00 - 15:30)
-    daytime_dip_slots = [s for s in upcoming_slots if 10 <= s['start'].astimezone().hour < 16]
+    if now_dt.hour < 16:
+        daytime_dip_slots = [
+            s for s in upcoming_slots
+            if s['start'].astimezone().date() == now_dt.date() and 10 <= s['start'].astimezone().hour < 16
+        ]
+    else:
+        tomorrow_date = now_dt.date() + timedelta(days=1)
+        daytime_dip_slots = [
+            s for s in upcoming_slots
+            if s['start'].astimezone().date() == tomorrow_date and 10 <= s['start'].astimezone().hour < 16
+        ]
+    if not daytime_dip_slots:
+        daytime_dip_slots = [s for s in upcoming_slots if 10 <= s['start'].astimezone().hour < 16]
     kwh_opt2 = max(0.0, (target_soc_opt2 - current_soc) / 100.0 * battery_capacity)
     slots_needed_opt2 = math.ceil(kwh_opt2 / max_charge_kwh_per_slot) if kwh_opt2 > 0 else 0
     slots_needed_opt2 = min(slots_needed_opt2, len(daytime_dip_slots))
@@ -368,6 +413,9 @@ async def run_optimization():
     import_needed_slots = []
     imports = []
     
+    state_data = load_state_fn()
+    load_history = state_data.get('load_profile_history')
+
     # Run physical priority simulation: Solar -> Home Load -> Battery Charge -> iBoost Divert -> Export
     for idx, slot in enumerate(upcoming_slots):
         if idx == 0 and telemetry and 'pv_power' in telemetry and 'load_power' in telemetry:
@@ -380,8 +428,6 @@ async def run_optimization():
             )
         else:
             solar_kwh = get_solar_kwh_fn(slot['start'], slot['end'], solar_forecasts)
-            state_data = load_state_fn()
-            load_history = state_data.get('load_profile_history')
             load_kwh = get_load_kwh_fn(slot['start'], slot['end'], load_history)
         net = load_kwh - solar_kwh
         
@@ -421,18 +467,6 @@ async def run_optimization():
                 'kwh': import_needed,
                 'price': slot['price']
             })
-
-    planned_soc_schedule = [
-        {
-            'start': imp['slot']['start'].isoformat(),
-            'end': imp['slot']['end'].isoformat(),
-            'soc': round(imp['batt_soc'], 1)
-        }
-        for imp in imports
-    ]
-    cur_state = load_state_fn()
-    cur_state['planned_soc_schedule'] = planned_soc_schedule
-    save_state_fn(cur_state)
             
     logging.info("--- 24-Hour Base Simulation (No Grid Charge) ---")
     logging.info(f"{'Date/Time':<10} | {'Price':<6} | {'Solar':<6} | {'Load':<6} | {'Battery':<7} | {'iBoost':<6} | {'Export':<6} | {'Import':<6}")
@@ -452,7 +486,17 @@ async def run_optimization():
     total_import_kwh = sum(i['kwh'] for i in import_needed_slots)
     total_iboost_kwh = sum(i['iboost'] for i in imports)
     total_export_kwh = sum(i['export'] for i in imports)
-    total_solar_kwh  = sum(f['kwh'] for f in solar_forecasts)
+    
+    # Restrict total solar calculation to the upcoming slots horizon (prevents summing 48h across 2 days)
+    if upcoming_slots:
+        sim_start = upcoming_slots[0]['start']
+        sim_end = upcoming_slots[-1]['end']
+        total_solar_kwh = sum(
+            f['kwh'] for f in solar_forecasts
+            if sim_start <= f.get('time', f.get('start', sim_start)) <= sim_end
+        )
+    else:
+        total_solar_kwh = sum(f['kwh'] for f in solar_forecasts)
 
     logging.info("--- Simulation Summary ---")
     logging.info(f"Total Grid Import Needed:  {total_import_kwh:.2f} kWh")
@@ -473,6 +517,7 @@ async def run_optimization():
         logging.info(f"⚡ NEGATIVE RATE ALERT: {len(negative_slots)} slot(s) — grid pays YOU!")
         for ns in negative_slots[:8]:
             local_t = ns['start'].astimezone().strftime('%m-%d %H:%M')
+            logging.info(f"  • {local_t} @ {ns['price']:.2f}p/kWh")
     # Weather-Adaptive Day Classification
     battery_capacity = float(getattr(config, 'BATTERY_CAPACITY_KWH', 9.5))
     available_capacity_kwh = max(0.0, (100.0 - current_soc) / 100.0 * battery_capacity)
@@ -536,25 +581,6 @@ async def run_optimization():
         export_rate=export_rate
     )
 
-    # Bridge for test compatibility: if test patched chatgpt_veto_plan, invoke it
-    if hasattr(chatgpt_veto_fn, 'assert_called') or getattr(chatgpt_veto_fn, '_mock_return_value', None) is not None:
-        try:
-            veto_res = chatgpt_veto_fn(
-                current_soc, battery_capacity, total_solar_kwh, export_rate,
-                upcoming_slots, candidates[0]['slots'], None,
-                candidates[0]['kwh'], candidates[0]['avg_price'], day_classification
-            )
-            if isinstance(veto_res, tuple) and len(veto_res) >= 3:
-                approve = bool(veto_res[0])
-                if veto_res[1] is not None:
-                    score = veto_res[1]
-                if veto_res[2]:
-                    reason = str(veto_res[2])
-                if len(veto_res) > 3 and veto_res[3]:
-                    weather_commentary = str(veto_res[3])
-        except Exception as e:
-            logging.debug(f"Test veto mock bridge: {e}")
-
     # 7. Select Candidate and Handle Disagreement / Fallbacks
     selected_candidate = next((c for c in candidates if c['id'] == sel_id), candidates[0])
 
@@ -563,9 +589,16 @@ async def run_optimization():
         logging.info(f"⚡ OVERRIDING LLM VETO: candidate cost is negative ({selected_candidate['avg_price']:.2f}p/kWh). Proceeding with plan.")
         approve = True
     elif not approve:
-        logging.info(f"LLM VETOED candidate {selected_candidate['id']} — falling back to Option 3 (Solar self-consumption).")
-        # Fall back to solar-only (Option 3)
-        selected_candidate = candidates[-1]
+        if day_classification in ("LOW_SOLAR_DEFENSIVE_PRECHARGE", "MEDIUM_SOLAR_PARTIAL_PRECHARGE") or total_import_kwh > 0.2:
+            logging.warning(
+                f"LLM vetoed candidate {selected_candidate['id']}, but day classification is {day_classification} "
+                f"(import deficit {total_import_kwh:.2f} kWh). Falling back to deterministic Option 1 safety plan."
+            )
+            selected_candidate = candidates[0]
+            approve = True
+        else:
+            logging.info(f"LLM vetoed candidate {selected_candidate['id']} on high solar day — falling back to Option 3 (Solar self-consumption).")
+            selected_candidate = candidates[-1]
 
     slots_to_apply = selected_candidate.get('slots', [])
     target_soc_to_apply = selected_candidate.get('target_soc', 100)
@@ -588,6 +621,57 @@ async def run_optimization():
         logging.info("Zero grid charge programmed (relying on solar PV and existing battery).")
         action = "no_charge"
         await set_slots_fn(None, None)
+
+    # Calculate and persist planned SoC trajectory accounting for applied charge blocks
+    # (Prevents light monitor false drift triggers that otherwise re-plan in a loop)
+    sim_energy = (current_soc / 100.0) * battery_capacity
+    planned_soc_schedule = []
+    target_energy = (target_soc_to_apply / 100.0) * battery_capacity
+
+    for imp in imports:
+        slot_start = imp['slot']['start']
+        # Check if slot falls within any charge block
+        is_charge_slot = False
+        if approve and slots_to_apply:
+            for c_start, c_end in slots_to_apply:
+                if c_start <= slot_start < c_end:
+                    is_charge_slot = True
+                    break
+
+        solar_kwh = imp['solar']
+        load_kwh = imp['load']
+
+        if is_charge_slot:
+            grid_charge = min(max_charge_kwh_per_slot, max(0.0, target_energy - sim_energy))
+            sim_energy += grid_charge
+            net = load_kwh - solar_kwh
+            if net > 0:
+                discharge = min(net, max(0.0, sim_energy - min_energy))
+                sim_energy -= discharge
+            else:
+                excess_solar = -net
+                solar_charge = min(excess_solar, max_charge_kwh_per_slot, max_energy - sim_energy)
+                sim_energy += solar_charge
+        else:
+            net = load_kwh - solar_kwh
+            if net < 0:
+                excess_solar = -net
+                solar_charge = min(excess_solar, max_charge_kwh_per_slot, max_energy - sim_energy)
+                sim_energy += solar_charge
+            else:
+                discharge = min(net, max(0.0, sim_energy - min_energy))
+                sim_energy -= discharge
+
+        batt_soc = (sim_energy / battery_capacity) * 100.0
+        planned_soc_schedule.append({
+            'start': slot_start.isoformat(),
+            'end': imp['slot']['end'].isoformat(),
+            'soc': round(batt_soc, 1)
+        })
+
+    cur_state = load_state_fn()
+    cur_state['planned_soc_schedule'] = planned_soc_schedule
+    save_state_fn(cur_state)
 
     # 8. Log and persist to NAS state & daily stats
     record_plan_fn(

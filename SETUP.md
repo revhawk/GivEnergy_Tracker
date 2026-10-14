@@ -10,7 +10,7 @@ Before installing the add-on, make sure you have:
 
 1. **Home Assistant OS or Supervised**: Running on Raspberry Pi, Home Assistant Green/Yellow, ODROID, or x86/x64 server.
 2. **GivEnergy Inverter & Battery**: Gen 1, Gen 2, Gen 3, All-in-One, or AC Coupled inverter.
-3. **GivTCP Add-on (v2 or v3)**: Installed and running in Home Assistant, providing local REST endpoints (`http://localhost:8099` or your local IP/host).
+3. **GivTCP Add-on (v2 or v3)**: Installed and running in Home Assistant, providing local REST endpoints (`http://<GIVTCP_HOST>:6345`).
 4. **Octopus Energy Account**: Subscribed to dynamic tariffs (e.g., **Octopus Agile** for import and **Octopus Outgoing** for export).
 5. **(Recommended) Samba Share Add-on**: For logging state and daily statistics to `/share/nas_logs` accessible from your PC or NAS.
 6. **(Optional) OpenAI API Key**: If you want ChatGPT AI Co-Pilot plan scoring and weather commentary (`gpt-4o-mini`).
@@ -39,7 +39,24 @@ Before installing the add-on, make sure you have:
 
 ---
 
-### Step 3: Configure Add-on Options
+### Step 3: Provide Your `config.py` Credentials & Inverter Settings
+
+Because `config.py` contains private local network IP addresses and Octopus credentials, it is not bundled inside the public container image. You must provide it in one of two locations before starting:
+
+1. **Option A (Recommended for Samba users)**:
+   Place your completed `config.py` at `/share/givenergy_config.py`.
+2. **Option B (Addon persistent data directory)**:
+   Place your completed `config.py` at `/data/config.py`.
+
+Use the provided [`ha-addon/config.py.example`](file:///home/reg/Coding/GivEnergy_Tracker/ha-addon/config.py.example) as your template. Fill in:
+- `GIVTCP_URL`: URL to your GivTCP instance (e.g. `http://homeassistant.local:6345`).
+- `OCTOPUS_API_KEY` & `OCTOPUS_ACCOUNT_ID`.
+- `ELEC_IMPORT_MPAN` & `AGILE_TARIFF_CODE`.
+- (Optional) `TUMBLE_DRYER_LOAD_W = 1000` & `LAUNDRY_ACTIVE_LOAD_W = 800` if your household runs multiple laundry cycles daily.
+
+---
+
+### Step 4: Configure Add-on Options
 
 Click on the **Configuration** tab at the top of the add-on page to view the settings.
 
@@ -53,13 +70,12 @@ Click on the **Configuration** tab at the top of the add-on page to view the set
 | **`daily_plan_hour`** | `17` | The hour (24h format) when tomorrow's charge plan is generated. 17:00 (5 PM) is ideal because Octopus publishes Agile rates between 16:00 and 16:30. |
 | **`daily_audit_hour`** | `23` | The hour (24h format) when the financial savings audit is calculated and archived to your NAS. |
 | **`log_file_path`** | `/share/nas_logs/givenergy_tracker.log` | Path for persistent rotating log files and history records (`/share/nas_logs/history/`). |
-| **`hive_water_heater_entity`** | `water_heater.hive_hot_water` | Your Hive hot water entity in Home Assistant (pauses gas boiler when electric/solar heating is active). |
 
 Click **Save** after entering your settings.
 
 ---
 
-### Step 4: Start the Add-on & Verify Logs
+### Step 5: Start the Add-on & Verify Logs
 
 1. Return to the **Info** tab.
 2. Toggle **Start on boot** to `ON`.

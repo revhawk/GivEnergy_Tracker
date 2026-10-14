@@ -27,7 +27,8 @@ def setup_logging():
     """Setup console and daily midnight rotating file loggers (retaining 90 days of history)."""
     log_level_str = getattr(config, 'LOG_LEVEL', 'INFO').upper() if config else 'INFO'
     log_level = getattr(logging, log_level_str, logging.INFO)
-    log_file = getattr(config, 'LOG_FILE_PATH', '/share/nas_logs/givenergy_tracker.log') if config else '/share/nas_logs/givenergy_tracker.log'
+    env_log_file = os.getenv('LOG_FILE_PATH', '').strip()
+    log_file = env_log_file if env_log_file else (getattr(config, 'LOG_FILE_PATH', '/share/nas_logs/givenergy_tracker.log') if config else '/share/nas_logs/givenergy_tracker.log')
     
     logger = logging.getLogger()
     logger.setLevel(logging.DEBUG)  # Root captures everything, handlers filter

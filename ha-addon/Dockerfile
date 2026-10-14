@@ -17,4 +17,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY *.py run.sh config.py.example /app/
 RUN chmod a+x run.sh
 
-CMD [ "./run.sh" ]
+CMD [ "/bin/bash", "/app/run.sh" ]

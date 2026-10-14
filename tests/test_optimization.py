@@ -45,13 +45,13 @@ async def test_get_inverter_telemetry_missing():
 
 @pytest.mark.asyncio
 @patch('optimiser.set_inverter_charge_slots')
-@patch('optimiser.chatgpt_veto_plan')
+@patch('optimiser.chatgpt_select_candidate')
 @patch('optimiser.fetch_export_rate')
 @patch('optimiser.fetch_parallel_solar_forecasts')
 @patch('optimiser.fetch_agile_rates')
 @patch('optimiser.get_inverter_telemetry')
 async def test_optimization_arbitrage_multi_slots(
-    mock_telemetry, mock_rates, mock_solar, mock_export, mock_veto, mock_set_slots
+    mock_telemetry, mock_rates, mock_solar, mock_export, mock_select, mock_set_slots
 ):
     # Setup: 3 cheap rate blocks, 2 contiguous, 1 separate
     # 02:00-02:30 -> 8p, 02:30-03:00 -> 7p (should merge to 02:00-03:00)
@@ -69,7 +69,7 @@ async def test_optimization_arbitrage_multi_slots(
     mock_rates.return_value = slots
     mock_solar.return_value = ([], {})
     mock_export.return_value = 12.0 # Arbitrage threshold will be 12.0 - 1.5 = 10.5p
-    mock_veto.return_value = (True, 10, "arbitrage")
+    mock_select.return_value = (True, 1, 10, "arbitrage", "clear skies")
     mock_set_slots.return_value = True
 
     await optimiser.run_optimization()
@@ -94,13 +94,13 @@ async def test_optimization_arbitrage_multi_slots(
 
 @pytest.mark.asyncio
 @patch('optimiser.set_inverter_charge_slots')
-@patch('optimiser.chatgpt_veto_plan')
+@patch('optimiser.chatgpt_select_candidate')
 @patch('optimiser.fetch_export_rate')
 @patch('optimiser.fetch_parallel_solar_forecasts')
 @patch('optimiser.fetch_agile_rates')
 @patch('optimiser.get_inverter_telemetry')
 async def test_optimization_deficit_non_contiguous_cheapest_slots(
-    mock_telemetry, mock_rates, mock_solar, mock_export, mock_veto, mock_set_slots
+    mock_telemetry, mock_rates, mock_solar, mock_export, mock_select, mock_set_slots
 ):
     # Setup 2 cheap slots separated by expensive slots (01:00 @ 11p, 02:00 @ 30p, 03:00 @ 11p)
     slots = [
@@ -115,7 +115,7 @@ async def test_optimization_deficit_non_contiguous_cheapest_slots(
     mock_rates.return_value = slots
     mock_solar.return_value = ([], {})
     mock_export.return_value = 10.0  # Export threshold = 8.5p, so Agile rates (11p) don't trigger arbitrage
-    mock_veto.return_value = (True, 10, "ok")
+    mock_select.return_value = (True, 1, 10, "ok", "clear skies")
     mock_set_slots.return_value = True
 
     await optimiser.run_optimization()
@@ -309,6 +309,154 @@ async def test_candidate_selection_execution_and_nas_logging(
     assert last_plan['selected_candidate_id'] == 1
     assert "defensive floor" in last_plan['llm_reason']
     assert last_plan['llm_score'] == 9
+
+
+@pytest.mark.asyncio
+@patch('optimiser.set_inverter_charge_slots')
+@patch('optimiser.chatgpt_select_candidate')
+@patch('optimiser.fetch_export_rate')
+@patch('optimiser.fetch_parallel_solar_forecasts')
+@patch('optimiser.fetch_agile_rates')
+@patch('optimiser.get_inverter_telemetry')
+async def test_veto_fallback_low_solar_preserves_safety_plan(
+    mock_telemetry, mock_rates, mock_solar, mock_export, mock_select, mock_set_slots
+):
+    """H1 Fix: On deficit/overcast days, LLM veto MUST fallback to Option 1 deterministic safety, NOT 0 charge."""
+    slots = [_make_slot(2, 0, 11.0), _make_slot(2, 30, 10.5)]
+    for h in range(4, 15):
+        slots.append(_make_slot(h, 0, 25.0))
+        
+    mock_telemetry.return_value = {"soc": 20.0, "pv_power": 0.0, "load_power": 600.0}
+    mock_rates.return_value = slots
+    mock_solar.return_value = ([], {})  # 0 solar forecast
+    mock_export.return_value = 10.0
+    mock_set_slots.return_value = True
+
+    # LLM vetoes! (approve=False)
+    mock_select.return_value = (
+        False,  # approve
+        1,      # sel_id
+        3,      # score
+        "I do not recommend charging.",
+        "Cloudy"
+    )
+
+    await optimiser.run_optimization()
+
+    # Inverter slots MUST be programmed with Option 1 safety plan rather than leaving battery at 0%
+    assert mock_set_slots.called
+    called_slots, kwargs = mock_set_slots.call_args
+    assert called_slots[0] is not None
+    assert len(called_slots[0]) > 0
+
+
+@pytest.mark.asyncio
+@patch('optimiser.set_inverter_charge_slots')
+@patch('optimiser.chatgpt_select_candidate')
+@patch('optimiser.fetch_export_rate')
+@patch('optimiser.fetch_parallel_solar_forecasts')
+@patch('optimiser.fetch_agile_rates')
+@patch('optimiser.get_inverter_telemetry')
+async def test_veto_fallback_high_solar_disables_charge(
+    mock_telemetry, mock_rates, mock_solar, mock_export, mock_select, mock_set_slots
+):
+    """On high solar days with no deficit, veto falls back to solar-only (Option 3)."""
+    slots = [_make_slot(2, 0, 15.0)]
+    for h in range(4, 15):
+        slots.append(_make_slot(h, 0, 25.0))
+        
+    mock_telemetry.return_value = {"soc": 80.0, "pv_power": 2500.0, "load_power": 400.0}
+    mock_rates.return_value = slots
+    # Large solar forecast (15 kWh across daytime)
+    solar_fc = [
+        {"time": slots[0]['start'] + timedelta(hours=i), "kwh": 3.0}
+        for i in range(5)
+    ]
+    mock_solar.return_value = (solar_fc, {})
+    mock_export.return_value = 10.0
+    mock_set_slots.return_value = True
+
+    # LLM vetoes candidate
+    mock_select.return_value = (False, 1, 4, "Too much solar to charge.", "Sunny")
+
+    await optimiser.run_optimization()
+
+    assert mock_set_slots.called
+    called_slots, _ = mock_set_slots.call_args
+    assert called_slots[0] is None  # Zero grid charge applied (Option 3)
+
+
+@pytest.mark.asyncio
+@patch('optimiser.save_state')
+@patch('optimiser.load_state')
+@patch('optimiser.set_inverter_charge_slots')
+@patch('optimiser.chatgpt_select_candidate')
+@patch('optimiser.fetch_export_rate')
+@patch('optimiser.fetch_parallel_solar_forecasts')
+@patch('optimiser.fetch_agile_rates')
+@patch('optimiser.get_inverter_telemetry')
+async def test_planned_soc_schedule_reflects_charging(
+    mock_telemetry, mock_rates, mock_solar, mock_export, mock_select, mock_set_slots,
+    mock_load_state, mock_save_state
+):
+    """H2 Fix: planned_soc_schedule must reflect applied charging slots to prevent false drift loops."""
+    mock_load_state.return_value = {}
+    slots = [_make_slot(2, 0, 11.0), _make_slot(2, 30, 10.5)]
+    for h in range(4, 12):
+        slots.append(_make_slot(h, 0, 25.0))
+
+    mock_telemetry.return_value = {"soc": 20.0, "pv_power": 0.0, "load_power": 400.0}
+    mock_rates.return_value = slots
+    mock_solar.return_value = ([], {})
+    mock_export.return_value = 10.0
+    mock_select.return_value = (True, 1, 9, "Option 1 precharge", "clear")
+    mock_set_slots.return_value = True
+
+    await optimiser.run_optimization()
+
+    assert mock_save_state.called
+    saved_state = mock_save_state.call_args[0][0]
+    assert 'planned_soc_schedule' in saved_state
+    soc_points = [p['soc'] for p in saved_state['planned_soc_schedule']]
+    # SoC trajectory must rise from initial 20% due to grid charge blocks
+    assert max(soc_points) > 20.0
+
+
+def test_daytime_replan_filters_pre_peak_slots():
+    """H4 Fix: A re-plan at 10:00 AM must select daytime pre-peak slots, not tomorrow morning."""
+    from simulation import build_plan_candidates
+    now = datetime(2026, 10, 15, 10, 0, tzinfo=timezone.utc)
+    # Generate 24 hours of slots from 10:00 today to 10:00 tomorrow
+    slots = []
+    for i in range(48):
+        s_time = now + timedelta(minutes=30 * i)
+        # Cheap dip at 13:00 (12p), expensive peak at 17:00 (35p)
+        price = 12.0 if 13 <= s_time.hour < 15 else 30.0
+        slots.append({
+            'start': s_time,
+            'end': s_time + timedelta(minutes=30),
+            'price': price
+        })
+
+    candidates = build_plan_candidates(
+        day_classification="LOW_SOLAR_DEFENSIVE_PRECHARGE",
+        current_soc=15.0,
+        battery_capacity=9.5,
+        upcoming_slots=slots,
+        total_solar_kwh=1.0,
+        solar_comparison={},
+        export_rate=12.0,
+        total_import_kwh=5.0
+    )
+
+    opt1 = candidates[0]
+    assert opt1['slots'] is not None and len(opt1['slots']) > 0
+    # First slot must be scheduled TODAY before the 16:00 peak, not tomorrow
+    first_slot_start = opt1['slots'][0][0]
+    assert first_slot_start.date() == now.date()
+    assert first_slot_start.hour < 16
+
+
 
 
 
