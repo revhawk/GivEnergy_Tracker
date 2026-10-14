@@ -170,6 +170,17 @@ def update_daily_stats(stats, run_data):
     else:
         stats['no_charge_runs'] = stats.get('no_charge_runs', 0) + 1
 
+    if run_data.get('candidate_options'):
+        stats['candidate_options'] = run_data['candidate_options']
+    if run_data.get('selected_candidate'):
+        stats['selected_candidate'] = run_data['selected_candidate']
+    if run_data.get('selected_candidate_id'):
+        stats['selected_candidate_id'] = run_data['selected_candidate_id']
+    if run_data.get('llm_reason'):
+        stats['llm_reason'] = str(run_data['llm_reason'])
+    if run_data.get('llm_score') is not None:
+        stats['llm_score'] = run_data['llm_score']
+
     return stats
 
 

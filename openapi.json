@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "GivEnergy Tariff Optimiser \u2014 Data Contracts & Schemas",
-    "version": "1.0.22.4",
+    "version": "1.0.23",
     "description": "Auto-generated OpenAPI specification from Pydantic v2 data models. Single source of truth for inverter telemetry, Octopus tariffs, GivTCP REST payloads, and ChatGPT AI veto validation."
   },
   "components": {
@@ -175,6 +175,122 @@
           "reason"
         ],
         "title": "LLMVetoDecision",
+        "type": "object"
+      },
+      "CandidatePlanOption": {
+        "description": "Candidate pre-charge strategy option presented to LLM for candidate selection.",
+        "properties": {
+          "id": {
+            "description": "Candidate unique index (e.g. 1, 2, 3)",
+            "title": "Id",
+            "type": "integer"
+          },
+          "name": {
+            "description": "Short name of strategy",
+            "title": "Name",
+            "type": "string"
+          },
+          "strategy": {
+            "description": "Strategy identifier (e.g. 'overnight_defensive', 'midday_dip', 'solar_only')",
+            "title": "Strategy",
+            "type": "string"
+          },
+          "target_soc": {
+            "description": "Target battery state of charge %",
+            "maximum": 100,
+            "minimum": 0,
+            "title": "Target Soc",
+            "type": "integer"
+          },
+          "kwh": {
+            "description": "kWh required to grid-charge",
+            "minimum": 0.0,
+            "title": "Kwh",
+            "type": "number"
+          },
+          "avg_price": {
+            "description": "Average grid import price in p/kWh",
+            "title": "Avg Price",
+            "type": "number"
+          },
+          "headroom_kwh": {
+            "description": "Battery capacity headroom left for solar surges in kWh",
+            "minimum": 0.0,
+            "title": "Headroom Kwh",
+            "type": "number"
+          },
+          "slots_desc": {
+            "description": "Formatted string describing charge slots",
+            "title": "Slots Desc",
+            "type": "string"
+          },
+          "rationale": {
+            "description": "Strategic and economic trade-off rationale",
+            "title": "Rationale",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "strategy",
+          "target_soc",
+          "kwh",
+          "avg_price",
+          "headroom_kwh",
+          "slots_desc",
+          "rationale"
+        ],
+        "title": "CandidatePlanOption",
+        "type": "object"
+      },
+      "LLMCandidateSelection": {
+        "description": "Structured response from LLM selecting between candidate pre-charge strategies.",
+        "properties": {
+          "approve": {
+            "description": "Whether LLM approves the strategic plan",
+            "title": "Approve",
+            "type": "boolean"
+          },
+          "selected_candidate_id": {
+            "description": "ID of chosen candidate strategy (e.g. 1, 2, 3)",
+            "title": "Selected Candidate Id",
+            "type": "integer"
+          },
+          "score": {
+            "description": "Score 1-10 assessing overall strategy quality",
+            "maximum": 10,
+            "minimum": 1,
+            "title": "Score",
+            "type": "integer"
+          },
+          "reason": {
+            "description": "Explanation for candidate selection",
+            "minLength": 5,
+            "title": "Reason",
+            "type": "string"
+          },
+          "weather_risk_commentary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Assessment of solar forecast risk and cloud cover buffer",
+            "title": "Weather Risk Commentary"
+          }
+        },
+        "required": [
+          "approve",
+          "selected_candidate_id",
+          "score",
+          "reason"
+        ],
+        "title": "LLMCandidateSelection",
         "type": "object"
       },
       "HiveHotWaterState": {

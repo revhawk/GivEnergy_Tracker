@@ -20,6 +20,8 @@ def generate_openapi_spec() -> dict:
         contracts.InverterTelemetry,
         contracts.OctopusRateSlot,
         contracts.LLMVetoDecision,
+        contracts.CandidatePlanOption,
+        contracts.LLMCandidateSelection,
         contracts.HiveHotWaterState,
     ]
 

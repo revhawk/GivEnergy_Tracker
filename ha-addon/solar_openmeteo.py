@@ -21,7 +21,7 @@ def fetch_openmeteo_solar_forecast():
     )
     logging.info(f"Fetching parallel solar forecast from Open-Meteo: {url}")
     try:
-        response = requests.get(url, timeout=15)
+        response = requests.get(url, headers={"User-Agent": "GivEnergyTracker/1.0"}, timeout=15)
         response.raise_for_status()
         data = response.json()
 

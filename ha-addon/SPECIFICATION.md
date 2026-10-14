@@ -154,6 +154,20 @@ sequenceDiagram
   }
   ```
 
+### 4.6.1 LLM Candidate Strategy Selection Contract (`llm.py`, `contracts.py` — v1.0.23)
+- **Model:** `gpt-4o-mini` (configurable)
+- **Payload Input:** Day classification, forecast spread uncertainty, and candidate options (e.g. Option 1: Defensive Pre-charge 55% target / 45% headroom, Option 2: Overcast Full Pre-charge 95% target, Option 3: Solar Only).
+- **JSON Response Format:**
+  ```json
+  {
+    "selected_candidate_id": "candidate_1_defensive_55pct",
+    "approve": true,
+    "score": 9,
+    "reason": "Option 1 secures 55% battery SoC during 15p morning dip, leaves 45% headroom for solar spikes, and avoids 35p evening peak.",
+    "weather_risk_commentary": "Autumn cloud cover creates 2.5 kWh spread risk between models. Pre-charging to 55% prevents evening exhaustion."
+  }
+  ```
+
 ### 4.7 Decoupled Hive Hot Water Module Contract (`hive.py` — v1.0.21 Spec)
 - **Module:** `hive.py` (decoupled, standalone module)
 - **Home Assistant Service Endpoint:** `POST /api/services/water_heater/set_operation_mode`
@@ -215,12 +229,14 @@ Contract tests in `tests/test_contracts.py` explicitly record compliance with AP
 
 | Contract Test | Component Verified | Payload / Schema Contract Checked |
 | :--- | :--- | :--- |
-| `test_version_py_matches_config_yaml` | `version.py` | Validates `__version__ == "1.0.20"` matches `ha-addon/config.yaml` `version:` |
+| `test_version_py_matches_config_yaml` | `version.py` | Validates `__version__ == "1.0.23"` matches `ha-addon/config.yaml` `version:` |
 | `test_set_charge_slot_payload_contract` | `givtcp.py` | Validates GivTCP `/setChargeSlot` and `/setBatteryMode` JSON key names & formats |
 | `test_agile_tariff_schema_contract` | `tariffs.py` | Validates Octopus Agile API `results` list schema (`valid_from`, `valid_to`, `value_inc_vat`) |
 | `test_forecast_solar_schema_contract` | `solar.py` | Validates Forecast.Solar API `result.watt_hours_period` dictionary structure |
 | `test_openmeteo_schema_contract` | `solar_openmeteo.py` | Validates Open-Meteo API `hourly.global_tilted_irradiance` list structure |
 | `test_veto_response_schema_validation` | `llm.py` | Validates OpenAI ChatGPT response JSON schema (`approve: bool`, `score: int 1-10`, `reason: str`) |
+| `test_candidate_plan_option_schema` | `contracts.py` | Validates `CandidatePlanOption` Pydantic v2 data model schema and bounds |
+| `test_llm_candidate_selection_schema` | `contracts.py` | Validates `LLMCandidateSelection` Pydantic v2 data model schema and approval logic |
 
 ### Logging Test Execution
 To log contract test execution to a file or CI artifact:
@@ -326,6 +342,21 @@ Test results are saved in `test-results/contracts.xml` and output to standard lo
 - **Context:** Dinner preparation (16:00–18:00) involves heavy electric oven/hob usage. Evaluating peak battery survival at 16:00 is too late because cooking has already started and rates have jumped to 41.0p–50.9p/kWh.
 - **Decision:** Evaluate 16:00–20:00 cooking & evening peak demand early during afternoon planning passes (13:00–14:30). If battery SoC + expected solar is insufficient to cover oven cooking load, pre-charge the battery during cheap 25.9p Agile slots (e.g. 14:30).
 - **Consequences:** Guarantees full battery pre-charge at 25.9p before 16:00, completely avoiding 41.0p and 50.9p peak rates during dinner cooking.
+
+---
+
+### ADR 0013: Candidate Strategy Selection (Option B) & Autumn Defensive Headroom
+- **Status:** Accepted
+- **Context:** In autumn and transitional seasons, weather rapidly fluctuates between sunny breaks and heavy overcast. Previously, `simulation.py` evaluated grid deficit against unadjusted solar forecasts, causing `total_import_kwh <= 0.2` to silently cancel pre-charging (`set_slots_fn(None, None)`). The battery collapsed to 4% by late morning, leaving the home vulnerable to 35p–50p/kWh peak rates when afternoon solar underperformed. Furthermore, when the LLM vetoed a single proposed plan, the system had no structured alternative candidate options to evaluate.
+- **Decision:**
+  1. **Candidate Plan Generation (`build_plan_candidates`)**: Build 3 structured candidate plans in `simulation.py`:
+     - Option 1 (Defensive / Autumn Headroom): Pre-charges to a 55% target SoC during cheap slots, guaranteeing evening peak protection while leaving 40%–50% headroom for unexpected sunny surges.
+     - Option 2 (Overcast / Max Pre-Charge): Pre-charges to a 90%–95% target SoC during the cheapest windows when solar forecast is near zero or highly unreliable.
+     - Option 3 (Pure Solar / Solar Only): No grid pre-charge (`None, None`), relying entirely on existing battery reserve and projected solar generation.
+  2. **Option B LLM Selection (`chatgpt_select_candidate`)**: Provide the LLM with day classification, solar spread uncertainty, and candidate window economics so the LLM acts as an active decision maker selecting the best candidate rather than merely an advisory binary veto.
+  3. **Parallel Ensemble Conservative Scaling (`solar.py`)**: Concurrently fetch Forecast.Solar and Open-Meteo. On uncertain or autumn days ($< 15\text{ kWh}$ or spread $> 2\text{ kWh}$), scale the operative forecast down to $\min(\text{primary}, \text{secondary})$ to eliminate over-optimistic solar assumptions.
+  4. **NAS Telemetry & Strategy Logging (`state.py`)**: Record all candidate options, the selected candidate ID, LLM reasoning, and score into `/share/nas_logs/givenergy_state.json`, rolling daily stats, and the daily midnight historical archive `/share/nas_logs/history/daily_stats_YYYY-MM-DD.json`.
+- **Consequences:** Overcast days never strand the battery at 4% entering the evening peak; medium solar days capture cheap morning rates while preserving headroom for solar surges; full auditable decision trails are saved to NAS for performance reviews.
 
 
 

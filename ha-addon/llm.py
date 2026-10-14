@@ -127,6 +127,112 @@ def chatgpt_veto_plan(current_soc, battery_capacity_kwh, solar_total_kwh,
         return True, None, f"LLM error: {e}", "LLM disabled/error"
 
 
+def chatgpt_select_candidate(day_classification, current_soc, battery_capacity_kwh,
+                            total_solar_kwh, solar_comparison, candidates,
+                            upcoming_slots, export_rate):
+    """Structured AI Candidate Selector (Option B).
+    Presents candidate pre-charge strategies to ChatGPT and returns selected candidate and reasoning.
+    Returns: (approve: bool, selected_candidate_id: int, score: int|None, reason: str, weather_commentary: str)
+    Fails open (defaults to Candidate 1 or safest candidate).
+    """
+    if not candidates:
+        return True, 1, 10, "No candidates provided; defaulting to candidate 1", "No solar evaluation"
+
+    fallback_candidate_id = candidates[0].get('id', 1)
+
+    if _openai_client is None:
+        return True, fallback_candidate_id, None, "LLM disabled — deterministic candidate selected", "LLM disabled"
+
+    primary_solar = solar_comparison.get('primary_total_kwh', total_solar_kwh) if solar_comparison else total_solar_kwh
+    secondary_solar = solar_comparison.get('secondary_total_kwh', total_solar_kwh) if solar_comparison else total_solar_kwh
+    spread_kwh = abs(primary_solar - secondary_solar)
+    max_upcoming_price = max((s['price'] for s in upcoming_slots), default=0.0) if upcoming_slots else 0.0
+
+    class_str = str(day_classification.value if hasattr(day_classification, 'value') else day_classification) if day_classification else "WEATHER_ADAPTIVE"
+
+    candidates_formatted = []
+    for c in candidates:
+        candidates_formatted.append(
+            f"Option {c.get('id')}: [{c.get('name')}]\n"
+            f"  • Strategy: {c.get('strategy')}\n"
+            f"  • Target SoC: {c.get('target_soc')}%\n"
+            f"  • Grid Charge: {c.get('kwh', 0.0):.1f} kWh at avg {c.get('avg_price', 0.0):.2f}p/kWh (est: {c.get('estimated_cost_pence', 0):.0f}p)\n"
+            f"  • Solar Headroom Left: {c.get('headroom_kwh', 0.0):.1f} kWh ({(c.get('headroom_kwh', 0.0)/max(0.1, battery_capacity_kwh))*100:.0f}% space for solar)\n"
+            f"  • Slots: {c.get('slots_desc', 'None')}\n"
+            f"  • Trade-off / Rationale: {c.get('rationale', '')}"
+        )
+    candidates_text = "\n\n".join(candidates_formatted)
+
+    system_msg = (
+        f"You are the AI Energy Strategist for a UK home with GivEnergy battery storage and solar PV on Octopus Agile.\n"
+        f"Your mission is to select the single best candidate charging strategy from the options below.\n\n"
+        f"STRATEGIC PRINCIPLES — FOLLOW EXACTLY:\n"
+        f"1. AUTUMN / WEATHER UNCERTAINTY:\n"
+        f"   - On MEDIUM or UNCERTAIN solar days, a defensive pre-charge to 50%-60% SoC guarantees the home does NOT collapse to 4% and avoids 30p-40p peak rates if clouds persist.\n"
+        f"   - Preserving 40%-50% headroom allows unexpected sunny bursts to charge the battery for free without spill.\n"
+        f"   - On OVERCAST / LOW solar days, guarantee full pre-charge (90%-100%) so the battery is never stranded at 4% during evening peak.\n"
+        f"   - On HIGH solar days, rely primarily on solar self-consumption.\n"
+        f"2. FINANCIAL ASYMMETRY:\n"
+        f"   - Penalty of under-charging: Buying peak power at {max_upcoming_price:.1f}p/kWh is very expensive.\n"
+        f"   - Cost of over-charging: Exporting surplus pre-charged solar at {export_rate:.1f}p is a minor difference.\n"
+        f"   - When in doubt between overcast risk vs sunny surprise, prefer defensive pre-charge buffer with 40%-50% headroom.\n\n"
+        f"Reply ONLY with valid JSON:\n"
+        f"  'approve': (bool)\n"
+        f"  'selected_candidate_id': (int: 1, 2, or 3)\n"
+        f"  'score': (int 1-10)\n"
+        f"  'reason': (string <= 180 chars explaining why this candidate was selected)\n"
+        f"  'weather_risk_commentary': (string <= 180 chars assessing solar forecast uncertainty and cloud cushion)"
+    )
+
+    user_msg = (
+        f"Day Classification: {class_str}\n"
+        f"Battery Status: {current_soc}% of {battery_capacity_kwh} kWh\n"
+        f"Solar Forecast (Forecast.Solar): {primary_solar:.1f} kWh | Open-Meteo: {secondary_solar:.1f} kWh | Spread: {spread_kwh:.1f} kWh\n"
+        f"Export Tariff: {export_rate:.2f}p/kWh (flat)\n"
+        f"Peak Upcoming Import Rate: {max_upcoming_price:.2f}p/kWh\n\n"
+        f"=== CANDIDATE OPTIONS ===\n"
+        f"{candidates_text}\n\n"
+        f"Select the optimal candidate ID and state your reasoning."
+    )
+
+    try:
+        response = _openai_client.chat.completions.create(
+            model=get_openai_model(),
+            messages=[
+                {"role": "system", "content": system_msg},
+                {"role": "user", "content": user_msg},
+            ],
+            max_tokens=250,
+            temperature=0.3,
+            response_format={"type": "json_object"},
+        )
+        content = response.choices[0].message.content.strip()
+        parsed = json.loads(content)
+        approve = bool(parsed.get("approve", True))
+        sel_id = parsed.get("selected_candidate_id", fallback_candidate_id)
+        try:
+            sel_id = int(sel_id)
+            valid_ids = [c.get('id') for c in candidates]
+            if sel_id not in valid_ids:
+                sel_id = fallback_candidate_id
+        except (ValueError, TypeError):
+            sel_id = fallback_candidate_id
+
+        score = parsed.get("score")
+        if isinstance(score, (int, float)):
+            score = max(1, min(10, int(score)))
+        else:
+            score = None
+
+        reason = str(parsed.get("reason", f"Selected Option {sel_id}"))[:200]
+        weather_commentary = str(parsed.get("weather_risk_commentary", "Solar forecast evaluated for autumn headroom."))[:200]
+        return approve, sel_id, score, reason, weather_commentary
+    except Exception as e:
+        logging.warning(f"ChatGPT candidate selection failed ({e}); defaulting to candidate {fallback_candidate_id}")
+        return True, fallback_candidate_id, None, f"LLM error: {e}", "LLM disabled/error"
+
+
+
 def generate_daily_summary(stats):
     """Send previous day's stats to ChatGPT. Log the summary and improvement suggestions."""
     if _openai_client is None:

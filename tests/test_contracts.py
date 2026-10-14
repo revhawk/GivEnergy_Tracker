@@ -225,6 +225,33 @@ class TestPydanticSchemaValidation:
         assert valid_state.mode == "off"
         assert valid_state.tank_temperature == 48.5
 
+    def test_candidate_plan_option_contract(self):
+        candidate = contracts.CandidatePlanOption(
+            id=1,
+            name="Overnight Defensive Pre-Charge (Target 55%)",
+            strategy="overnight_defensive",
+            target_soc=55,
+            kwh=3.32,
+            avg_price=11.2,
+            headroom_kwh=4.28,
+            slots_desc="02:00-03:30",
+            rationale="Protects against 4% battery collapse while leaving 45% solar headroom."
+        )
+        assert candidate.target_soc == 55
+        assert candidate.headroom_kwh == 4.28
+
+    def test_llm_candidate_selection_contract(self):
+        selection = contracts.LLMCandidateSelection(
+            approve=True,
+            selected_candidate_id=1,
+            score=9,
+            reason="Option 1 locks in 11.2p overnight rate to avoid 35p peak, leaving 45% headroom.",
+            weather_risk_commentary="Open-Meteo confirms morning cloud cover risk."
+        )
+        assert selection.approve is True
+        assert selection.selected_candidate_id == 1
+        assert selection.score == 9
+
 
 
 class TestHiveContract:

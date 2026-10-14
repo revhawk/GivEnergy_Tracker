@@ -95,3 +95,26 @@ class HiveHotWaterState(BaseModel):
     mode: str = Field(..., description="Operation mode: 'off' or 'schedule'", json_schema_extra={"example": "off"})
     tank_temperature: Optional[float] = Field(None, description="Cylinder temperature in °C if sensor present", json_schema_extra={"example": 48.5})
 
+
+class CandidatePlanOption(BaseModel):
+    """Candidate pre-charge strategy option presented to LLM for candidate selection."""
+    id: int = Field(..., description="Candidate unique index (e.g. 1, 2, 3)")
+    name: str = Field(..., description="Short name of strategy")
+    strategy: str = Field(..., description="Strategy identifier (e.g. 'overnight_defensive', 'midday_dip', 'solar_only')")
+    target_soc: int = Field(..., ge=0, le=100, description="Target battery state of charge %")
+    kwh: float = Field(..., ge=0.0, description="kWh required to grid-charge")
+    avg_price: float = Field(..., description="Average grid import price in p/kWh")
+    headroom_kwh: float = Field(..., ge=0.0, description="Battery capacity headroom left for solar surges in kWh")
+    slots_desc: str = Field(..., description="Formatted string describing charge slots")
+    rationale: str = Field(..., description="Strategic and economic trade-off rationale")
+
+
+class LLMCandidateSelection(BaseModel):
+    """Structured response from LLM selecting between candidate pre-charge strategies."""
+    approve: bool = Field(..., description="Whether LLM approves the strategic plan")
+    selected_candidate_id: int = Field(..., description="ID of chosen candidate strategy (e.g. 1, 2, 3)")
+    score: int = Field(..., ge=1, le=10, description="Score 1-10 assessing overall strategy quality")
+    reason: str = Field(..., min_length=5, description="Explanation for candidate selection")
+    weather_risk_commentary: Optional[str] = Field(None, description="Assessment of solar forecast risk and cloud cover buffer")
+
+

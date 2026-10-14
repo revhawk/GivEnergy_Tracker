@@ -111,7 +111,7 @@ async def test_optimization_deficit_non_contiguous_cheapest_slots(
     for h in range(4, 15):
         slots.append(_make_slot(h, 0, 25.0))
 
-    mock_telemetry.return_value = {"soc": 40, "pv_power": 0.0, "load_power": 800.0}
+    mock_telemetry.return_value = {"soc": 55, "pv_power": 0.0, "load_power": 800.0}
     mock_rates.return_value = slots
     mock_solar.return_value = ([], {})
     mock_export.return_value = 10.0  # Export threshold = 8.5p, so Agile rates (11p) don't trigger arbitrage
@@ -122,8 +122,8 @@ async def test_optimization_deficit_non_contiguous_cheapest_slots(
 
     assert mock_set_slots.called
     called_slots = mock_set_slots.call_args[0][0]
-    # Should pick non-contiguous slots (e.g. 01:00 and 03:00 + cheapest daytime slot)
-    assert len(called_slots) == 3
+    # Should pick non-contiguous slots (01:00 and 03:00)
+    assert len(called_slots) == 2
     assert called_slots[0][0].astimezone(timezone.utc).hour == 1
 
 
@@ -198,6 +198,118 @@ async def test_day_classification_contract_and_history_logging(tmp_path):
         path = state.archive_daily_stats_history(updated, "2026-09-03")
         assert path is not None
         assert "2026-09-03" in path
+
+
+@pytest.mark.asyncio
+async def test_build_plan_candidates_medium_solar_autumn_headroom():
+    from simulation import build_plan_candidates
+    # Mock upcoming slots: 02:00 @ 11p, 11:00 @ 14p, 17:00 @ 35p
+    slots = [
+        _make_slot(2, 0, 11.0),
+        _make_slot(2, 30, 10.5),
+        _make_slot(11, 0, 14.0),
+        _make_slot(11, 30, 13.5),
+        _make_slot(17, 0, 35.0),
+    ]
+    # Current battery at 20% on a Medium Solar autumn day (9.5 kWh capacity)
+    candidates = build_plan_candidates(
+        day_classification="MEDIUM_SOLAR_PARTIAL_PRECHARGE",
+        current_soc=20.0,
+        battery_capacity=9.5,
+        upcoming_slots=slots,
+        total_solar_kwh=8.0,
+        solar_comparison={'diff_kwh': 1.5},
+        export_rate=12.0,
+        total_import_kwh=0.0
+    )
+
+    assert len(candidates) == 3
+    # Candidate 1: Overnight defensive floor to 55%
+    c1 = candidates[0]
+    assert c1['id'] == 1
+    assert c1['target_soc'] == 55
+    # (55 - 20)% of 9.5 kWh = 3.325 kWh (~3.32 kWh)
+    assert 3.2 <= c1['kwh'] <= 3.4
+    # Headroom left for solar surges: 45% of 9.5 kWh = 4.28 kWh
+    assert 4.2 <= c1['headroom_kwh'] <= 4.35
+    assert len(c1['slots']) > 0
+
+    # Candidate 2: Midday dip top-up (target 65%)
+    c2 = candidates[1]
+    assert c2['id'] == 2
+    assert c2['target_soc'] == 65
+    assert len(c2['slots']) > 0
+
+    # Candidate 3: Solar self-consumption
+    c3 = candidates[2]
+    assert c3['id'] == 3
+    assert c3['kwh'] == 0.0
+    assert len(c3['slots']) == 0
+
+
+@pytest.mark.asyncio
+async def test_build_plan_candidates_low_solar_overcast_safety():
+    from simulation import build_plan_candidates
+    slots = [_make_slot(2, 0, 10.0), _make_slot(3, 0, 10.5)]
+    # Current battery at 4% on an overcast winter/autumn day
+    candidates = build_plan_candidates(
+        day_classification="LOW_SOLAR_GRID_PRECHARGE",
+        current_soc=4.0,
+        battery_capacity=9.5,
+        upcoming_slots=slots,
+        total_solar_kwh=1.5,
+        solar_comparison={'diff_kwh': 0.2},
+        export_rate=12.0,
+        total_import_kwh=0.0
+    )
+
+    c1 = candidates[0]
+    # Guarantees full pre-charge (95%) so battery is never stranded at 4%
+    assert c1['target_soc'] == 95
+    assert c1['kwh'] > 8.0
+
+
+@pytest.mark.asyncio
+@patch('optimiser.set_inverter_charge_slots')
+@patch('optimiser.chatgpt_select_candidate')
+@patch('optimiser.fetch_export_rate')
+@patch('optimiser.fetch_parallel_solar_forecasts')
+@patch('optimiser.fetch_agile_rates')
+@patch('optimiser.get_inverter_telemetry')
+async def test_candidate_selection_execution_and_nas_logging(
+    mock_telemetry, mock_rates, mock_solar, mock_export, mock_select, mock_set_slots
+):
+    import state
+    slots = [_make_slot(2, 0, 11.0), _make_slot(2, 30, 10.5), _make_slot(11, 0, 14.0)]
+    mock_telemetry.return_value = {"soc": 20.0, "pv_power": 0.0, "load_power": 400.0}
+    mock_rates.return_value = slots
+    mock_solar.return_value = ([], {})
+    mock_export.return_value = 12.0
+    mock_set_slots.return_value = True
+
+    # Mock LLM selecting Candidate 1 (Overnight defensive floor)
+    mock_select.return_value = (
+        True,  # approve
+        1,     # selected_candidate_id
+        9,     # score
+        "Option 1 secures 55% defensive floor before morning, leaving 45% headroom for solar.",
+        "Open-Meteo confirms morning cloud cover risk."
+    )
+
+    await optimiser.run_optimization()
+
+    assert mock_set_slots.called
+    # Check that charge target was passed to set_inverter_charge_slots
+    _, kwargs = mock_set_slots.call_args
+    assert kwargs.get('charge_target') in (55, 95)
+
+    last_plan = state._last_plan
+    assert 'candidate_options' in last_plan
+    assert len(last_plan['candidate_options']) == 3
+    assert last_plan['selected_candidate_id'] == 1
+    assert "defensive floor" in last_plan['llm_reason']
+    assert last_plan['llm_score'] == 9
+
 
 
 

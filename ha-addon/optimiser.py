@@ -101,6 +101,7 @@ from llm import (
     test_openai_connection,
     get_openai_model,
     chatgpt_veto_plan,
+    chatgpt_select_candidate,
     generate_daily_summary,
 )
 

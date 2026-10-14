@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.23] - 2026-10-14
+
+### Senior Developer Code & Architectural Review
+- **Candidate Strategy Selection (Option B)**: Replaced single-plan take-it-or-leave-it scheduling with structured multi-candidate generation (`build_plan_candidates`). The optimiser produces Option 1 (Defensive Autumn Headroom target 55% SoC), Option 2 (Overcast Full Pre-charge target 95% SoC), and Option 3 (Pure Solar).
+- **Active ChatGPT Decision Engine (`chatgpt_select_candidate`)**: Upgraded LLM integration from a passive binary veto into an active strategy selection co-pilot. ChatGPT evaluates day classification, forecast spread uncertainty, and candidate window economics to pick the optimal charging window.
+- **Autumn Solar Deficit Bug Resolution**: Resolved critical flaw in `simulation.py` where optimistic solar projections resulted in `total_import_kwh <= 0.2` silently disabling grid pre-charge, stranding the battery at 4% before evening peak tariffs (35p–50p/kWh).
+- **Defensive Headroom & Overcast Safety**: Medium solar days now guarantee a 50%–60% pre-charge (55% target) while leaving 40%–50% headroom for sunny surges. Overcast days guarantee a 90%–95% pre-charge during the cheapest slots.
+- **Parallel Ensemble Solar Forecast (`solar.py`)**: Concurrently polls Forecast.Solar and Open-Meteo with fallback resilience and User-Agent identification. Automatically scales operative solar forecast down to $\min(\text{primary}, \text{secondary})$ on uncertain autumn days ($< 15\text{ kWh}$ or spread $> 2\text{ kWh}$).
+- **NAS Telemetry & Candidate Audit Trail**: Persists all generated candidate plans, selected candidate ID, LLM reasoning, and evaluation scores into `/share/nas_logs/givenergy_state.json`, rolling daily stats, and `/share/nas_logs/history/daily_stats_YYYY-MM-DD.json` for performance auditing.
+- **ADR 0013 Documented**: Formalized Candidate Strategy Selection and Autumn Defensive Headroom in `ha-addon/SPECIFICATION.md`.
+- **Test Suite Execution**: 100% test pass rate across 82 tests in pytest (expanded with unit tests in `test_optimization.py` and schema contract tests in `test_contracts.py`).
+
+### Added
+- **Multi-Candidate Plan Builder**: `build_plan_candidates(...)` in `ha-addon/simulation.py`.
+- **Candidate Data Contracts**: `CandidatePlanOption` and `LLMCandidateSelection` Pydantic v2 schemas in `ha-addon/contracts.py`.
+- **LLM Candidate Selector**: `chatgpt_select_candidate(...)` in `ha-addon/llm.py`.
+- **Parallel Solar Forecast Ensemble**: `fetch_parallel_solar_forecasts(...)` with conservative autumn scaling in `ha-addon/solar.py`.
+- **NAS Candidate Logging**: Candidate options and selection audit fields in `ha-addon/state.py`.
+- **Test Coverage**: Added contract and unit tests in `tests/test_contracts.py` and `tests/test_optimization.py`.
+
+### Fixed
+- **Autumn Stranded Battery Defect**: Prevented premature pre-charge aborts (`set_slots_fn(None, None)`) caused by unadjusted solar forecasts.
+- **Open-Meteo API Header Alignment**: Added `User-Agent: GivEnergyTracker/1.0` header to Open-Meteo HTTP requests.
+
+---
+
 ## [1.0.22.4] - 2026-09-03
 
 ### Senior Developer Code & Architectural Review
