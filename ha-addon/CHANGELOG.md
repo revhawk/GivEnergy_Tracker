@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [1.0.23] - 2026-10-14
+## [1.0.23.1] - 2026-10-14
 
 ### Senior Developer Code & Architectural Review
 - **Candidate Strategy Selection (Option B)**: Replaced single-plan take-it-or-leave-it scheduling with structured multi-candidate generation (`build_plan_candidates`). The optimiser produces Option 1 (Defensive Autumn Headroom target 55% SoC), Option 2 (Overcast Full Pre-charge target 95% SoC), and Option 3 (Pure Solar).
@@ -24,7 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Dedicated LLM Test Suite (`tests/test_llm.py`)**: Added unit and contract tests verifying OpenAI connection tests, candidate selection, fail-open fallback behavior, malformed JSON recovery, and daily summary generation.
 - **Documentation Split for End Users (`SETUP.md`)**: Created dedicated, step-by-step Home Assistant setup and configuration guide `SETUP.md`, separating technical specifications from initial setup and adding a Documentation Quick Links table to `README.md`.
 - **Security Hardening**: Sanitized date strings with `os.path.basename` in `state.py` to prevent potential directory traversal during daily stat archiving, and removed broken AppArmor profile to restore clean execution under default Supervisor confinement.
-- **Test Suite Execution**: 100% test pass rate across 99 tests in pytest (expanded from 82).
+- **Test Suite Execution**: 100% test pass rate across 102 tests in pytest (expanded from 82, adding automated pre-commit requirements and LLM suites).
 
 ### Added
 - **Multi-Candidate Plan Builder**: `build_plan_candidates(...)` in `ha-addon/simulation.py`.

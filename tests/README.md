@@ -37,6 +37,12 @@ pytest -v
   - `charge_target` defaults to 100 % if not passed
   - GivTCP error falls through to Modbus fallback (mocked path in tests)
 
+- **AI Co-Pilot & LLM Validation** (`test_llm.py`)
+  - Connection checking, candidate strategy selection, veto fail-open, and malformed JSON recovery
+
+- **Pre-Commit Gate & Repository Integrity** (`test_pre_commit_requirements.py`)
+  - Version synchronization across all files, private information leak detection, and GPLv3 license verification
+
 ## Manual / integration test
 
 `scripts/test_write_slot.py` is a **live** end-to-end test that hits your real
