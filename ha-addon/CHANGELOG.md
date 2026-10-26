@@ -7,23 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.24.1] - 2026-10-26
+
+### Added
+- **Clear Add-on Status Messages**:
+  - Explicitly logs whether Axle Energy dispatch is **ENABLED** or **DISABLED** in the add-on startup log with helpful instructions.
+  - Added an informative status banner when Axle Energy is disabled explaining how to enable it.
+- **Supervisor Cleanliness**: Cleaned up container architecture settings for smoother Home Assistant updates.
+
 ## [1.0.24.0] - 2026-10-26
 
 ### Added
-- **Automated Octoplus Live GraphQL Polling (`octoplus.py` & ADR 0014)**:
-  - Integrated direct Kraken GraphQL API client (`obtainKrakenToken` mutation and `savingSessions` query) communicating with Octopus Energy's backend GraphQL endpoint (`https://api.backend.octopus.energy/v1/graphql/`).
-  - Automated event normalization and detection for both **Power Down** (`TURN_DOWN` / Saving Sessions) and **Power Up** (`TURN_UP` / `WEEKEND_HAPPY_HOUR` / Free Electricity) sessions.
-  - In-memory JWT token caching (1h) and sessions caching (15m) with automatic retry and graceful offline fallback.
-- **Dynamic Octoplus Slot Re-Pricing & Simulation Integration (`simulation.py`)**:
-  - Automatically identifies active and upcoming Power Up windows and re-prices grid electricity to **0.0p/kWh**, guaranteeing optimal battery pre-charging and zero-cost appliance/immersion usage.
-  - Automatically identifies active Power Down windows, logging session details and enforcing zero grid import to maximize OctoPoints rewards.
-- **Axle Energy Self-Dispatch Virtual Power Plant (ADR 0015 & `axle.py`)**:
-  - Integrated direct REST API client (`GET https://api.axle.energy/vpp/home-assistant/event`) with Bearer token authentication and Home Assistant entity fallback (`sensor.axle_event`).
-  - Added startup connectivity healthcheck verifying credentials on boot and logging scheduled event windows or idle state.
-  - Added native Add-on Configuration UI options (`enable_axle_dispatch: bool`, `axle_api_token: password`, `axle_export_power_w: int`) in `config.yaml` and `run.sh` for zero-YAML setup.
-  - Linked Axle export windows into `simulation.py` to prioritize pre-event battery top-ups and coordinate force-export at the configured continuous discharge limit (default 3,000 W).
-- **Architectural Specification & ADRs 0014-0015**: Documented architecture, data flows, and GraphQL/REST queries in `ha-addon/SPECIFICATION.md`.
-- **Test Suite Expansion**: Added `TestOctoplusLiveGraphQL` in `tests/test_helpers.py` and dedicated `tests/test_axle.py` suite covering Axle token discovery, payload normalization, and window detection. Test suite expanded to 118 tests passing 100%.
+- **Octopus Octoplus Sessions Automation (Power Up & Saving Sessions)**:
+  - **Power Up / Free Electricity**: Automatically detects free electricity sessions and treats grid power as 0.0p/kWh, prioritizing free battery charging and home hot water heating.
+  - **Power Down / Saving Sessions**: Automatically detects Octopus Saving Sessions and protects your battery reserve, preventing grid import during the window so you earn maximum OctoPoints.
+  - **Direct Live Polling**: Connects securely to Octopus Energy's API to detect scheduled sessions in advance.
+- **Axle Energy Virtual Power Plant (Self-Dispatch Mode)**:
+  - **Automated Grid Support & Rewards**: Integrates with Axle Energy Self-Dispatch mode to support the UK grid and earn financial rewards.
+  - **Intelligent Pre-Charging & Export**: Automatically tops up your battery before an Axle event and force-exports at your configured discharge rate (up to 3,000 W) during the event window.
+  - **Easy Setup in Configuration Tab**: Add your Axle token and toggle the feature ON directly inside Home Assistant's add-on Configuration tab—no code editing required.
+- **Full Test Suite & Healthchecks**: Expanded comprehensive automated test suite (118/118 passing) ensuring continuous reliability and zero regressions.
 
 ## [1.0.23.4] - 2026-10-14
 

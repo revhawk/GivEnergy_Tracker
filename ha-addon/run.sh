@@ -54,7 +54,7 @@ export AXLE_EXPORT_POWER_W
 
 echo "Starting GivEnergy Tariff Optimiser add-on..."
 echo "Interval: $INTERVAL_MINUTES minutes  |  Run Once: $RUN_ONCE  |  Debug Logging: $DEBUG_LOGGING"
-echo "OpenAI Model: $OPENAI_MODEL"
+echo "OpenAI Model: $OPENAI_MODEL  |  Axle Dispatch: $ENABLE_AXLE_DISPATCH"
 echo "Daily plan at ${DAILY_PLAN_HOUR}:00  |  Daily audit at ${DAILY_AUDIT_HOUR}:00"
 
 python3 optimiser.py

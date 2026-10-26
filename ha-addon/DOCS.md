@@ -11,6 +11,8 @@ Welcome to the **GivEnergy Tariff Optimiser**! This Home Assistant add-on automa
 - 🤖 **Smart AI Plan Review**: Uses OpenAI's ChatGPT as an independent sanity check to score your daily plan out of 10 and veto any unusual charge decisions.
 - 🧺 **Washing Machine Usage Dashboard**: Monitors smart plug power draw (`sensor.washing_machine_power`), tracks daily wash cycles & kWh, calculates exact wash costs in pence, and recommends the top 3 cheapest Agile windows to run laundry.
 - ♨️ **Smart Hot Water & Heating Control**: Directs excess solar energy into your hot water cylinder via iBoost immersion diversion and automatically pauses your Hive gas boiler when electric/solar heating is active—saving gas while guaranteeing a warm morning shower.
+- 🐙 **Octopus Octoplus Sessions (Power Up & Saving Sessions)**: Automatically detects upcoming Free Electricity windows (0.0p/kWh) to pre-charge your battery and heat hot water for free, and enforces zero grid import during Saving Sessions to maximize OctoPoints rewards.
+- 🔋 **Axle Energy Virtual Power Plant**: Connects with Axle Energy Self-Dispatch mode to support the UK grid, pre-charging your battery and force-exporting during events to maximize your earnings.
 - 📊 **Daily Financial Savings Audit**: Generates a daily summary every evening detailing your actual energy savings compared to standard electricity tariffs.
 
 ---
@@ -41,6 +43,9 @@ Open the **Configuration** tab of the add-on to customize your settings:
 | **`daily_plan_hour`** | `17` *(5:00 PM)* | The hour when tomorrow's charge plan is calculated. Octopus publishes rates at 16:30, so 17:00 programs your inverter 7 hours before night charging. |
 | **`daily_audit_hour`** | `23` *(11:00 PM)* | The hour when your daily financial savings report is generated. |
 | **`log_file_path`** | `/share/nas_logs/givenergy_tracker.log` | **NAS Log Location**. The network / SMB file path where timestamped logs and daily performance history (`/share/nas_logs/history/`) are saved. |
+| **`enable_axle_dispatch`** | `false` | **Axle VPP Toggle**. Set to `true` to enable automated export during Axle Energy grid flexibility events. |
+| **`axle_api_token`** | `""` | **Axle API Token**. Your token from Axle Energy Account Settings → Home Assistant. (Can also be set in `/share/givenergy_config.py`). |
+| **`axle_export_power_w`** | `3000` | **Axle Export Power (Watts)**. Continuous battery discharge limit during flexibility events (default 3,000 W). |
 | **`hive_water_heater_entity`** | `water_heater.hive_hot_water` | Your Hive hot water entity in Home Assistant. Automatically pauses gas boiler schedule when electric/solar heating is active. |
 
 ---

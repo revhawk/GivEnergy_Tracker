@@ -218,6 +218,7 @@ async def main():
     logging.info(f"  GIVTCP_URL             = {getattr(config, 'GIVTCP_URL', None) or 'not set (Modbus fallback)'}")
     logging.info(f"  INTERVAL_MINUTES       = {interval}")
     logging.info(f"  RUN_ONCE               = {run_once}")
+    logging.info(f"  AXLE_DISPATCH          = {'ENABLED' if is_axle_enabled() else 'DISABLED'}")
     logging.info("------------------------------------")
     test_openai_connection()
     if is_axle_enabled():
@@ -232,6 +233,8 @@ async def main():
                 logging.info("  Axle: No upcoming events currently scheduled.")
         else:
             logging.warning(f"✗ Axle Energy API: {msg}")
+    else:
+        logging.info("ℹ Axle Energy VPP Self-Dispatch is DISABLED (enable via Configuration tab toggle or set ENABLE_AXLE_DISPATCH=True).")
     logging.info("========================================")
 
     plan_hour = int(os.environ.get('DAILY_PLAN_HOUR', '17'))
