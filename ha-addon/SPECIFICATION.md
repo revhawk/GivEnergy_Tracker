@@ -1,6 +1,6 @@
 # Technical Specification & Architecture — GivEnergy Tariff Optimiser
 
-**Version:** 1.0.23.4  
+**Version:** 1.0.24.0  
 **Target Hardware:** GivEnergy Inverters (Gen 1, Gen 2, Gen 3, All-in-One)  
 **Target Platform:** Home Assistant Add-on Container (Linux ARM64 / AMD64)  
 
@@ -359,6 +359,31 @@ Test results are saved in `test-results/contracts.xml` and output to standard lo
   4. **NAS Telemetry & Strategy Logging (`state.py`)**: Record all candidate options, the selected candidate ID, LLM reasoning, and score into `/share/nas_logs/givenergy_state.json`, rolling daily stats, and the daily midnight historical archive `/share/nas_logs/history/daily_stats_YYYY-MM-DD.json`.
 - **Consequences:** Overcast days never strand the battery at 4% entering the evening peak; medium solar days capture cheap morning rates while preserving headroom for solar surges; full auditable decision trails are saved to NAS for performance reviews.
 
+---
 
+### ADR 0014: Automated Octoplus Power Down & Power Up GraphQL Polling (`octoplus.py`)
+- **Status:** Accepted
+- **Context:** Previously, Power Down (Saving Session) windows had to be hardcoded in `config.py` (`POWER_DOWN_WINDOWS`) or scraped from email notifications. Power Up (Free Electricity / Weekend Happy Hour) events were not tracked dynamically, missing valuable zero-cost charging and hot water immersion opportunities when the grid ran on green surplus.
+- **Decision:**
+  1. **Kraken GraphQL Client (`octoplus.py`)**: Integrate direct authentication (`obtainKrakenToken` mutation) and session polling (`savingSessions` query) via Octopus Energy's backend GraphQL API (`https://api.backend.octopus.energy/v1/graphql/`).
+  2. **Automated Event Normalization**: Parse both `TURN_DOWN` (Power Down / Saving Sessions) and `TURN_UP` / `WEEKEND_HAPPY_HOUR` (Power Up / Free Electricity) sessions, extracting start/end UTC times, OctoPoints reward per kWh, event IDs, and account enrollment status.
+  3. **Zero-Friction Ingestion in Simulation (`simulation.py`)**:
+     - During `TURN_UP` / `WEEKEND_HAPPY_HOUR` slots, automatically re-price grid import to **0.0p/kWh**, enabling deterministic 100% battery pre-charging and appliance / hot water diversion at zero cost.
+     - During `TURN_DOWN` slots, automatically enforce zero grid import (0.0 kWh), preserving stored battery energy for household load and maximizing OctoPoints credits.
+  4. **Multi-Tiered Caching & Safe Fallback**: Cache Kraken JWT tokens for 1 hour and session query results for 15 minutes. Fall back transparently to static `config.POWER_DOWN_WINDOWS` if network connectivity is temporarily unavailable.
+- **Consequences:** 100% automated detection and dispatch for all Octopus Octoplus flexibility events without requiring manual YAML configuration or email monitoring.
 
+---
+
+### ADR 0015: Axle Energy Self-Dispatch Virtual Power Plant (VPP) Integration (`axle.py`)
+- **Status:** Accepted
+- **Context:** In Axle Energy's Self-Dispatch mode, Axle observes inverter telemetry passively and announces flexibility events via REST API (`https://api.axle.energy/vpp/home-assistant/event`) and Home Assistant entities without issuing direct inverter control commands. Participating requires local automation to detect event windows, pre-charge the battery to 100%, and force export to the grid during the event window.
+- **Decision:**
+  1. **Decoupled Axle Module (`axle.py`)**: Implement token discovery (config, environment, add-on options), Bearer token cleaning, direct Axle REST API client, and Home Assistant Supervisor entity fallback (`sensor.axle_event`).
+  2. **Startup Connectivity Healthcheck**: On add-on startup, probe the Axle API and log verification status:
+     - `✓ Axle Energy API connected successfully — Self-Dispatch VPP ENABLED (Export limit: 3000W).`
+     - Displays scheduled event start/end times or confirms no events currently scheduled.
+  3. **Add-on Configuration UI Options**: Add `enable_axle_dispatch: bool`, `axle_api_token: password`, and `axle_export_power_w: int` to `config.yaml` options and schema, allowing zero-YAML setup directly from Home Assistant's UI.
+  4. **Simulation & Inverter Dispatch**: Integrate event detection into `simulation.py`. When an export event is scheduled, prioritize pre-event battery charging to 100%, and force export to the grid at configured discharge limit (default 3,000 W) during the event window.
+- **Consequences:** Users can monetize their battery via Axle Energy VPP in Self-Dispatch mode with zero conflict between cloud commands and GivTCP.
 

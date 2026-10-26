@@ -221,3 +221,148 @@ class TestGetOpenAIModel:
         assert optimiser.get_openai_model() == "gpt-4o"
 
 
+class TestOctoplusLiveGraphQL:
+    def test_parses_kraken_graphql_event_types(self):
+        # Power Down (TURN_DOWN)
+        pd_data = {
+            "id": 7865,
+            "code": "EVENT_122_261026",
+            "startAt": "2026-10-26T18:00:00+00:00",
+            "endAt": "2026-10-26T19:00:00+00:00",
+            "eventType": "TURN_DOWN",
+            "rewardPerKwhInOctoPoints": 75,
+            "is_joined": True
+        }
+        parsed_pd = optimiser.parse_octoplus_session(pd_data)
+        assert parsed_pd["session_type"] == "power_down"
+        assert parsed_pd["display_name"] == "Power Down Session"
+        assert parsed_pd["reward_points"] == 75
+        assert parsed_pd["is_joined"] is True
+        assert parsed_pd["event_id"] == 7865
+
+        # Power Up (WEEKEND_HAPPY_HOUR)
+        pu_data = {
+            "id": 7829,
+            "code": "EVENT_118_251026",
+            "startAt": "2026-10-25T07:00:00+00:00",
+            "endAt": "2026-10-25T08:00:00+00:00",
+            "eventType": "WEEKEND_HAPPY_HOUR",
+            "rewardPerKwhInOctoPoints": 0,
+            "is_joined": False
+        }
+        parsed_pu = optimiser.parse_octoplus_session(pu_data)
+        assert parsed_pu["session_type"] == "power_up"
+        assert parsed_pu["display_name"] == "Power Up Session"
+        assert parsed_pu["reward_points"] == 0
+        assert parsed_pu["is_joined"] is False
+
+    def test_obtain_kraken_token_and_cache(self, monkeypatch):
+        optimiser.clear_octoplus_cache()
+        call_count = 0
+
+        def mock_post(url, json=None, timeout=None, headers=None):
+            nonlocal call_count
+            call_count += 1
+            class MockResp:
+                def raise_for_status(self): pass
+                def json(self):
+                    return {"data": {"obtainKrakenToken": {"token": "test_jwt_token_123"}}}
+            return MockResp()
+
+        import requests
+        monkeypatch.setattr(requests, "post", mock_post)
+
+        token1 = optimiser.obtain_kraken_token(api_key="sk_test")
+        assert token1 == "test_jwt_token_123"
+        assert call_count == 1
+
+        # Second call should use cache
+        token2 = optimiser.obtain_kraken_token(api_key="sk_test")
+        assert token2 == "test_jwt_token_123"
+        assert call_count == 1
+
+    def test_fetch_live_octoplus_sessions_success(self, monkeypatch):
+        optimiser.clear_octoplus_cache()
+        import octoplus
+        octoplus._kraken_token_cache["token"] = "mock_jwt"
+        octoplus._kraken_token_cache["fetched_at"] = datetime.now(timezone.utc)
+
+        now = datetime.now(timezone.utc)
+        start1 = (now + timedelta(hours=1)).isoformat()
+        end1 = (now + timedelta(hours=2)).isoformat()
+        start2 = (now + timedelta(hours=3)).isoformat()
+        end2 = (now + timedelta(hours=4)).isoformat()
+
+        mock_graphql_data = {
+            "data": {
+                "savingSessions": {
+                    "events": [
+                        {
+                            "id": 101,
+                            "code": "EVENT_DOWN_1",
+                            "startAt": start1,
+                            "endAt": end1,
+                            "eventType": "TURN_DOWN",
+                            "rewardPerKwhInOctoPoints": 80
+                        },
+                        {
+                            "id": 102,
+                            "code": "EVENT_UP_1",
+                            "startAt": start2,
+                            "endAt": end2,
+                            "eventType": "WEEKEND_HAPPY_HOUR",
+                            "rewardPerKwhInOctoPoints": 0
+                        }
+                    ],
+                    "account": {
+                        "joinedEvents": [
+                            {"eventId": 101, "startAt": start1, "endAt": end1}
+                        ]
+                    }
+                }
+            }
+        }
+
+        import requests
+        class MockResp:
+            ok = True
+            def raise_for_status(self): pass
+            def json(self): return mock_graphql_data
+
+        monkeypatch.setattr(requests, "post", lambda url, json=None, headers=None, timeout=None: MockResp())
+
+        sessions = optimiser.fetch_live_octoplus_sessions(api_key="sk_test", account_id="A-123", lookback_hours=48)
+        assert len(sessions) == 2
+        assert sessions[0]["session_type"] == "power_down"
+        assert sessions[0]["is_joined"] is True
+        assert sessions[1]["session_type"] == "power_up"
+        assert sessions[1]["is_joined"] is False
+
+    def test_is_power_down_and_power_up_slot_dt(self):
+        now = datetime.now(timezone.utc)
+        live_sessions = [
+            {
+                "session_type": "power_down",
+                "start": now + timedelta(hours=1),
+                "end": now + timedelta(hours=2)
+            },
+            {
+                "session_type": "power_up",
+                "start": now + timedelta(hours=3),
+                "end": now + timedelta(hours=4)
+            }
+        ]
+
+        # Slot inside Power Down
+        s1_start = now + timedelta(hours=1, minutes=15)
+        s1_end = now + timedelta(hours=1, minutes=45)
+        assert optimiser.is_power_down_slot_dt(s1_start, s1_end, live_sessions=live_sessions) is True
+        assert optimiser.is_power_up_slot_dt(s1_start, s1_end, live_sessions=live_sessions) is False
+
+        # Slot inside Power Up
+        s2_start = now + timedelta(hours=3, minutes=15)
+        s2_end = now + timedelta(hours=3, minutes=45)
+        assert optimiser.is_power_up_slot_dt(s2_start, s2_end, live_sessions=live_sessions) is True
+        assert optimiser.is_power_down_slot_dt(s2_start, s2_end, live_sessions=live_sessions) is False
+
+

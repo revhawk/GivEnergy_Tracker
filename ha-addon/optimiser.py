@@ -43,10 +43,27 @@ from state import (
     _last_plan,
 )
 
-# Re-export Octoplus ADR 0004 helpers
+# Re-export Octoplus ADR 0004 & ADR 0013 helpers
 from octoplus import (
     get_octoplus_entity_name,
     parse_octoplus_session,
+    obtain_kraken_token,
+    fetch_live_octoplus_sessions,
+    is_power_down_slot_dt,
+    is_power_up_slot_dt,
+    clear_octoplus_cache,
+)
+
+# Re-export Axle Energy Self-Dispatch VPP helpers (ADR 0015)
+from axle import (
+    get_axle_token,
+    is_axle_enabled,
+    test_axle_connection,
+    fetch_axle_event,
+    parse_axle_payload,
+    is_axle_event_active,
+    is_axle_precharge_window,
+    clear_axle_cache,
 )
 
 # Re-export simulation engine math
@@ -203,6 +220,18 @@ async def main():
     logging.info(f"  RUN_ONCE               = {run_once}")
     logging.info("------------------------------------")
     test_openai_connection()
+    if is_axle_enabled():
+        tok = get_axle_token()
+        success, msg, event_data = test_axle_connection(tok)
+        if success:
+            export_w = int(os.environ.get('AXLE_EXPORT_POWER_W', getattr(config, 'AXLE_EXPORT_POWER_W', 3000) if config else 3000))
+            logging.info(f"✓ Axle Energy API connected successfully — Self-Dispatch VPP ENABLED (Export limit: {export_w}W).")
+            if event_data and event_data.get('start_time'):
+                logging.info(f"  Axle: Scheduled event: {event_data.get('start_time')} to {event_data.get('end_time')} ({event_data.get('import_export', 'export')})")
+            else:
+                logging.info("  Axle: No upcoming events currently scheduled.")
+        else:
+            logging.warning(f"✗ Axle Energy API: {msg}")
     logging.info("========================================")
 
     plan_hour = int(os.environ.get('DAILY_PLAN_HOUR', '17'))

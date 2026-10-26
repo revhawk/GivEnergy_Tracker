@@ -21,6 +21,8 @@ import solar
 import profiler
 import givtcp
 import llm
+import octoplus
+import axle
 
 
 def _op():
@@ -379,6 +381,50 @@ async def run_optimization():
     if not upcoming_slots:
         logging.error("No upcoming Agile rate slots available. Aborting.")
         return
+
+    # 1b. Check for live Octoplus Power Down & Power Up sessions
+    fetch_octoplus_fn = getattr(opt, 'fetch_live_octoplus_sessions', octoplus.fetch_live_octoplus_sessions)
+    live_sessions = fetch_octoplus_fn() if fetch_octoplus_fn else []
+    if live_sessions:
+        for sess in live_sessions:
+            if sess.get('end') and sess['end'] > now_utc:
+                stype = sess.get('session_type')
+                s_str = sess['start'].astimezone().strftime('%m-%d %H:%M')
+                e_str = sess['end'].astimezone().strftime('%H:%M')
+                if stype == 'power_down':
+                    pts = sess.get('reward_points', 0)
+                    logging.info(
+                        f"⚡ [OCTOPLUS] Detected Power Down session: {sess.get('code')} "
+                        f"({s_str} - {e_str}, {pts} OctoPoints/kWh). Enforcing zero grid import."
+                    )
+                elif stype == 'power_up':
+                    logging.info(
+                        f"⚡ [OCTOPLUS] Detected Power Up session: {sess.get('code')} "
+                        f"({s_str} - {e_str}, Free Electricity). Prioritizing 100% battery pre-charge."
+                    )
+
+        # Apply Power Up and Power Down overrides to upcoming slots
+        for s in upcoming_slots:
+            if octoplus.is_power_up_slot_dt(s['start'], s['end'], live_sessions):
+                s['price'] = 0.0
+                s['is_power_up'] = True
+            if octoplus.is_power_down_slot_dt(s['start'], s['end'], live_sessions):
+                s['is_power_down'] = True
+
+    # 1c. Check for active or upcoming Axle Energy Self-Dispatch events (ADR 0015)
+    fetch_axle_fn = getattr(opt, 'fetch_axle_event', axle.fetch_axle_event)
+    axle_event = fetch_axle_fn() if fetch_axle_fn else None
+    if axle_event and axle_event.get('start') and axle_event.get('end'):
+        a_start_str = axle_event['start'].astimezone().strftime('%m-%d %H:%M')
+        a_end_str = axle_event['end'].astimezone().strftime('%H:%M')
+        direction = axle_event.get('import_export', 'export')
+        logging.info(
+            f"⚡ [AXLE VPP] Active/Upcoming Axle Self-Dispatch Event: {a_start_str} - {a_end_str} ({direction.upper()})."
+        )
+        if direction == 'export':
+            for s in upcoming_slots:
+                if axle_event['start'] <= s['start'] < axle_event['end']:
+                    s['is_axle_export'] = True
         
     # 2. Fetch primary & shadow solar forecasts in parallel
     solar_forecasts, solar_comparison = fetch_solar_fn()

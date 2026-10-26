@@ -42,6 +42,12 @@ def get_load_kwh_for_slot(slot_start, slot_end, load_profile_history=None):
 
 def is_power_down_slot(slot_start, slot_end):
     """Check if a slot falls within any configured Octopus Octoplus Power Down / Saving Session window."""
+    try:
+        import octoplus
+        return octoplus.is_power_down_slot_dt(slot_start, slot_end)
+    except Exception:
+        pass
+
     local_start = slot_start.astimezone()
     local_end = slot_end.astimezone()
     windows = getattr(config, 'POWER_DOWN_WINDOWS', [])

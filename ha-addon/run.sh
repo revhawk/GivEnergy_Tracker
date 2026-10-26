@@ -36,6 +36,9 @@ DAILY_PLAN_HOUR=$(jq --raw-output '.daily_plan_hour // 17' /data/options.json)
 DAILY_AUDIT_HOUR=$(jq --raw-output '.daily_audit_hour // 23' /data/options.json)
 DEBUG_LOGGING=$(jq --raw-output '.debug_logging // false' /data/options.json)
 LOG_FILE_PATH=$(jq --raw-output '.log_file_path // ""' /data/options.json)
+ENABLE_AXLE_DISPATCH=$(jq --raw-output '.enable_axle_dispatch // false' /data/options.json)
+AXLE_API_TOKEN=$(jq --raw-output '.axle_api_token // ""' /data/options.json)
+AXLE_EXPORT_POWER_W=$(jq --raw-output '.axle_export_power_w // 3000' /data/options.json)
 
 export INTERVAL_MINUTES
 export RUN_ONCE
@@ -45,6 +48,9 @@ export DAILY_PLAN_HOUR
 export DAILY_AUDIT_HOUR
 export DEBUG_LOGGING
 export LOG_FILE_PATH
+export ENABLE_AXLE_DISPATCH
+export AXLE_API_TOKEN
+export AXLE_EXPORT_POWER_W
 
 echo "Starting GivEnergy Tariff Optimiser add-on..."
 echo "Interval: $INTERVAL_MINUTES minutes  |  Run Once: $RUN_ONCE  |  Debug Logging: $DEBUG_LOGGING"

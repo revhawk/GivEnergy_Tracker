@@ -40,6 +40,13 @@ OCTOPLUS_POWER_UP_ENTITY = "sensor.octopus_energy_power_up_sessions"
 OCTOPLUS_SAVING_SESSIONS_FALLBACK_ENTITY = "sensor.octopus_energy_saving_sessions"
 OCTOPLUS_FREE_ELECTRICITY_FALLBACK_ENTITY = "sensor.octopus_energy_free_electricity_sessions"
 
+# Axle Energy Virtual Power Plant (ADR 0015: Self-Dispatch Mode)
+ENABLE_AXLE_DISPATCH = False           # Set True to enable automated export during Axle events
+AXLE_API_TOKEN = ""                    # Token from Axle Account Settings -> Home Assistant
+AXLE_EXPORT_POWER_W = 3000             # Target discharge rate to grid during events (W)
+AXLE_PRECHARGE_SOC = 100               # Battery target SoC (%) prior to Axle event
+AXLE_EVENT_ENTITY = "sensor.axle_event"# HA sensor entity fallback
+
 # Home energy limits
 MAX_BATTERY_CHARGE_RATE = 3000     # Max GivEnergy charge speed in Watts
 IBOOST_MAX_DIVERT_RATE = 3000      # Standard UK immersion heater load cap (W)

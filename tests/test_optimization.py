@@ -111,7 +111,7 @@ async def test_optimization_deficit_non_contiguous_cheapest_slots(
     for h in range(4, 15):
         slots.append(_make_slot(h, 0, 25.0))
 
-    mock_telemetry.return_value = {"soc": 55, "pv_power": 0.0, "load_power": 800.0}
+    mock_telemetry.return_value = {"soc": 48, "pv_power": 0.0, "load_power": 800.0}
     mock_rates.return_value = slots
     mock_solar.return_value = ([], {})
     mock_export.return_value = 10.0  # Export threshold = 8.5p, so Agile rates (11p) don't trigger arbitrage

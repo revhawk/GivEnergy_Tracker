@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.24.0] - 2026-10-26
+
+### Added
+- **Automated Octoplus Live GraphQL Polling (`octoplus.py` & ADR 0014)**:
+  - Integrated direct Kraken GraphQL API client (`obtainKrakenToken` mutation and `savingSessions` query) communicating with Octopus Energy's backend GraphQL endpoint (`https://api.backend.octopus.energy/v1/graphql/`).
+  - Automated event normalization and detection for both **Power Down** (`TURN_DOWN` / Saving Sessions) and **Power Up** (`TURN_UP` / `WEEKEND_HAPPY_HOUR` / Free Electricity) sessions.
+  - In-memory JWT token caching (1h) and sessions caching (15m) with automatic retry and graceful offline fallback.
+- **Dynamic Octoplus Slot Re-Pricing & Simulation Integration (`simulation.py`)**:
+  - Automatically identifies active and upcoming Power Up windows and re-prices grid electricity to **0.0p/kWh**, guaranteeing optimal battery pre-charging and zero-cost appliance/immersion usage.
+  - Automatically identifies active Power Down windows, logging session details and enforcing zero grid import to maximize OctoPoints rewards.
+- **Axle Energy Self-Dispatch Virtual Power Plant (ADR 0015 & `axle.py`)**:
+  - Integrated direct REST API client (`GET https://api.axle.energy/vpp/home-assistant/event`) with Bearer token authentication and Home Assistant entity fallback (`sensor.axle_event`).
+  - Added startup connectivity healthcheck verifying credentials on boot and logging scheduled event windows or idle state.
+  - Added native Add-on Configuration UI options (`enable_axle_dispatch: bool`, `axle_api_token: password`, `axle_export_power_w: int`) in `config.yaml` and `run.sh` for zero-YAML setup.
+  - Linked Axle export windows into `simulation.py` to prioritize pre-event battery top-ups and coordinate force-export at the configured continuous discharge limit (default 3,000 W).
+- **Architectural Specification & ADRs 0014-0015**: Documented architecture, data flows, and GraphQL/REST queries in `ha-addon/SPECIFICATION.md`.
+- **Test Suite Expansion**: Added `TestOctoplusLiveGraphQL` in `tests/test_helpers.py` and dedicated `tests/test_axle.py` suite covering Axle token discovery, payload normalization, and window detection. Test suite expanded to 118 tests passing 100%.
+
 ## [1.0.23.4] - 2026-10-14
 
 ### Fixed
