@@ -248,3 +248,57 @@ def test_generate_daily_summary():
     # Should run and invoke OpenAI without errors
     llm.generate_daily_summary(stats)
     assert mock_client.chat.completions.create.called
+
+
+def test_chatgpt_select_candidate_with_octoplus_and_axle_events():
+    mock_client = MagicMock()
+    mock_resp = MagicMock()
+    mock_resp.choices = [
+        MagicMock(message=MagicMock(content=json.dumps({
+            "approve": True,
+            "selected_candidate_id": 1,
+            "score": 10,
+            "reason": "Axle export event at 17:00 requires entering with 100% capacity.",
+            "weather_risk_commentary": "Pre-charging aligns with export arbitrage."
+        })))
+    ]
+    mock_client.chat.completions.create.return_value = mock_resp
+    llm._openai_client = mock_client
+
+    candidates = [
+        {"id": 1, "name": "Option 1", "strategy": "overnight_defensive", "target_soc": 100, "kwh": 6.0, "avg_price": 5.0, "headroom_kwh": 0.0, "slots": [], "slots_desc": "02:00-04:00", "rationale": "Axle pre-charge"},
+    ]
+    live_sessions = [
+        {"start": datetime(2026, 10, 27, 13, 0, tzinfo=timezone.utc), "end": datetime(2026, 10, 27, 14, 0, tzinfo=timezone.utc), "session_type": "power_up", "code": "FREE_HOUR"}
+    ]
+    axle_event = {
+        "start": datetime(2026, 10, 27, 17, 0, tzinfo=timezone.utc),
+        "end": datetime(2026, 10, 27, 18, 0, tzinfo=timezone.utc),
+        "import_export": "export"
+    }
+
+    approve, sel_id, score, reason, weather = llm.chatgpt_select_candidate(
+        day_classification="WEATHER_ADAPTIVE",
+        current_soc=40,
+        battery_capacity_kwh=9.5,
+        total_solar_kwh=10.0,
+        solar_comparison={"primary_total_kwh": 10.0, "secondary_total_kwh": 12.0},
+        candidates=candidates,
+        upcoming_slots=[{"start": datetime(2026, 10, 27, 2, 0, tzinfo=timezone.utc), "price": 5.0}],
+        export_rate=12.0,
+        live_sessions=live_sessions,
+        axle_event=axle_event
+    )
+
+    assert approve is True
+    assert sel_id == 1
+    assert score == 10
+    # Verify prompt content passed to OpenAI client contains Octoplus and Axle details
+    call_args = mock_client.chat.completions.create.call_args[1]
+    messages = call_args["messages"]
+    user_prompt = messages[1]["content"]
+    assert "Octopus Octoplus Sessions" in user_prompt
+    assert "Axle Energy VPP Events" in user_prompt
+    assert "Axle Self-Dispatch Event: 17:00 - 18:00 (EXPORT at 3 kW)" in user_prompt
+    assert "Power Up (Free Electricity): 13:00 - 14:00" in user_prompt
+

@@ -129,7 +129,8 @@ def chatgpt_veto_plan(current_soc, battery_capacity_kwh, solar_total_kwh,
 
 def chatgpt_select_candidate(day_classification, current_soc, battery_capacity_kwh,
                             total_solar_kwh, solar_comparison, candidates,
-                            upcoming_slots, export_rate):
+                            upcoming_slots, export_rate,
+                            live_sessions=None, axle_event=None):
     """Structured AI Candidate Selector (Option B).
     Presents candidate pre-charge strategies to ChatGPT and returns selected candidate and reasoning.
     Returns: (approve: bool, selected_candidate_id: int, score: int|None, reason: str, weather_commentary: str)
@@ -163,6 +164,31 @@ def chatgpt_select_candidate(day_classification, current_soc, battery_capacity_k
         )
     candidates_text = "\n\n".join(candidates_formatted)
 
+    octoplus_info = []
+    if live_sessions:
+        for s in live_sessions:
+            stype = str(s.get('session_type', '')).upper()
+            s_str = s['start'].astimezone().strftime('%H:%M') if hasattr(s.get('start'), 'astimezone') else str(s.get('start'))
+            e_str = s['end'].astimezone().strftime('%H:%M') if hasattr(s.get('end'), 'astimezone') else str(s.get('end'))
+            if 'UP' in stype or 'FREE' in stype:
+                octoplus_info.append(f"• Power Up (Free Electricity): {s_str} - {e_str} (0.0p/kWh). Optimal for 100% pre-charge.")
+            else:
+                pts = s.get('reward_points', 0)
+                octoplus_info.append(f"• Power Down (Saving Session): {s_str} - {e_str} ({pts} OctoPoints/kWh). Enforce 0 kW grid draw.")
+
+    axle_info = []
+    if axle_event and axle_event.get('start') and axle_event.get('end'):
+        a_start = axle_event['start'].astimezone().strftime('%H:%M') if hasattr(axle_event['start'], 'astimezone') else str(axle_event['start'])
+        a_end = axle_event['end'].astimezone().strftime('%H:%M') if hasattr(axle_event['end'], 'astimezone') else str(axle_event['end'])
+        direction = axle_event.get('import_export', 'export').upper()
+        axle_info.append(f"• Axle Self-Dispatch Event: {a_start} - {a_end} ({direction} at 3 kW). High export reward: 100.0p/kWh (£1.00/unit) — ALWAYS ensure 100% SoC before event window.")
+
+    events_summary = ""
+    if octoplus_info:
+        events_summary += "Octopus Octoplus Sessions:\n  " + "\n  ".join(octoplus_info) + "\n"
+    if axle_info:
+        events_summary += "Axle Energy VPP Events:\n  " + "\n  ".join(axle_info) + "\n"
+
     system_msg = (
         f"You are the AI Energy Strategist for a UK home with GivEnergy battery storage and solar PV on Octopus Agile.\n"
         f"Your mission is to select the single best candidate charging strategy from the options below.\n\n"
@@ -179,7 +205,11 @@ def chatgpt_select_candidate(day_classification, current_soc, battery_capacity_k
         f"3. NEGATIVE IMPORT RATES (< 0.0p/kWh):\n"
         f"   - When import prices are negative, the grid pays the consumer to import power.\n"
         f"   - ALWAYS select the option that charges to 100% full capacity during negative slots.\n"
-        f"   - Reaching 100% SoC ensures we get paid to charge, and 100% of subsequent solar PV generation is forced to export at the {export_rate:.2f}p/kWh export tariff, yielding maximum double profit.\n\n"
+        f"   - Reaching 100% SoC ensures we get paid to charge, and 100% of subsequent solar PV generation is forced to export at the {export_rate:.2f}p/kWh export tariff, yielding maximum double profit.\n"
+        f"4. OCTOPLUS SESSIONS & VPP FLEXIBILITY ARBITRAGE:\n"
+        f"   - Power Up (Free Electricity): Electricity is 0.0p/kWh. Prioritize pre-charging battery to 100% at £0.00 cost.\n"
+        f"   - Power Down (Saving Session): Enforce zero grid import to maximize OctoPoints rewards.\n"
+        f"   - Axle Energy Self-Dispatch (VPP): High-value force export window paying 100.0p/kWh (£1.00/unit). ALWAYS prioritize entering the event window with 100% battery capacity so the home can continuously export at full 3 kW to the grid for maximum revenue.\n\n"
         f"Reply ONLY with valid JSON:\n"
         f"  'approve': (bool)\n"
         f"  'selected_candidate_id': (int: 1, 2, or 3)\n"
@@ -189,6 +219,7 @@ def chatgpt_select_candidate(day_classification, current_soc, battery_capacity_k
     )
 
     user_msg = (
+        f"{events_summary}"
         f"Day Classification: {class_str}\n"
         f"Battery Status: {current_soc}% of {battery_capacity_kwh} kWh\n"
         f"Solar Forecast (Forecast.Solar): {primary_solar:.1f} kWh | Open-Meteo: {secondary_solar:.1f} kWh | Spread: {spread_kwh:.1f} kWh\n"

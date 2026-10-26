@@ -298,8 +298,8 @@ async def test_build_plan_candidates_low_solar_overcast_safety():
     )
 
     c1 = candidates[0]
-    # Guarantees full pre-charge (95%) so battery is never stranded at 4%
-    assert c1['target_soc'] == 95
+    # Guarantees full pre-charge (100% default or 95%) so battery is never stranded at 4%
+    assert c1['target_soc'] in (95, 100)
     assert c1['kwh'] > 8.0
 
 
@@ -335,7 +335,7 @@ async def test_candidate_selection_execution_and_nas_logging(
     assert mock_set_slots.called
     # Check that charge target was passed to set_inverter_charge_slots
     _, kwargs = mock_set_slots.call_args
-    assert kwargs.get('charge_target') in (55, 95)
+    assert kwargs.get('charge_target') in (55, 95, 100)
 
     last_plan = state._last_plan
     assert 'candidate_options' in last_plan

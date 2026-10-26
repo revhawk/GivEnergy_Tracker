@@ -134,3 +134,29 @@ class TestAxleTimingAndWindows:
             "import_export": "export"
         }
         assert axle.is_axle_precharge_window(distant_event, now, lead_hours=2.0) is False
+
+    def test_axle_event_triggers_100_percent_precharge(self):
+        from simulation import build_plan_candidates
+        now = datetime.now(timezone.utc)
+        slots = [
+            {"start": now + timedelta(hours=i), "end": now + timedelta(hours=i, minutes=30), "price": 15.0}
+            for i in range(6)
+        ]
+        # Tag slot 4 as Axle flexibility export
+        slots[4]["is_axle_export"] = True
+        slots[4]["export_rate"] = 100.0
+
+        candidates = build_plan_candidates(
+            day_classification="WEATHER_ADAPTIVE",
+            current_soc=40.0,
+            battery_capacity=9.5,
+            upcoming_slots=slots,
+            total_solar_kwh=10.0,
+            solar_comparison={},
+            export_rate=12.0,
+            total_import_kwh=0.0
+        )
+        c1 = candidates[0]
+        assert c1["target_soc"] == 100
+        assert "Axle Flexibility" in c1["name"]
+        assert c1["strategy"] == "axle_flexibility"

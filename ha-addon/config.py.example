@@ -32,6 +32,7 @@ EXPORT_RATE_P_FALLBACK = 12.0       # Used only if live rate fetch fails
 ARBITRAGE_MARGIN_P = 1.5            # Import must be below (export − margin).
                                     # 1.5p accounts for ~10% round-trip battery loss:
                                     # break-even ≈ 12p × 0.90 ≈ 10.8p, then 0.7p headroom.
+ARBITRAGE_TARGET_SOC = 100          # Battery target SoC (%) when arbitrage slots appear (100% enables immediate solar export)
 
 # Octopus Octoplus sessions (ADR 0004 compliance: Power Down & Power Up)
 OCTOPLUS_POWER_DOWN_ENTITY = "sensor.octopus_energy_power_down_sessions"

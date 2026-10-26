@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.24.2] - 2026-10-26
+
+### Added
+- **Axle Energy 100p/kWh Maximum Export Optimization**:
+  - Automatically tags Axle Flexibility export windows with **100.0p/kWh (£1.00/unit)** export revenue rate.
+  - Automatically schedules Candidate 1 (`Axle Flexibility Pre-Charge`) to guarantee **100% full battery capacity** prior to the flexibility window opening.
+  - Simulates and coordinates maximum continuous battery discharge (up to 3,000 W) to the grid during the event, ensuring every available unit is exported at £1.00/kWh.
+- **Full 100% Arbitrage Pre-Charge**:
+  - Automatically targets **100% full battery capacity** (configurable via `ARBITRAGE_TARGET_SOC = 100`) whenever cheap import slots dip below the export arbitrage threshold.
+  - Enables immediate daytime solar export at 12p/kWh without delay and maximizes stored energy reserve to bridge expensive evening peak rates (e.g. 58p/kWh).
+- **AI Arbitrage Integration (ChatGPT)**:
+  - Passes live **Axle Energy VPP events** and **Octopus Octoplus sessions** directly into ChatGPT's candidate strategy evaluation prompt.
+  - ChatGPT now factors export flexibility windows (pre-charging to 100% before export) and free electricity hours (0.0p/kWh pre-charge) directly into its strategy selection and financial scoring.
+- **Live Event Polling Visibility**:
+  - Automatically logs live polling for upcoming **Axle Energy Self-Dispatch** flexibility events during daily planning runs (`Checking Axle Energy Self-Dispatch events...` and confirms idle or scheduled status).
+  - Automatically logs live polling for upcoming **Octopus Octoplus** Saving Sessions and Free Electricity windows.
+
 ## [1.0.24.1] - 2026-10-26
 
 ### Added

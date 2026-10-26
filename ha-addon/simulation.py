@@ -202,8 +202,7 @@ def build_plan_candidates(day_classification, current_soc, battery_capacity,
 
     if not pre_peak_slots:
         pre_peak_slots = [s for s in upcoming_slots if s['start'].astimezone().hour < 16]
-    if not pre_peak_slots:
-        pre_peak_slots = list(upcoming_slots)
+    has_axle_export = any(s.get('is_axle_export') for s in upcoming_slots)
 
     # 1. OPTION 1: Overnight / Early Morning Pre-Charge (or Pre-Peak Defensive Window)
     if negative_slots:
@@ -213,11 +212,18 @@ def build_plan_candidates(day_classification, current_soc, battery_capacity,
         target_soc_opt1 = 100
         target_soc_opt2 = 100
         kwh_opt1 = max(0.0, (100.0 - current_soc) / 100.0 * battery_capacity)
+    elif has_axle_export:
+        opt1_slots_raw = pre_peak_slots or upcoming_slots
+        opt1_strategy = "axle_flexibility"
+        opt1_name = "Axle Flexibility Pre-Charge (Target 100% for 100p/kWh Export)"
+        target_soc_opt1 = 100
+        target_soc_opt2 = 100
+        kwh_opt1 = max(0.0, (100.0 - current_soc) / 100.0 * battery_capacity)
     elif arbitrage_slots and day_classification != "MEDIUM_SOLAR_PARTIAL_PRECHARGE":
         opt1_slots_raw = arbitrage_slots
         opt1_strategy = "arbitrage"
         opt1_name = f"Arbitrage Pre-Charge (< {arbitrage_threshold:.1f}p/kWh)"
-        target_soc_opt1 = max(target_soc_opt1, 95)
+        target_soc_opt1 = max(target_soc_opt1, int(getattr(config, 'ARBITRAGE_TARGET_SOC', 100) if config else 100))
         kwh_opt1 = max(0.0, (target_soc_opt1 - current_soc) / 100.0 * battery_capacity)
     elif total_import_kwh > 0.2:
         opt1_slots_raw = pre_peak_slots
@@ -383,6 +389,9 @@ async def run_optimization():
         return
 
     # 1b. Check for live Octoplus Power Down & Power Up sessions
+    has_octo_creds = bool(getattr(config, 'OCTOPUS_ACCOUNT_NUMBER', None) and getattr(config, 'OCTOPUS_API_KEY', None)) if config else False
+    if has_octo_creds:
+        logging.info("Checking Octopus Octoplus sessions from: https://api.backend.octopus.energy/v1/graphql/")
     fetch_octoplus_fn = getattr(opt, 'fetch_live_octoplus_sessions', octoplus.fetch_live_octoplus_sessions)
     live_sessions = fetch_octoplus_fn() if fetch_octoplus_fn else []
     if live_sessions:
@@ -410,21 +419,30 @@ async def run_optimization():
                 s['is_power_up'] = True
             if octoplus.is_power_down_slot_dt(s['start'], s['end'], live_sessions):
                 s['is_power_down'] = True
+    elif has_octo_creds:
+        logging.info("Octopus Octoplus: Polled successfully — no active or upcoming sessions scheduled.")
 
     # 1c. Check for active or upcoming Axle Energy Self-Dispatch events (ADR 0015)
-    fetch_axle_fn = getattr(opt, 'fetch_axle_event', axle.fetch_axle_event)
-    axle_event = fetch_axle_fn() if fetch_axle_fn else None
-    if axle_event and axle_event.get('start') and axle_event.get('end'):
-        a_start_str = axle_event['start'].astimezone().strftime('%m-%d %H:%M')
-        a_end_str = axle_event['end'].astimezone().strftime('%H:%M')
-        direction = axle_event.get('import_export', 'export')
-        logging.info(
-            f"⚡ [AXLE VPP] Active/Upcoming Axle Self-Dispatch Event: {a_start_str} - {a_end_str} ({direction.upper()})."
-        )
-        if direction == 'export':
-            for s in upcoming_slots:
-                if axle_event['start'] <= s['start'] < axle_event['end']:
-                    s['is_axle_export'] = True
+    axle_event = None
+    if axle.is_axle_enabled():
+        logging.info("Checking Axle Energy Self-Dispatch events from: https://api.axle.energy/vpp/home-assistant/event")
+        fetch_axle_fn = getattr(opt, 'fetch_axle_event', axle.fetch_axle_event)
+        axle_event = fetch_axle_fn() if fetch_axle_fn else None
+        if axle_event and axle_event.get('start') and axle_event.get('end'):
+            a_start_str = axle_event['start'].astimezone().strftime('%m-%d %H:%M')
+            a_end_str = axle_event['end'].astimezone().strftime('%H:%M')
+            direction = axle_event.get('import_export', 'export')
+            logging.info(
+                f"⚡ [AXLE VPP] Active/Upcoming Axle Self-Dispatch Event: {a_start_str} - {a_end_str} ({direction.upper()})."
+            )
+            if direction == 'export':
+                reward_p = float(getattr(config, 'AXLE_EXPORT_REWARD_P', 100.0) if config else 100.0)
+                for s in upcoming_slots:
+                    if axle_event['start'] <= s['start'] < axle_event['end']:
+                        s['is_axle_export'] = True
+                        s['export_rate'] = reward_p
+        else:
+            logging.info("Axle Energy VPP: Polled successfully — no active or upcoming flexibility events scheduled.")
         
     # 2. Fetch primary & shadow solar forecasts in parallel
     solar_forecasts, solar_comparison = fetch_solar_fn()
@@ -481,7 +499,21 @@ async def run_optimization():
         grid_export = 0.0
         import_needed = 0.0
         
-        if net < 0:
+        if slot.get('is_axle_export'):
+            # Axle Flexibility Force Export at max discharge rate (3 kW = 1.5 kWh per slot)
+            force_discharge = min(max_charge_kwh_per_slot, max(0.0, energy - min_energy))
+            energy -= force_discharge
+            if net < 0:
+                grid_export = (-net) + force_discharge
+                import_needed = 0.0
+            else:
+                if force_discharge >= net:
+                    grid_export = force_discharge - net
+                    import_needed = 0.0
+                else:
+                    grid_export = 0.0
+                    import_needed = net - force_discharge
+        elif net < 0:
             excess_solar = -net
             solar_charge = min(excess_solar, max_charge_kwh_per_slot, max_energy - energy)
             energy += solar_charge
@@ -624,7 +656,9 @@ async def run_optimization():
         solar_comparison=solar_comparison,
         candidates=candidates,
         upcoming_slots=upcoming_slots,
-        export_rate=export_rate
+        export_rate=export_rate,
+        live_sessions=live_sessions,
+        axle_event=axle_event,
     )
 
     # 7. Select Candidate and Handle Disagreement / Fallbacks
