@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.24.5] - 2026-10-27
+
+### Fixed
+- **Evening & Late-Night Slot Inclusion (22:00 / 22:30 Cheap Slots)**:
+  - Expanded evening pre-peak slot search to include all slots from 21:00 onwards through 07:00 tomorrow morning.
+  - Fixes an issue where a strict `hour < 7` filter artificially excluded late-night slots (such as 22:00 at 27.7p and 22:30 at 22.4p), allowing the optimiser to pick the cheapest rates of the night.
+- **Overnight Deficit Charging Headroom**:
+  - Sized overnight charge headroom to reflect the battery discharging to its floor (~10%) over the evening peak before cheap slots arrive, scheduling enough energy to cover the full deficit across high-rate morning hours.
+- **Axle Pre-Charge Temporal Guard**:
+  - Enforced that Candidate 1 is only marked as `Axle Flexibility Pre-Charge` if candidate charge slots strictly precede the Axle event start, preventing post-event overnight slots from being mislabeled.
+
 ## [1.0.24.4] - 2026-10-27
 
 ### Added

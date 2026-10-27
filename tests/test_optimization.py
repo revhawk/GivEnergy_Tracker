@@ -563,6 +563,47 @@ def test_build_plan_candidates_with_power_up_session():
     assert opt1['avg_price'] == 0.0
 
 
+def test_evening_overnight_planning_includes_2200_and_2230_slots():
+    """Verify that evening planning (>= 16:00) considers late evening slots (e.g. 22:30 at 22.4p)
+    as part of overnight pre-charging rather than strictly slots where hour < 7.
+    """
+    from simulation import build_plan_candidates
+    now_local = datetime.now().astimezone().replace(hour=18, minute=0, second=0, microsecond=0)
+    now_utc = now_local.astimezone(timezone.utc)
+    slots = []
+    for i in range(48):
+        s_time = now_utc + timedelta(minutes=30 * (i + 1))
+        local_s = s_time.astimezone()
+        if local_s.hour == 22 and local_s.minute == 30 and local_s.date() == now_local.date():
+            price = 22.4
+        elif local_s.hour == 2 and local_s.minute == 30:
+            price = 27.3
+        else:
+            price = 32.0
+        slots.append({
+            'start': s_time,
+            'end': s_time + timedelta(minutes=30),
+            'price': price,
+        })
+
+    candidates = build_plan_candidates(
+        day_classification="MEDIUM_SOLAR_PARTIAL_PRECHARGE",
+        current_soc=86.0,
+        battery_capacity=9.5,
+        upcoming_slots=slots,
+        total_solar_kwh=14.0,
+        solar_comparison={},
+        export_rate=12.0,
+        total_import_kwh=5.37
+    )
+
+    opt1 = candidates[0]
+    assert opt1['strategy'] == "scheduled"
+    assert "Deficit" in opt1['name']
+    assert "22:30" in opt1['slots_desc']
+
+
+
 @pytest.mark.asyncio
 @patch('axle.is_axle_enabled', return_value=True)
 @patch('optimiser.save_daily_stats')

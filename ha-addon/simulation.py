@@ -208,8 +208,14 @@ def build_plan_candidates(day_classification, current_soc, battery_capacity,
             if s['start'].astimezone().date() == now_dt.date() and s['start'].astimezone().hour < 16
         ]
     else:
-        # Evening (>= 16:00): look for overnight slots before 07:00 tomorrow
-        pre_peak_slots = [s for s in upcoming_slots if s['start'].astimezone().hour < 7]
+        # Evening (>= 16:00): look for overnight slots between 21:00 tonight and 07:00 tomorrow
+        tomorrow_0700 = (now_dt + timedelta(days=1)).replace(hour=7, minute=0, second=0, microsecond=0)
+        pre_peak_slots = [
+            s for s in upcoming_slots
+            if s['start'].astimezone() < tomorrow_0700 and (
+                s['start'].astimezone().date() > now_dt.date() or s['start'].astimezone().hour >= 21
+            )
+        ]
 
     if not pre_peak_slots:
         pre_peak_slots = [s for s in upcoming_slots if s['start'].astimezone().hour < 16]
@@ -218,6 +224,13 @@ def build_plan_candidates(day_classification, current_soc, battery_capacity,
     has_axle_export = any(s.get('is_axle_export') for s in upcoming_slots)
     power_up_slots = [s for s in upcoming_slots if s.get('is_power_up')]
     has_power_up = bool(power_up_slots)
+
+    # Pre-charge for Axle only if charge slots strictly precede the Axle event start
+    axle_event_slots = [s for s in upcoming_slots if s.get('is_axle_export')]
+    first_axle_start = min((s['start'] for s in axle_event_slots), default=None) if axle_event_slots else None
+    can_precharge_axle = bool(
+        first_axle_start and any(s['end'] <= first_axle_start and not s.get('is_power_down') for s in upcoming_slots)
+    )
 
     # 1. OPTION 1: Overnight / Early Morning Pre-Charge (or Pre-Peak Defensive Window)
     if negative_slots:
@@ -234,8 +247,9 @@ def build_plan_candidates(day_classification, current_soc, battery_capacity,
         target_soc_opt1 = 100
         target_soc_opt2 = 100
         kwh_opt1 = max(0.0, (100.0 - current_soc) / 100.0 * battery_capacity)
-    elif has_axle_export:
-        opt1_slots_raw = pre_peak_slots or upcoming_slots
+    elif has_axle_export and can_precharge_axle:
+        axle_pre_slots = [s for s in upcoming_slots if s['end'] <= first_axle_start and not s.get('is_power_down')]
+        opt1_slots_raw = axle_pre_slots or pre_peak_slots or upcoming_slots
         opt1_strategy = "axle_flexibility"
         opt1_name = "Axle Flexibility Pre-Charge (Target 100% for 100p/kWh Export)"
         target_soc_opt1 = 100
@@ -251,13 +265,15 @@ def build_plan_candidates(day_classification, current_soc, battery_capacity,
         opt1_slots_raw = pre_peak_slots
         opt1_strategy = "scheduled"
         opt1_name = f"Optimal Deficit Pre-Charge"
-        kwh_opt1 = min(total_import_kwh * 1.10, battery_capacity * (100.0 - current_soc) / 100.0)
-        target_soc_opt1 = min(100, int(current_soc + (kwh_opt1 / battery_capacity) * 100))
+        effective_headroom = battery_capacity * 0.90 if now_dt.hour >= 16 else battery_capacity * (100.0 - current_soc) / 100.0
+        kwh_opt1 = min(total_import_kwh * 1.10, effective_headroom)
+        target_soc_opt1 = min(100, int((current_soc if now_dt.hour < 16 else 10) + (kwh_opt1 / battery_capacity) * 100))
     else:
         opt1_slots_raw = pre_peak_slots
         opt1_strategy = "midday_defensive" if (7 <= now_dt.hour < 16) else "overnight_defensive"
         opt1_name = f"Defensive Pre-Charge (Target {target_soc_opt1}%)"
-        kwh_opt1 = max(0.0, (target_soc_opt1 - current_soc) / 100.0 * battery_capacity)
+        effective_headroom = battery_capacity * 0.90 if now_dt.hour >= 16 else battery_capacity * (100.0 - current_soc) / 100.0
+        kwh_opt1 = min(max(0.0, (target_soc_opt1 - (current_soc if now_dt.hour < 16 else 10)) / 100.0 * battery_capacity), effective_headroom)
 
     slots_needed_opt1 = math.ceil(kwh_opt1 / max_charge_kwh_per_slot) if kwh_opt1 > 0 else 0
     slots_needed_opt1 = min(slots_needed_opt1, len(opt1_slots_raw))
