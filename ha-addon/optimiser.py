@@ -135,7 +135,9 @@ async def run_end_of_day_audit():
 
     state = load_state()
     stats = load_daily_stats()
-    today = datetime.now().astimezone().date().isoformat()
+    now_local = datetime.now().astimezone()
+    today = now_local.date().isoformat()
+    now_iso = now_local.isoformat()
 
     if stats.get('date') != today:
         logging.info(f"No stats accumulated for today ({today}); daily stats file has date={stats.get('date')}")
@@ -148,22 +150,40 @@ async def run_end_of_day_audit():
     else:
         logging.info("No plan on record for today.")
 
-    if stats.get('date') == today or last_plan:
-        generate_daily_summary(stats if stats.get('date') == today else {
-            'date': today,
-            'start_soc': (last_plan or {}).get('current_soc_at_plan', '?'),
-            'end_soc': '?',
-            'runs': 1,
-            'charge_windows': [last_plan['charge_window']] if last_plan and last_plan.get('charge_window') else [],
-            'total_charged_kwh': (last_plan or {}).get('charge_window', {}).get('kwh', 0) if last_plan else 0,
-            'negative_rate_kwh': 0,
-            'solar_kwh_forecast': (last_plan or {}).get('solar_forecast_kwh', 0),
-            'iboost_kwh_forecast': 0,
-            'min_rate_seen': (last_plan or {}).get('min_rate', 0),
-            'max_rate_seen': (last_plan or {}).get('max_rate', 0),
-            'no_charge_runs': 0,
-        })
+    summary_stats = dict(stats) if stats.get('date') == today else {
+        'date': today,
+        'start_soc': (last_plan or {}).get('current_soc', '?'),
+        'end_soc': '?',
+        'runs': 1 if last_plan else 0,
+        'charge_windows': [last_plan['charge_window']] if last_plan and last_plan.get('charge_window') else [],
+        'total_charged_kwh': (last_plan or {}).get('charge_window', {}).get('kwh', 0) if last_plan else 0,
+        'negative_rate_kwh': 0,
+        'solar_kwh_forecast': (last_plan or {}).get('solar_forecast_kwh', 0),
+        'iboost_kwh_forecast': 0,
+        'min_rate_seen': (last_plan or {}).get('min_rate', 0),
+        'max_rate_seen': (last_plan or {}).get('max_rate', 0),
+        'no_charge_runs': 0,
+    }
+
+    try:
+        live_soc = await get_inverter_soc()
+        if live_soc is not None:
+            summary_stats['end_soc'] = live_soc
+    except Exception:
+        pass
+
+    summary_stats['timestamp'] = now_iso
+    summary_stats['audited_at'] = now_iso
+
+    chatgpt_summary = None
+    if summary_stats.get('date') == today or last_plan:
+        chatgpt_summary = generate_daily_summary(summary_stats)
+        if chatgpt_summary:
+            summary_stats['chatgpt_summary'] = chatgpt_summary
+
+    save_daily_stats(summary_stats)
     logging.info("========================================")
+    return summary_stats
 
 
 # ── Main Daemon Loop ─────────────────────────────────────────────────────────
@@ -251,10 +271,10 @@ async def main():
             # 1. End-of-day audit — once per day at/after audit_hour
             if now_local.hour >= audit_hour and state.get('last_audit_date') != today_str:
                 try:
-                    await run_end_of_day_audit()
+                    summary_stats = await run_end_of_day_audit()
                     state['last_audit_date'] = today_str
                     save_state(state)
-                    daily_stats = load_daily_stats()
+                    daily_stats = summary_stats or load_daily_stats()
                     archive_daily_stats_history(daily_stats)
                 except Exception as e:
                     logging.error(f"Audit failed: {e}", exc_info=True)

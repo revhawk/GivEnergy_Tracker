@@ -207,7 +207,7 @@ def chatgpt_select_candidate(day_classification, current_soc, battery_capacity_k
         f"   - ALWAYS select the option that charges to 100% full capacity during negative slots.\n"
         f"   - Reaching 100% SoC ensures we get paid to charge, and 100% of subsequent solar PV generation is forced to export at the {export_rate:.2f}p/kWh export tariff, yielding maximum double profit.\n"
         f"4. OCTOPLUS SESSIONS & VPP FLEXIBILITY ARBITRAGE:\n"
-        f"   - Power Up (Free Electricity): Electricity is 0.0p/kWh. Prioritize pre-charging battery to 100% at £0.00 cost.\n"
+        f"   - Power Up (Free Electricity): Electricity is 0.0p/kWh. Maximize grid charging to 100% at full charge rate for £0.00 cost during the session.\n"
         f"   - Power Down (Saving Session): Enforce zero grid import to maximize OctoPoints rewards.\n"
         f"   - Axle Energy Self-Dispatch (VPP): High-value force export window paying 100.0p/kWh (£1.00/unit). ALWAYS prioritize entering the event window with 100% battery capacity so the home can continuously export at full 3 kW to the grid for maximum revenue.\n\n"
         f"Reply ONLY with valid JSON:\n"
@@ -336,6 +336,8 @@ def generate_daily_summary(stats):
             logging.info(line)
         logging.info(border)
         logging.info("")
+        return summary
 
     except Exception as e:
         logging.warning(f"Daily summary ChatGPT call failed: {e}")
+        return None

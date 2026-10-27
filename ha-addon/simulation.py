@@ -159,8 +159,8 @@ def build_plan_candidates(day_classification, current_soc, battery_capacity,
     arbitrage_margin = getattr(config, 'ARBITRAGE_MARGIN_P', 1.5) if config else 1.5
     arbitrage_threshold = export_rate - arbitrage_margin
 
-    negative_slots = [s for s in upcoming_slots if s['price'] < 0]
-    arbitrage_slots = [s for s in upcoming_slots if s['price'] < arbitrage_threshold]
+    negative_slots = [s for s in upcoming_slots if s['price'] < 0 and not s.get('is_power_down')]
+    arbitrage_slots = [s for s in upcoming_slots if s['price'] < arbitrage_threshold and not s.get('is_power_down')]
 
     # Target SoC determination based on user rules
     if day_classification == "MEDIUM_SOLAR_PARTIAL_PRECHARGE":
@@ -202,13 +202,24 @@ def build_plan_candidates(day_classification, current_soc, battery_capacity,
 
     if not pre_peak_slots:
         pre_peak_slots = [s for s in upcoming_slots if s['start'].astimezone().hour < 16]
+
+    pre_peak_slots = [s for s in pre_peak_slots if not s.get('is_power_down')]
     has_axle_export = any(s.get('is_axle_export') for s in upcoming_slots)
+    power_up_slots = [s for s in upcoming_slots if s.get('is_power_up')]
+    has_power_up = bool(power_up_slots)
 
     # 1. OPTION 1: Overnight / Early Morning Pre-Charge (or Pre-Peak Defensive Window)
     if negative_slots:
         opt1_slots_raw = negative_slots
         opt1_strategy = "negative_rates"
         opt1_name = "Negative Rate Full Charge (Grid Pays You)"
+        target_soc_opt1 = 100
+        target_soc_opt2 = 100
+        kwh_opt1 = max(0.0, (100.0 - current_soc) / 100.0 * battery_capacity)
+    elif has_power_up:
+        opt1_slots_raw = power_up_slots
+        opt1_strategy = "power_up"
+        opt1_name = "Octopus Power Up Maximum Charge (0.0p/kWh Free Electricity)"
         target_soc_opt1 = 100
         target_soc_opt2 = 100
         kwh_opt1 = max(0.0, (100.0 - current_soc) / 100.0 * battery_capacity)
@@ -243,7 +254,7 @@ def build_plan_candidates(day_classification, current_soc, battery_capacity,
     slots_opt1 = []
     avg_price_opt1 = 0.0
     if slots_needed_opt1 > 0 and opt1_slots_raw:
-        if opt1_strategy in ("negative_rates", "arbitrage"):
+        if opt1_strategy in ("negative_rates", "power_up", "arbitrage"):
             sorted_cheap = sorted(opt1_slots_raw, key=lambda s: s['start'])
             blocks_opt1 = _merge_slot_blocks(sorted_cheap)
             avg_price_opt1 = sum(s['price'] for s in opt1_slots_raw) / len(opt1_slots_raw)
@@ -277,6 +288,10 @@ def build_plan_candidates(day_classification, current_soc, battery_capacity,
             f"Negative rate import pays you to consume power (avg {avg_price_opt1:.2f}p/kWh). "
             f"Fills battery to 100% capacity so subsequent solar generation is 100% exported at {export_rate:.2f}p/kWh for double profit."
             if opt1_strategy == "negative_rates" else
+            f"Electricity is 100% FREE (0.0p/kWh). Maximizes grid charging at full inverter power to charge battery to 100% capacity at £0.00 cost during the session."
+            if opt1_strategy == "power_up" else
+            f"Charges battery to 100% capacity before the Axle Energy Self-Dispatch event to enable maximum continuous export at 3 kW for 100.0p/kWh (£1.00/unit) VPP revenue."
+            if opt1_strategy == "axle_flexibility" else
             f"Pre-charges during cheapest window (avg {avg_price_opt1:.2f}p). "
             f"Guarantees {target_soc_opt1}% defensive floor to avoid 4% collapse if overcast, "
             f"while preserving {headroom_opt1:.1f} kWh ({headroom_opt1/max(0.1, battery_capacity)*100:.0f}%) headroom for sunny bursts."
@@ -389,9 +404,11 @@ async def run_optimization():
         return
 
     # 1b. Check for live Octoplus Power Down & Power Up sessions
-    has_octo_creds = bool(getattr(config, 'OCTOPUS_ACCOUNT_NUMBER', None) and getattr(config, 'OCTOPUS_API_KEY', None)) if config else False
+    has_octo_creds = bool((getattr(config, 'OCTOPUS_ACCOUNT_NUMBER', None) or getattr(config, 'OCTOPUS_ACCOUNT_ID', None)) and getattr(config, 'OCTOPUS_API_KEY', None)) if config else False
     if has_octo_creds:
         logging.info("Checking Octopus Octoplus sessions from: https://api.backend.octopus.energy/v1/graphql/")
+    else:
+        logging.info("Checking Octopus Octoplus sessions via Home Assistant integration...")
     fetch_octoplus_fn = getattr(opt, 'fetch_live_octoplus_sessions', octoplus.fetch_live_octoplus_sessions)
     live_sessions = fetch_octoplus_fn() if fetch_octoplus_fn else []
     if live_sessions:
@@ -419,7 +436,7 @@ async def run_optimization():
                 s['is_power_up'] = True
             if octoplus.is_power_down_slot_dt(s['start'], s['end'], live_sessions):
                 s['is_power_down'] = True
-    elif has_octo_creds:
+    else:
         logging.info("Octopus Octoplus: Polled successfully — no active or upcoming sessions scheduled.")
 
     # 1c. Check for active or upcoming Axle Energy Self-Dispatch events (ADR 0015)
@@ -778,4 +795,46 @@ async def run_optimization():
         llm_score=score,
         llm_reason=reason,
     )
+
+    try:
+        load_daily_stats_fn = getattr(opt, 'load_daily_stats', state.load_daily_stats)
+        save_daily_stats_fn = getattr(opt, 'save_daily_stats', state.save_daily_stats)
+        init_daily_stats_fn = getattr(opt, 'init_daily_stats', state.init_daily_stats)
+        update_daily_stats_fn = getattr(opt, 'update_daily_stats', state.update_daily_stats)
+
+        today_str = datetime.now().astimezone().date().isoformat()
+        daily_stats = load_daily_stats_fn()
+        if not daily_stats or daily_stats.get('date') != today_str:
+            daily_stats = init_daily_stats_fn(today_str, current_soc)
+
+        charge_win_stats = None
+        if slots_to_apply and approve:
+            charge_win_stats = {
+                'start': slots_to_apply[0][0].isoformat(),
+                'end': slots_to_apply[-1][1].isoformat(),
+                'kwh': selected_candidate.get('kwh', 0.0),
+                'avg_price': selected_candidate.get('avg_price', 0.0),
+                'target_soc': target_soc_to_apply,
+            }
+
+        run_data = {
+            'soc': current_soc,
+            'solar_kwh': total_solar_kwh,
+            'iboost_kwh': (getattr(config, 'IBOOST_MAX_DIVERT_RATE', 3000) / 1000.0) if config else 3.0,
+            'min_rate': min(s['price'] for s in upcoming_slots) if upcoming_slots else None,
+            'max_rate': max(s['price'] for s in upcoming_slots) if upcoming_slots else None,
+            'charge_window': charge_win_stats,
+            'day_classification': day_classification,
+            'weather_risk_commentary': weather_commentary,
+            'candidate_options': candidates,
+            'selected_candidate': selected_candidate,
+            'selected_candidate_id': selected_candidate.get('id', 1),
+            'llm_reason': reason,
+            'llm_score': score,
+        }
+        updated_stats = update_daily_stats_fn(daily_stats, run_data)
+        save_daily_stats_fn(updated_stats)
+    except Exception as e:
+        logging.warning(f"Could not update daily stats: {e}")
+
     return

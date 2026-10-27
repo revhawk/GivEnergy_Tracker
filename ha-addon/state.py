@@ -60,20 +60,6 @@ def setup_logging():
             print(f"Error initializing file logger at {log_file}: {e}", file=sys.stderr)
 
 
-def archive_daily_stats_history(stats):
-    """Archive daily execution stats and ChatGPT financial audit into HISTORY_DIR."""
-    try:
-        date_str = os.path.basename(str(stats.get('date') or datetime.now().astimezone().date().isoformat()).strip())
-        history_dir = getattr(config, 'HISTORY_DIR', HISTORY_DIR) if config else HISTORY_DIR
-        os.makedirs(history_dir, exist_ok=True)
-        archive_path = os.path.join(history_dir, f"daily_stats_{date_str}.json")
-        with open(archive_path, 'w') as f:
-            json.dump(stats, f, indent=2, default=str)
-        logging.info(f"📊 Archived daily performance record to: {archive_path}")
-    except Exception as e:
-        logging.warning(f"Could not archive daily stats history: {e}")
-
-
 def _record_plan(**fields):
     """Record current optimization run details into in-memory _last_plan."""
     _last_plan.clear()
@@ -123,8 +109,12 @@ def save_daily_stats(stats):
 
 def init_daily_stats(date_str, first_soc):
     """Initialise a fresh stats dict for a new day."""
+    now_iso = datetime.now().astimezone().isoformat()
     return {
         'date': date_str,
+        'timestamp': now_iso,
+        'created_at': now_iso,
+        'updated_at': now_iso,
         'start_soc': first_soc,
         'end_soc': first_soc,
         'runs': 0,
@@ -141,6 +131,9 @@ def init_daily_stats(date_str, first_soc):
 
 def update_daily_stats(stats, run_data):
     """Merge one optimisation run's data into the rolling daily stats."""
+    now_iso = datetime.now().astimezone().isoformat()
+    stats['updated_at'] = now_iso
+    stats['timestamp'] = now_iso
     stats['runs'] = stats.get('runs', 0) + 1
     stats['end_soc'] = run_data.get('soc', stats.get('end_soc', 0))
 
@@ -186,15 +179,34 @@ def update_daily_stats(stats, run_data):
 
 
 def archive_daily_stats_history(stats, date_str=None):
-    """Archive complete daily performance summary, solar generation, and ChatGPT audits into date-stamped JSON."""
+    """Archive complete daily performance summary, solar generation, and ChatGPT audits into date-and-time-stamped JSON."""
     try:
-        dt = date_str or stats.get('date') or datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        os.makedirs(HISTORY_DIR, exist_ok=True)
-        archive_path = os.path.join(HISTORY_DIR, f"daily_stats_{dt}.json")
+        now_dt = datetime.now().astimezone()
+        now_iso = now_dt.isoformat()
+        dt = date_str or stats.get('date') or now_dt.strftime("%Y-%m-%d")
+        time_str = now_dt.strftime("%H%M%S")
+
+        # Ensure timestamp fields are present inside stats JSON
+        if not stats.get('timestamp'):
+            stats['timestamp'] = now_iso
+        stats['archived_at'] = now_iso
+
+        history_dir = getattr(config, 'HISTORY_DIR', HISTORY_DIR) if config else HISTORY_DIR
+        os.makedirs(history_dir, exist_ok=True)
+
+        # 1. Primary date-stamped file for backward compatibility & contract checks
+        archive_path = os.path.join(history_dir, f"daily_stats_{dt}.json")
         with open(archive_path, 'w') as f:
             json.dump(stats, f, indent=2, default=str)
-        logging.info(f"✓ Daily stats archived to {archive_path}")
+
+        # 2. Date-and-time-stamped snapshot file
+        ts_archive_path = os.path.join(history_dir, f"daily_stats_{dt}_{time_str}.json")
+        with open(ts_archive_path, 'w') as f:
+            json.dump(stats, f, indent=2, default=str)
+
+        logging.info(f"✓ Daily stats archived to {archive_path} and {ts_archive_path}")
         return archive_path
     except Exception as e:
         logging.warning(f"Could not archive daily stats history: {e}")
         return None
+

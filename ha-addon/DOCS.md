@@ -150,6 +150,7 @@ In the add-on **Configuration** tab, enter the path as a Unix-style Home Assista
 Files generated in your NAS directory:
 - **`givenergy_tracker.log`**: Full timestamped log file (`YYYY-MM-DD HH:MM:SS - INFO - ...`).
 - **`history/daily_stats_YYYY-MM-DD.json`**: Historical performance summaries and ChatGPT audit reports for each day.
+- **`history/daily_stats_YYYY-MM-DD_HHMMSS.json`**: Historical performance summaries and ChatGPT audit reports saved with precise date and time stamps.
 - **`givenergy_state.json`**: Rolling 14-day load profile history and planned SoC schedule.
 
 ---

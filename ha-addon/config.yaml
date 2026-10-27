@@ -1,5 +1,5 @@
 name: "GivEnergy Tariff Optimiser"
-version: "1.0.24.2"
+version: "1.0.24.3"
 slug: "givenergy_tracker"
 description: "Schedules GivEnergy battery charging during cheapest Octopus Agile slots using live solar forecasts. Enter your OpenAI API key in Configuration for AI-powered daily savings reports."
 url: "https://github.com/revhawk/GivEnergy_Tracker"
@@ -24,6 +24,9 @@ options:
   enable_axle_dispatch: false
   axle_api_token: ""
   axle_export_power_w: 3000
+  auto_join_saving_sessions: true
+  octopus_api_key: ""
+  octopus_account_id: ""
 schema:
   interval_minutes: "int"
   run_once: "bool"
@@ -36,3 +39,6 @@ schema:
   enable_axle_dispatch: "bool"
   axle_api_token: "password?"
   axle_export_power_w: "int(1000,6000)?"
+  auto_join_saving_sessions: "bool?"
+  octopus_api_key: "password?"
+  octopus_account_id: "str?"

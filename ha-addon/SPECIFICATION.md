@@ -1,6 +1,6 @@
 # Technical Specification & Architecture — GivEnergy Tariff Optimiser
 
-**Version:** 1.0.24.2  
+**Version:** 1.0.24.3  
 **Target Hardware:** GivEnergy Inverters (Gen 1, Gen 2, Gen 3, All-in-One)  
 **Target Platform:** Home Assistant Add-on Container (Linux ARM64 / AMD64)  
 
@@ -27,7 +27,7 @@ graph TD
     end
 
     subgraph GivEnergy Tariff Optimiser Add-on
-        Version[version.py - v1.0.23.1]
+        Version[version.py - v1.0.24.3]
         Config[config.py - Settings]
         Optimiser[optimiser.py - Main Loop & Engine]
         GivTCP_Mod[givtcp.py - GivTCP REST v2/v3]
@@ -111,7 +111,7 @@ sequenceDiagram
 
 ### 4.1 Single-Source Versioning Contract (`version.py`)
 - **Module:** `version.py`
-- **Variable:** `__version__ = "1.0.23.1"`
+- **Variable:** `__version__ = "1.0.24.3"`
 - **Contract:** MUST match `version:` field in `ha-addon/config.yaml`. Validated during daemon initialization.
 
 ### 4.2 GivTCP REST v2/v3 Contract (`givtcp.py`)
@@ -229,7 +229,7 @@ Contract tests in `tests/test_contracts.py` explicitly record compliance with AP
 
 | Contract Test | Component Verified | Payload / Schema Contract Checked |
 | :--- | :--- | :--- |
-| `test_version_py_matches_config_yaml` | `version.py` | Validates `__version__ == "1.0.23.1"` matches `ha-addon/config.yaml` `version:` |
+| `test_version_py_matches_config_yaml` | `version.py` | Validates `__version__ == "1.0.24.3"` matches `ha-addon/config.yaml` `version:` |
 | `test_set_charge_slot_payload_contract` | `givtcp.py` | Validates GivTCP `/setChargeSlot` and `/setBatteryMode` JSON key names & formats |
 | `test_agile_tariff_schema_contract` | `tariffs.py` | Validates Octopus Agile API `results` list schema (`valid_from`, `valid_to`, `value_inc_vat`) |
 | `test_forecast_solar_schema_contract` | `solar.py` | Validates Forecast.Solar API `result.watt_hours_period` dictionary structure |

@@ -491,6 +491,78 @@ def test_daytime_replan_filters_pre_peak_slots():
     assert first_slot_start.hour < 16
 
 
+@pytest.mark.asyncio
+@patch('optimiser.save_daily_stats')
+@patch('optimiser.save_state')
+@patch('optimiser.load_state')
+@patch('optimiser.set_inverter_charge_slots')
+@patch('optimiser.chatgpt_select_candidate')
+@patch('optimiser.fetch_export_rate')
+@patch('optimiser.fetch_parallel_solar_forecasts')
+@patch('optimiser.fetch_agile_rates')
+@patch('optimiser.get_inverter_telemetry')
+async def test_run_energy_optimization_persists_daily_stats(
+    mock_telemetry, mock_rates, mock_solar, mock_export, mock_select, mock_set_slots,
+    mock_load_state, mock_save_state, mock_save_daily_stats
+):
+    """Verify that every optimization run updates and persists daily stats with timestamps."""
+    mock_load_state.return_value = {}
+    slots = [_make_slot(2, 0, 11.0), _make_slot(2, 30, 10.5)]
+    for h in range(4, 12):
+        slots.append(_make_slot(h, 0, 25.0))
+
+    mock_telemetry.return_value = {"soc": 25.0, "pv_power": 0.0, "load_power": 450.0}
+    mock_rates.return_value = slots
+    mock_solar.return_value = ([], {})
+    mock_export.return_value = 12.0
+    mock_select.return_value = (True, 1, 9, "Option 1 precharge", "clear")
+    mock_set_slots.return_value = True
+
+    await optimiser.run_optimization()
+
+    assert mock_save_daily_stats.called
+    saved_stats = mock_save_daily_stats.call_args[0][0]
+    assert saved_stats['runs'] >= 1
+    assert "date" in saved_stats
+    assert "timestamp" in saved_stats
+    assert "T" in saved_stats["timestamp"]
+    assert saved_stats['end_soc'] == 25.0
+
+
+def test_build_plan_candidates_with_power_up_session():
+    """Verify that Octopus Octoplus Power Up sessions produce Candidate 1 targeting 100% SoC."""
+    from simulation import build_plan_candidates
+    now = datetime(2026, 10, 27, 18, 0, tzinfo=timezone.utc)
+    slots = []
+    for i in range(48):
+        s_time = now + timedelta(minutes=30 * i)
+        is_pup = (18 <= s_time.hour < 19)
+        price = 0.0 if is_pup else 24.0
+        slots.append({
+            'start': s_time,
+            'end': s_time + timedelta(minutes=30),
+            'price': price,
+            'is_power_up': is_pup
+        })
+
+    candidates = build_plan_candidates(
+        day_classification="HIGH_SOLAR_SELF_CONSUMPTION",
+        current_soc=40.0,
+        battery_capacity=9.5,
+        upcoming_slots=slots,
+        total_solar_kwh=15.0,
+        solar_comparison={},
+        export_rate=12.0,
+        total_import_kwh=0.0
+    )
+
+    opt1 = candidates[0]
+    assert opt1['strategy'] == "power_up"
+    assert opt1['target_soc'] == 100
+    assert "Power Up" in opt1['name']
+    assert opt1['avg_price'] == 0.0
+
+
 
 
 

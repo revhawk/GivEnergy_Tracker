@@ -39,6 +39,9 @@ LOG_FILE_PATH=$(jq --raw-output '.log_file_path // ""' /data/options.json)
 ENABLE_AXLE_DISPATCH=$(jq --raw-output '.enable_axle_dispatch // false' /data/options.json)
 AXLE_API_TOKEN=$(jq --raw-output '.axle_api_token // ""' /data/options.json)
 AXLE_EXPORT_POWER_W=$(jq --raw-output '.axle_export_power_w // 3000' /data/options.json)
+AUTO_JOIN_SAVING_SESSIONS=$(jq --raw-output '.auto_join_saving_sessions // true' /data/options.json 2>/dev/null || echo "true")
+OCTOPUS_API_KEY=$(jq --raw-output '.octopus_api_key // ""' /data/options.json 2>/dev/null || echo "")
+OCTOPUS_ACCOUNT_ID=$(jq --raw-output '.octopus_account_id // ""' /data/options.json 2>/dev/null || echo "")
 
 export INTERVAL_MINUTES
 export RUN_ONCE
@@ -51,6 +54,9 @@ export LOG_FILE_PATH
 export ENABLE_AXLE_DISPATCH
 export AXLE_API_TOKEN
 export AXLE_EXPORT_POWER_W
+export AUTO_JOIN_SAVING_SESSIONS
+export OCTOPUS_API_KEY
+export OCTOPUS_ACCOUNT_ID
 
 echo "Starting GivEnergy Tariff Optimiser add-on..."
 echo "Interval: $INTERVAL_MINUTES minutes  |  Run Once: $RUN_ONCE  |  Debug Logging: $DEBUG_LOGGING"

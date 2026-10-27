@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.24.3] - 2026-10-27
+
+### Added
+- **Automatic Octoplus Saving Sessions Opt-In (No More Email Signups)**:
+  - Automatically signs up and joins upcoming Octopus Saving Sessions (Power Down) via the Kraken GraphQL mutation (`joinSavingSessionsEvent`) and Home Assistant integration services.
+  - Eliminates the need to manually click email links or accept invitations before every event.
+  - Added `auto_join_saving_sessions`, `octopus_api_key`, and `octopus_account_id` configuration options in the Home Assistant UI tab.
+- **Power Up / Free Electricity (0.0p/kWh) Maximum Charging**:
+  - Automatically identifies Free Electricity sessions and schedules Candidate 1 (`Octopus Power Up Maximum Charge`), drawing as much free grid power as possible at maximum inverter charge rate (up to 3,000 W) to fill the battery to 100% at £0.00 cost during the session.
+- **Power Down / Saving Sessions (OctoPoints) Zero Grid Import**:
+  - Automatically detects Saving Sessions and enforces 0 W grid draw for the duration of the event, running the home exclusively from battery storage and solar to earn maximum OctoPoints.
+- **Home Assistant Octoplus Sensor Fallback**:
+  - Seamlessly pulls active and scheduled sessions directly from Home Assistant entities (`event.octopus_energy_octoplus_power_up_events`, `sensor.octopus_energy_power_up_sessions`, `event.octopus_energy_octoplus_power_down_events`, etc.) if direct API credentials are not entered.
+  - Added support for static `POWER_UP_WINDOWS` in configuration.
+
 ## [1.0.24.2] - 2026-10-26
 
 ### Added
@@ -23,6 +38,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Live Event Polling Visibility**:
   - Automatically logs live polling for upcoming **Axle Energy Self-Dispatch** flexibility events during daily planning runs (`Checking Axle Energy Self-Dispatch events...` and confirms idle or scheduled status).
   - Automatically logs live polling for upcoming **Octopus Octoplus** Saving Sessions and Free Electricity windows.
+- **Date & Time Stamped End-of-Day Stats & AI Financial Audit**:
+  - Automatically updates and saves daily performance metrics on every optimization planning run.
+  - Generates and archives both date-stamped (`daily_stats_YYYY-MM-DD.json`) and precise date-and-time-stamped snapshot files (`daily_stats_YYYY-MM-DD_HHMMSS.json`) in `/share/nas_logs/history/`.
+  - Embeds full ISO date-time timestamps (`timestamp`, `created_at`, `updated_at`, `audited_at`), live ending battery SoC, and complete ChatGPT daily financial summary reports inside the saved records.
 
 ## [1.0.24.1] - 2026-10-26
 

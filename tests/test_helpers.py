@@ -1,5 +1,6 @@
 """Tests for pure helper functions in optimiser.py."""
 from datetime import datetime, timezone, timedelta
+from unittest.mock import patch, MagicMock
 
 import optimiser
 
@@ -364,5 +365,85 @@ class TestOctoplusLiveGraphQL:
         s2_end = now + timedelta(hours=3, minutes=45)
         assert optimiser.is_power_up_slot_dt(s2_start, s2_end, live_sessions=live_sessions) is True
         assert optimiser.is_power_down_slot_dt(s2_start, s2_end, live_sessions=live_sessions) is False
+
+    def test_is_power_up_slot_dt_with_config_windows(self, monkeypatch):
+        import octoplus
+        class MockConfig:
+            POWER_UP_WINDOWS = [("21:00", "22:00")]
+            POWER_DOWN_WINDOWS = []
+
+        monkeypatch.setattr(octoplus, 'config', MockConfig)
+        monkeypatch.setattr(octoplus, '_octoplus_sessions_cache', {"sessions": [], "fetched_at": None})
+
+        # Match local time 21:15
+        now_local = datetime.now().astimezone()
+        slot_start = now_local.replace(hour=21, minute=0, second=0, microsecond=0)
+        slot_end = now_local.replace(hour=21, minute=30, second=0, microsecond=0)
+
+        assert octoplus.is_power_up_slot_dt(slot_start, slot_end, live_sessions=[]) is True
+
+        outside_start = now_local.replace(hour=22, minute=30, second=0, microsecond=0)
+        outside_end = now_local.replace(hour=23, minute=0, second=0, microsecond=0)
+        assert octoplus.is_power_up_slot_dt(outside_start, outside_end, live_sessions=[]) is False
+
+    def test_parse_octoplus_session_from_ha_attributes(self):
+        import octoplus
+        ha_payload = {
+            "entity_id": "event.octopus_energy_octoplus_power_up_events",
+            "state": "2026-10-27T18:00:00+00:00",
+            "attributes": {
+                "event_type": "power_up",
+                "start": "2026-10-27T18:00:00+00:00",
+                "end": "2026-10-27T19:00:00+00:00",
+                "code": "FREE_ELEC_TONIGHT"
+            }
+        }
+        parsed = octoplus.parse_octoplus_session(ha_payload)
+        assert parsed is not None
+        assert parsed["session_type"] == "power_up"
+        assert parsed["code"] == "FREE_ELEC_TONIGHT"
+        assert parsed["start"] == datetime(2026, 10, 27, 18, 0, tzinfo=timezone.utc)
+        assert parsed["end"] == datetime(2026, 10, 27, 19, 0, tzinfo=timezone.utc)
+
+    @patch('octoplus.requests.post')
+    def test_join_octoplus_saving_session_graphql(self, mock_post):
+        import octoplus
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {
+            "data": {
+                "joinSavingSessionsEvent": {
+                    "joinedEventCodes": ["SESSION-123"]
+                }
+            }
+        }
+        mock_post.return_value = mock_resp
+
+        success, msg = octoplus.join_octoplus_saving_session(
+            account_id="A-12345678",
+            event_code="SESSION-123",
+            token="mock-token-xyz"
+        )
+        assert success is True
+        assert "GraphQL" in msg
+        assert mock_post.called
+
+    @patch('octoplus.requests.post')
+    def test_join_octoplus_saving_session_ha_service(self, mock_post, monkeypatch):
+        import octoplus
+        monkeypatch.setattr(octoplus, 'SUPERVISOR_TOKEN', 'mock-sup-token')
+        monkeypatch.setattr(octoplus, 'obtain_kraken_token', lambda *a, **k: None)
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_post.return_value = mock_resp
+
+        success, msg = octoplus.join_octoplus_saving_session(
+            account_id="",
+            event_code="SESSION-456",
+            token=None
+        )
+        assert success is True
+        assert "Home Assistant service" in msg
+        assert mock_post.called
 
 

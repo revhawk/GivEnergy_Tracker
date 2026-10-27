@@ -83,3 +83,25 @@ def test_daily_audit_hour_configuration(monkeypatch):
     monkeypatch.setenv("DAILY_AUDIT_HOUR", "22")
     audit_hour_custom = int(os.environ.get('DAILY_AUDIT_HOUR', '23'))
     assert audit_hour_custom == 22
+
+
+def test_auto_join_saving_sessions_configuration(monkeypatch):
+    monkeypatch.delenv("AUTO_JOIN_SAVING_SESSIONS", raising=False)
+    auto_join_default = os.environ.get('AUTO_JOIN_SAVING_SESSIONS', 'true').lower() in ('true', '1', 'yes')
+    assert auto_join_default is True
+
+    monkeypatch.setenv("AUTO_JOIN_SAVING_SESSIONS", "false")
+    auto_join_disabled = os.environ.get('AUTO_JOIN_SAVING_SESSIONS', 'true').lower() in ('true', '1', 'yes')
+    assert auto_join_disabled is False
+
+
+def test_octopus_api_key_and_account_id_configuration(monkeypatch):
+    monkeypatch.delenv("OCTOPUS_API_KEY", raising=False)
+    monkeypatch.delenv("OCTOPUS_ACCOUNT_ID", raising=False)
+    assert os.environ.get("OCTOPUS_API_KEY", "") == ""
+    assert os.environ.get("OCTOPUS_ACCOUNT_ID", "") == ""
+
+    monkeypatch.setenv("OCTOPUS_API_KEY", "sk_live_testkey123")
+    monkeypatch.setenv("OCTOPUS_ACCOUNT_ID", "A-12345678")
+    assert os.environ.get("OCTOPUS_API_KEY") == "sk_live_testkey123"
+    assert os.environ.get("OCTOPUS_ACCOUNT_ID") == "A-12345678"
