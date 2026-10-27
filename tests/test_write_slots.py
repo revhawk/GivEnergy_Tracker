@@ -169,3 +169,61 @@ class TestSetInverterChargeSlotsGivTCP:
         end = datetime(2026, 7, 4, 5, 0, tzinfo=timezone.utc)
         ok = await optimiser.set_inverter_charge_slots(start, end)
         assert ok is False
+
+
+@pytest.mark.asyncio
+class TestSetInverterDischargeSlotGivTCP:
+    """Tests for automated GivTCP discharge slot writing (Axle VPP export events)."""
+
+    @responses.activate
+    async def test_program_discharge_slot_sets_timed_export_and_parameters(self):
+        for path in ("/setDischargeSlot", "/setDischargeTarget", "/setDischargeRate",
+                     "/enableDischargeTarget", "/enableDischargeSchedule", "/setBatteryMode"):
+            responses.add(responses.POST, f"{GIVTCP_URL}{path}", json={"result": "ok"})
+
+        start = datetime(2026, 10, 27, 19, 0, tzinfo=timezone.utc)
+        end = datetime(2026, 10, 27, 20, 0, tzinfo=timezone.utc)
+
+        ok = await optimiser.set_inverter_discharge_slot(start, end, discharge_target=10, discharge_rate_w=3000)
+        assert ok is True
+
+        # Check endpoints called
+        paths = [c.request.url.replace(GIVTCP_URL, "") for c in responses.calls]
+        assert "/setDischargeSlot" in paths
+        assert "/setDischargeTarget" in paths
+        assert "/setDischargeRate" in paths
+        assert "/enableDischargeSchedule" in paths
+        assert "/setBatteryMode" in paths
+
+        slot_call = next(c for c in responses.calls if c.request.url.endswith("/setDischargeSlot"))
+        assert _body(slot_call) == {
+            "start": "19:00",
+            "finish": "20:00",
+            "slot": "1",
+            "dischargeToPercent": 10
+        }
+
+        mode_call = next(c for c in responses.calls if c.request.url.endswith("/setBatteryMode"))
+        assert _body(mode_call) == {"mode": "Timed Export"}
+
+        rate_call = next(c for c in responses.calls if c.request.url.endswith("/setDischargeRate"))
+        assert _body(rate_call) == {"dischargeRate": 3000}
+
+    @responses.activate
+    async def test_clear_discharge_slot_resets_to_eco_and_disables_schedule(self):
+        for path in ("/setDischargeSlot", "/setDischargeSlot1", "/enableDischargeSchedule", "/setBatteryMode"):
+            responses.add(responses.POST, f"{GIVTCP_URL}{path}", json={"result": "ok"})
+
+        ok = await optimiser.set_inverter_discharge_slot(None, None)
+        assert ok is True
+
+        paths = [c.request.url.replace(GIVTCP_URL, "") for c in responses.calls]
+        assert "/enableDischargeSchedule" in paths
+        assert "/setBatteryMode" in paths
+
+        mode_call = next(c for c in responses.calls if c.request.url.endswith("/setBatteryMode"))
+        assert _body(mode_call) == {"mode": "Eco"}
+
+        sched_call = next(c for c in responses.calls if c.request.url.endswith("/enableDischargeSchedule"))
+        assert _body(sched_call) == {"state": "disable"}
+

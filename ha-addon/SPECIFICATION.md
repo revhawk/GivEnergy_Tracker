@@ -1,6 +1,6 @@
 # Technical Specification & Architecture — GivEnergy Tariff Optimiser
 
-**Version:** 1.0.24.3  
+**Version:** 1.0.24.4  
 **Target Hardware:** GivEnergy Inverters (Gen 1, Gen 2, Gen 3, All-in-One)  
 **Target Platform:** Home Assistant Add-on Container (Linux ARM64 / AMD64)  
 
@@ -384,6 +384,6 @@ Test results are saved in `test-results/contracts.xml` and output to standard lo
      - `✓ Axle Energy API connected successfully — Self-Dispatch VPP ENABLED (Export limit: 3000W).`
      - Displays scheduled event start/end times or confirms no events currently scheduled.
   3. **Add-on Configuration UI Options**: Add `enable_axle_dispatch: bool`, `axle_api_token: password`, and `axle_export_power_w: int` to `config.yaml` options and schema, allowing zero-YAML setup directly from Home Assistant's UI.
-  4. **Simulation & Inverter Dispatch**: Integrate event detection into `simulation.py`. When an export event is scheduled, prioritize pre-event battery charging to 100%, and force export to the grid at configured discharge limit (default 3,000 W) during the event window.
-- **Consequences:** Users can monetize their battery via Axle Energy VPP in Self-Dispatch mode with zero conflict between cloud commands and GivTCP.
+  4. **Simulation & Inverter Dispatch**: Integrate event detection into `simulation.py` and `givtcp.py`. When an export event is scheduled, prioritize pre-event battery charging to 100%, and automatically program GivTCP discharge slots (`/setDischargeSlot`, `/setBatteryMode` mode="Timed Export", `/setDischargeRate`, and `/enableDischargeSchedule`) during the event window. Automatically clear discharge slots and restore Eco mode when the event concludes.
+- **Consequences:** Users can monetize their battery via Axle Energy VPP in Self-Dispatch mode with zero manual app toggling and zero conflict between cloud commands and GivTCP.
 

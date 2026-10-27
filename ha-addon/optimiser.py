@@ -110,6 +110,7 @@ from givtcp import (
     get_inverter_telemetry,
     get_inverter_soc,
     set_inverter_charge_slots,
+    set_inverter_discharge_slot,
     HAS_MODBUS,
 )
 
@@ -279,12 +280,14 @@ async def main():
                 except Exception as e:
                     logging.error(f"Audit failed: {e}", exc_info=True)
 
-            # 2. Daily plan — fire if startup, OR we've never planned, OR calendar day has changed.
+            # 2. Daily plan — fire if startup, OR scheduled 17:00 daily run, OR calendar day changed.
             last_plan_date = state.get('last_plan_date')
+            last_daily_plan_date = state.get('last_daily_plan_date')
             need_first_plan = last_plan_date is None
             need_new_day_plan = (last_plan_date != today_str)
+            need_scheduled_plan = (now_local.hour >= plan_hour and last_daily_plan_date != today_str)
 
-            if is_startup or need_first_plan or need_new_day_plan:
+            if is_startup or need_first_plan or need_new_day_plan or need_scheduled_plan:
                 if run_once:
                     logging.info("===== PLANNING RUN (RUN_ONCE) =====")
                 else:
@@ -292,6 +295,8 @@ async def main():
                         reason = "add-on startup"
                     elif need_first_plan:
                         reason = "first plan since startup"
+                    elif need_scheduled_plan:
+                        reason = f"scheduled at {plan_hour:02d}:00"
                     else:
                         reason = "new calendar day detected"
                     logging.info(f"===== DAILY PLANNING RUN ({reason}) =====")
@@ -302,6 +307,8 @@ async def main():
                     state['last_plan'] = dict(_last_plan)
                     state['last_plan_at'] = _last_plan.get('at')
                     state['last_plan_date'] = today_str
+                    if now_local.hour >= plan_hour:
+                        state['last_daily_plan_date'] = today_str
                     save_state(state)
                 is_startup = False
             else:

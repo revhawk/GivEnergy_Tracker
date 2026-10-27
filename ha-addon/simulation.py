@@ -114,6 +114,17 @@ async def run_light_monitor():
         else:
             logging.info(f"⏰ [{now_time_str}] Battery SoC: {realtime_soc}%  (no active plan slot found for drift comparison)")
 
+        # Check if an active Axle event has concluded and clear discharge slot
+        last_axle_end_str = cur_state.get('active_axle_event_end')
+        if last_axle_end_str:
+            last_axle_end = parse_iso_fn(last_axle_end_str)
+            if now_utc >= last_axle_end:
+                set_discharge_fn = getattr(opt, 'set_inverter_discharge_slot', givtcp.set_inverter_discharge_slot)
+                logging.info("Axle VPP Export Event concluded — resetting inverter to Eco mode.")
+                await set_discharge_fn(None, None)
+                cur_state.pop('active_axle_event_end', None)
+                save_state_fn(cur_state)
+
         return False
     except Exception as e:
         logging.warning(f"Monitor read failed: {e}")
@@ -387,6 +398,7 @@ async def run_optimization():
     chatgpt_select_fn = getattr(opt, 'chatgpt_select_candidate', llm.chatgpt_select_candidate)
     record_plan_fn = getattr(opt, '_record_plan', state._record_plan)
     set_slots_fn = getattr(opt, 'set_inverter_charge_slots', givtcp.set_inverter_charge_slots)
+    set_discharge_fn = getattr(opt, 'set_inverter_discharge_slot', givtcp.set_inverter_discharge_slot)
     load_state_fn = getattr(opt, 'load_state', state.load_state)
     save_state_fn = getattr(opt, 'save_state', state.save_state)
 
@@ -718,6 +730,26 @@ async def run_optimization():
         logging.info("Zero grid charge programmed (relying on solar PV and existing battery).")
         action = "no_charge"
         await set_slots_fn(None, None)
+
+    # 7b. Coordinate Axle Self-Dispatch VPP Discharge Slot
+    if axle_event and axle_event.get('start') and axle_event.get('end') and axle_event.get('import_export') == 'export':
+        if axle_event['end'] > now_utc and axle_event['start'] < now_utc + timedelta(hours=24):
+            a_start = axle_event['start'].astimezone()
+            a_end = axle_event['end'].astimezone()
+            rate_w = getattr(config, 'AXLE_EXPORT_POWER_W', 3000) if config else 3000
+            reserve_floor = int(getattr(config, 'BATTERY_RESERVE_PERCENT', 10) if config else 10)
+            await set_discharge_fn(a_start, a_end, discharge_target=reserve_floor, discharge_rate_w=rate_w)
+            cur_state = load_state_fn()
+            cur_state['active_axle_event_end'] = axle_event['end'].isoformat()
+            save_state_fn(cur_state)
+        else:
+            await set_discharge_fn(None, None)
+    else:
+        cur_state = load_state_fn()
+        if cur_state.get('active_axle_event_end'):
+            await set_discharge_fn(None, None)
+            cur_state.pop('active_axle_event_end', None)
+            save_state_fn(cur_state)
 
     # Calculate and persist planned SoC trajectory accounting for applied charge blocks
     # (Prevents light monitor false drift triggers that otherwise re-plan in a loop)

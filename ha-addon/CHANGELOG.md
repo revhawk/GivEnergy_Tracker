@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.24.4] - 2026-10-27
+
+### Added
+- **Automated GivTCP Axle Self-Dispatch Inverter Export Programming**:
+  - Automatically programs GivTCP discharge slot 1 (`/setDischargeSlot`), discharge rate (`axle_export_power_w`, default 3,000 W), discharge target (10% safety reserve), and enables `Timed Export` mode whenever an Axle Self-Dispatch flexibility event is active or scheduled.
+  - Automatically clears discharge slots and restores standard `Eco` mode when the flexibility window concludes.
+  - Completely eliminates the need to manually configure discharge timeslots in the GivEnergy app during Self-Dispatch events.
+- **Reliable 17:00 Daily Planning Trigger**:
+  - Fixed daily planning run trigger in `optimiser.py` so that the scheduled 17:00 planning run executes reliably even if the add-on was restarted or planned earlier in the day.
+- **Discharge Slot Test Suite Expansion**:
+  - Added unit and integration tests in `test_write_slots.py` and `test_optimization.py` verifying automated discharge slot programming, Timed Export mode activation, and Eco mode restoration.
+
 ## [1.0.24.3] - 2026-10-27
 
 ### Added

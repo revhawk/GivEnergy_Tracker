@@ -438,3 +438,101 @@ async def set_inverter_charge_slots(slots_or_start, end_time=None, charge_target
         except Exception:
             pass
         return False
+
+
+async def set_inverter_discharge_slot(start_time=None, end_time=None, discharge_target=10, discharge_rate_w=None):
+    """Write or clear discharge slot on Inverter via GivTCP REST API for Axle VPP export events.
+    
+    When an Axle export window is active/upcoming:
+      - Sets discharge slot 1 (start to finish)
+      - Sets discharge target % (default 10% reserve floor)
+      - Sets discharge power rate (default 3,000 W)
+      - Enables discharge schedule and sets battery mode to 'Timed Export'
+      
+    When clearing (start_time is None):
+      - Clears discharge slot 1 (00:00 - 00:00)
+      - Disables discharge schedule and restores battery mode to 'Eco'
+    """
+    givtcp_url = getattr(config, 'GIVTCP_URL', None)
+    givtcp_timeout = float(getattr(config, 'GIVTCP_TIMEOUT', 25.0) if config else 25.0)
+    rate_w = discharge_rate_w or getattr(config, 'AXLE_EXPORT_POWER_W', 3000) if config else 3000
+
+    if not givtcp_url:
+        logging.warning("GivTCP: GIVTCP_URL not configured. Cannot set discharge slot.")
+        return False
+
+    base_url = givtcp_url.rstrip('/')
+    try:
+        if start_time is not None and end_time is not None:
+            s_str = start_time.strftime("%H:%M") if hasattr(start_time, 'strftime') else str(start_time)
+            e_str = end_time.strftime("%H:%M") if hasattr(end_time, 'strftime') else str(end_time)
+            target = int(discharge_target)
+
+            logging.info(f"GivTCP: Programming Axle Export Discharge Slot: {s_str} to {e_str} (Target: {target}%, Rate: {rate_w}W)...")
+
+            # 1. Write timeslot via /setDischargeSlot (GivTCP v3) or /setDischargeSlot1 (GivTCP v2)
+            slot_written = False
+            try:
+                r = requests.post(
+                    f"{base_url}/setDischargeSlot",
+                    json={"start": s_str, "finish": e_str, "slot": "1", "dischargeToPercent": target},
+                    timeout=givtcp_timeout
+                )
+                r.raise_for_status()
+                slot_written = True
+            except Exception as e:
+                try:
+                    r2 = requests.post(
+                        f"{base_url}/setDischargeSlot1",
+                        json={"start": s_str, "finish": e_str, "dischargeToPercent": target},
+                        timeout=givtcp_timeout
+                    )
+                    r2.raise_for_status()
+                    slot_written = True
+                except Exception:
+                    logging.warning(f"GivTCP: Could not set discharge slot ({e})")
+
+            # 2. Apply discharge control parameters & Timed Export mode
+            for _path, _payload in [
+                ("/setDischargeTarget",      {"dischargeToPercent": target}),
+                ("/setDischargeRate",        {"dischargeRate": int(rate_w)}),
+                ("/enableDischargeTarget",   {"state": "enable"}),
+                ("/enableDischargeSchedule", {"state": "enable"}),
+                ("/setBatteryMode",          {"mode": "Timed Export"}),
+            ]:
+                try:
+                    time.sleep(0.2)
+                    _r = requests.post(f"{base_url}{_path}", json=_payload, timeout=givtcp_timeout)
+                except Exception as _e:
+                    logging.debug(f"GivTCP: {_path} ({_e})")
+
+            logging.info(f"GivTCP: Axle Export Discharge Slot ({s_str}-{e_str}) applied successfully in Timed Export mode.")
+            return True
+        else:
+            logging.info("GivTCP: Disabling discharge slots and resetting to Eco mode...")
+            for slot_num in range(1, 3):
+                try:
+                    time.sleep(0.1)
+                    requests.post(
+                        f"{base_url}/setDischargeSlot",
+                        json={"start": "00:00", "finish": "00:00", "slot": str(slot_num)},
+                        timeout=givtcp_timeout
+                    )
+                except Exception:
+                    pass
+            for _path, _payload in [
+                ("/setDischargeSlot1",       {"start": "00:00", "finish": "00:00"}),
+                ("/enableDischargeSchedule", {"state": "disable"}),
+                ("/setBatteryMode",          {"mode": "Eco"}),
+            ]:
+                try:
+                    time.sleep(0.1)
+                    requests.post(f"{base_url}{_path}", json=_payload, timeout=givtcp_timeout)
+                except Exception:
+                    pass
+            logging.info("GivTCP: Discharge slots cleared; Eco mode restored.")
+            return True
+    except Exception as e:
+        logging.error(f"GivTCP discharge slot write failed: {e}")
+        return False
+
