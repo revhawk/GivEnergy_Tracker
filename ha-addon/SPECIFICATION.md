@@ -1,6 +1,6 @@
 # Technical Specification & Architecture — GivEnergy Tariff Optimiser
 
-**Version:** 1.0.24.5  
+**Version:** 1.0.24.6  
 **Target Hardware:** GivEnergy Inverters (Gen 1, Gen 2, Gen 3, All-in-One)  
 **Target Platform:** Home Assistant Add-on Container (Linux ARM64 / AMD64)  
 
@@ -276,9 +276,9 @@ Test results are saved in `test-results/contracts.xml` and output to standard lo
 
 ### ADR 0004: Octoplus Session Naming Standard (Power Down / Power Up)
 - **Status:** Accepted
-- **Context:** HomeAssistant-OctopusEnergy integration renamed `saving_sessions` to `power_down_sessions` and `free_electricity` to `power_up_sessions` under ADR 0004.
-- **Decision:** Support both new ADR 0004 entity names (`sensor.octopus_energy_power_down_sessions`) and legacy fallbacks until January 2027.
-- **Consequences:** Instant compatibility across all Home Assistant installations without breaking pre-ADR 0004 setups.
+- **Context:** HomeAssistant-OctopusEnergy integration renamed `saving_sessions` to `power_down_sessions` and `free_electricity` to `power_up_sessions` under ADR 0004. Upstream campaign windows (e.g. 11:00–15:00) often broadcast multi-hour blocks where customers only book single 1-hour slots.
+- **Decision:** Support both new ADR 0004 entity names (`sensor.octopus_energy_power_down_sessions`) and legacy fallbacks. Match `account.joinedEvents` exact timestamps (`startAt`, `endAt`) for booked slots, exclude unconfirmed multi-hour broadcast windows (> 2h), and preserve underlying API tariff rates in `s['tariff_price']` without mutating raw rates to 0.0p in simulation tables.
+- **Consequences:** Instant compatibility across all Home Assistant installations, protection against premature unconfirmed daytime charging, and full price transparency in simulation logs.
 
 ---
 

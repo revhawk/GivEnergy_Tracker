@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.24.6] - 2026-11-01
+
+### Fixed
+- **Actual API Tariff Rate Preservation in Base Simulation**:
+  - Removed in-place mutation of `s['price'] = 0.0` for promotional Power Up / Free Electricity slots in `ha-addon/simulation.py`. Raw Octopus Agile market rates are preserved in `s['tariff_price']` and `s['price']`.
+  - Updated 24-Hour Base Simulation log table to display true API prices alongside promotional tags (e.g. `38.2p [FREE]`, `[DOWN]`, `[VPP]`), ensuring total transparency into underlying energy costs.
+- **Precise Octoplus Joined Slot Matching (`account.joinedEvents`)**:
+  - Updated GraphQL parsing in `ha-addon/octoplus.py` to match the customer's specific booked `startAt` and `endAt` from `account.joinedEvents` rather than the parent campaign container (e.g. adopting 14:00–15:00 instead of 11:00–15:00).
+  - Added temporal guard in `is_power_up_slot_dt`: unconfirmed multi-hour campaign windows (> 2 hours) without `is_joined: True` are excluded to prevent premature daytime charging at peak rates.
+  - Prioritized explicit `POWER_UP_WINDOWS` from `config.py` as an immediate override filter over upstream broadcast entities.
+
 ## [1.0.24.5] - 2026-10-27
 
 ### Fixed

@@ -561,6 +561,46 @@ def test_build_plan_candidates_with_power_up_session():
     assert opt1['target_soc'] == 100
     assert "Power Up" in opt1['name']
     assert opt1['avg_price'] == 0.0
+    assert opt1['estimated_cost_pence'] == 0.0
+
+
+def test_build_plan_candidates_preserves_raw_tariff_rate_for_power_up():
+    """Verify that Octopus Octoplus Power Up sessions evaluate avg_price=0.0 and cost=0.0
+    while leaving raw Agile tariff prices intact on the slots.
+    """
+    from simulation import build_plan_candidates
+    now = datetime(2026, 11, 1, 12, 0, tzinfo=timezone.utc)
+    slots = []
+    for i in range(24):
+        s_time = now + timedelta(minutes=30 * i)
+        is_pup = (14 <= s_time.hour < 15)
+        raw_price = 38.5  # Real Agile rate during promotional slot
+        slots.append({
+            'start': s_time,
+            'end': s_time + timedelta(minutes=30),
+            'price': raw_price,
+            'tariff_price': raw_price,
+            'is_power_up': is_pup
+        })
+
+    candidates = build_plan_candidates(
+        day_classification="LOW_SOLAR_GRID_PRECHARGE",
+        current_soc=20.0,
+        battery_capacity=9.5,
+        upcoming_slots=slots,
+        total_solar_kwh=3.0,
+        solar_comparison={},
+        export_rate=12.0,
+        total_import_kwh=5.0
+    )
+
+    opt1 = candidates[0]
+    assert opt1['strategy'] == "power_up"
+    assert opt1['avg_price'] == 0.0
+    assert opt1['estimated_cost_pence'] == 0.0
+    # Crucially verify raw tariff rate was NOT mutated to 0.0
+    pup_slots = [s for s in slots if s.get('is_power_up')]
+    assert all(s['price'] == 38.5 for s in pup_slots)
 
 
 def test_evening_overnight_planning_includes_2200_and_2230_slots():

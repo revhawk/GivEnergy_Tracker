@@ -264,14 +264,24 @@ def fetch_live_octoplus_sessions(api_key=None, account_id=None, lookback_hours=2
         saving_data = data.get('data', {}).get('savingSessions', {})
         events = saving_data.get('events', [])
         joined_events = saving_data.get('account', {}).get('joinedEvents', []) or []
-        joined_ids = {j.get('eventId') for j in joined_events if j.get('eventId')}
+        joined_ids = {str(j.get('eventId')) for j in joined_events if j.get('eventId') is not None}
+        joined_map = {str(j.get('eventId')): j for j in joined_events if j.get('eventId') is not None}
 
         auto_join = os.environ.get('AUTO_JOIN_SAVING_SESSIONS', 'true').lower() in ('true', '1', 'yes')
         cutoff_start = now - timedelta(hours=lookback_hours)
         parsed_sessions = []
         for ev in events:
             ev_copy = dict(ev)
-            ev_copy['is_joined'] = ev.get('id') in joined_ids
+            ev_id_str = str(ev.get('id', ''))
+            ev_copy['is_joined'] = ev_id_str in joined_ids
+            # If the user has joined this event and joinedEvents provides specific startAt/endAt,
+            # use the user's specific joined slot instead of the broad campaign container!
+            if ev_copy['is_joined'] and ev_id_str in joined_map:
+                je = joined_map[ev_id_str]
+                if je.get('startAt'):
+                    ev_copy['startAt'] = je['startAt']
+                if je.get('endAt'):
+                    ev_copy['endAt'] = je['endAt']
             parsed = parse_octoplus_session(ev_copy)
             if parsed and parsed['end'] and parsed['end'] >= cutoff_start:
                 if auto_join and parsed['session_type'] == 'power_down' and not ev_copy['is_joined'] and parsed['end'] > now:
@@ -472,20 +482,11 @@ def is_power_down_slot_dt(slot_start, slot_end, live_sessions=None):
 def is_power_up_slot_dt(slot_start, slot_end, live_sessions=None):
     """Check if a datetime slot overlaps with any active Octopus Octoplus Power Up
     (Free Electricity / Weekend Happy Hour) session.
-    Checks live GraphQL/HA sessions first, then falls back to static config.POWER_UP_WINDOWS.
+    Explicit config.POWER_UP_WINDOWS always take precedence if configured.
+    Otherwise, matches confirmed joined sessions, or single-slot live sessions (<= 2h).
+    Multi-hour unconfirmed broadcast windows (> 2h) are excluded to prevent premature charging.
     """
-    sessions = live_sessions if live_sessions is not None else fetch_live_octoplus_sessions()
-    for s in sessions:
-        if s.get('session_type') == 'power_up':
-            s_start = s['start']
-            s_end = s['end']
-            if slot_start < s_end and slot_end > s_start:
-                return True
-
-    # Fallback to static windows in config.py only if no live sessions were found
-    if sessions:
-        return False
-
+    # 1. Explicit config windows always take precedence if defined by user
     windows = getattr(config, 'POWER_UP_WINDOWS', []) if config else []
     if windows:
         local_start = slot_start.astimezone()
@@ -506,4 +507,22 @@ def is_power_up_slot_dt(slot_start, slot_end, live_sessions=None):
                     return True
             except Exception:
                 pass
+        return False
+
+    # 2. Check live sessions (GraphQL / HA entities)
+    sessions = live_sessions if live_sessions is not None else fetch_live_octoplus_sessions()
+    for s in sessions:
+        if s.get('session_type') == 'power_up':
+            s_start = s['start']
+            s_end = s['end']
+            duration_hours = (s_end - s_start).total_seconds() / 3600.0
+
+            # Guard against unconfirmed multi-hour promotional campaign windows:
+            # If duration > 2 hours and session is not confirmed as joined, do not treat whole block as free!
+            if duration_hours > 2.0 and not s.get('is_joined'):
+                continue
+
+            if slot_start < s_end and slot_end > s_start:
+                return True
+
     return False

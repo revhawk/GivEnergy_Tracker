@@ -139,16 +139,18 @@ def _merge_slot_blocks(slot_list):
     merged = []
     c_start = sorted_slots[0]['start']
     c_end = sorted_slots[0]['end']
-    c_prices = [sorted_slots[0]['price']]
+    p0 = 0.0 if sorted_slots[0].get('is_power_up') else sorted_slots[0]['price']
+    c_prices = [p0]
     for nxt in sorted_slots[1:]:
+        pnxt = 0.0 if nxt.get('is_power_up') else nxt['price']
         if nxt['start'] == c_end:
             c_end = nxt['end']
-            c_prices.append(nxt['price'])
+            c_prices.append(pnxt)
         else:
             merged.append({'start': c_start, 'end': c_end, 'avg_price': sum(c_prices) / len(c_prices)})
             c_start = nxt['start']
             c_end = nxt['end']
-            c_prices = [nxt['price']]
+            c_prices = [pnxt]
     merged.append({'start': c_start, 'end': c_end, 'avg_price': sum(c_prices) / len(c_prices)})
     return merged
 
@@ -284,7 +286,10 @@ def build_plan_candidates(day_classification, current_soc, battery_capacity,
         if opt1_strategy in ("negative_rates", "power_up", "arbitrage"):
             sorted_cheap = sorted(opt1_slots_raw, key=lambda s: s['start'])
             blocks_opt1 = _merge_slot_blocks(sorted_cheap)
-            avg_price_opt1 = sum(s['price'] for s in opt1_slots_raw) / len(opt1_slots_raw)
+            if opt1_strategy == "power_up":
+                avg_price_opt1 = 0.0
+            else:
+                avg_price_opt1 = sum(s['price'] for s in opt1_slots_raw) / len(opt1_slots_raw)
         else:
             sorted_cheapest = sorted(opt1_slots_raw, key=lambda s: s['price'])[:slots_needed_opt1]
             sorted_chronological = sorted(sorted_cheapest, key=lambda s: s['start'])
@@ -307,7 +312,7 @@ def build_plan_candidates(day_classification, current_soc, battery_capacity,
         'target_soc': target_soc_opt1,
         'kwh': round(kwh_opt1, 2),
         'avg_price': round(avg_price_opt1, 2),
-        'estimated_cost_pence': round(kwh_opt1 * avg_price_opt1, 1),
+        'estimated_cost_pence': 0.0 if opt1_strategy == "power_up" else round(kwh_opt1 * avg_price_opt1, 1),
         'headroom_kwh': round(headroom_opt1, 2),
         'slots': slots_opt1,
         'slots_desc': desc_opt1,
@@ -459,8 +464,8 @@ async def run_optimization():
 
         # Apply Power Up and Power Down overrides to upcoming slots
         for s in upcoming_slots:
+            s['tariff_price'] = s['price']
             if octoplus.is_power_up_slot_dt(s['start'], s['end'], live_sessions):
-                s['price'] = 0.0
                 s['is_power_up'] = True
             if octoplus.is_power_down_slot_dt(s['start'], s['end'], live_sessions):
                 s['is_power_down'] = True
@@ -592,11 +597,19 @@ async def run_optimization():
             })
             
     logging.info("--- 24-Hour Base Simulation (No Grid Charge) ---")
-    logging.info(f"{'Date/Time':<10} | {'Price':<6} | {'Solar':<6} | {'Load':<6} | {'Battery':<7} | {'iBoost':<6} | {'Export':<6} | {'Import':<6}")
-    logging.info("-" * 75)
+    logging.info(f"{'Date/Time':<10} | {'Price':<12} | {'Solar':<6} | {'Load':<6} | {'Battery':<7} | {'iBoost':<6} | {'Export':<6} | {'Import':<6}")
+    logging.info("-" * 81)
     for imp in imports:
         time_str = imp['slot']['start'].astimezone().strftime('%m-%d %H:%M')
-        price = f"{imp['slot']['price']:.1f}p"
+        raw_price = imp['slot'].get('tariff_price', imp['slot']['price'])
+        if imp['slot'].get('is_power_up'):
+            price_str = f"{raw_price:.1f}p [FREE]"
+        elif imp['slot'].get('is_power_down'):
+            price_str = f"{raw_price:.1f}p [DOWN]"
+        elif imp['slot'].get('is_axle_export'):
+            price_str = f"{raw_price:.1f}p [VPP]"
+        else:
+            price_str = f"{raw_price:.1f}p"
         solar_str = f"{imp['solar']:.2f}"
         load_str = f"{imp['load']:.2f}"
         batt = f"{imp['batt_soc']:.0f}%"
@@ -604,7 +617,7 @@ async def run_optimization():
         export = f"{imp['export']:.2f}" if imp['export'] > 0 else "-"
         imp_val = f"{imp['import_needed']:.2f}" if imp['import_needed'] > 0 else "-"
         
-        logging.info(f"{time_str:<10} | {price:<6} | {solar_str:<6} | {load_str:<6} | {batt:<7} | {iboost:<6} | {export:<6} | {imp_val:<6}")
+        logging.info(f"{time_str:<10} | {price_str:<12} | {solar_str:<6} | {load_str:<6} | {batt:<7} | {iboost:<6} | {export:<6} | {imp_val:<6}")
         
     total_import_kwh = sum(i['kwh'] for i in import_needed_slots)
     total_iboost_kwh = sum(i['iboost'] for i in imports)

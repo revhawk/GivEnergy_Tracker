@@ -446,4 +446,70 @@ class TestOctoplusLiveGraphQL:
         assert "Home Assistant service" in msg
         assert mock_post.called
 
+    def test_is_power_up_slot_dt_guards_against_unconfirmed_multihour_campaign(self):
+        import octoplus
+        now = datetime.now(timezone.utc)
+        multihour_session = [{
+            "session_type": "power_up",
+            "start": now,
+            "end": now + timedelta(hours=4),
+            "is_joined": False
+        }]
+        slot_start = now + timedelta(minutes=30)
+        slot_end = now + timedelta(minutes=60)
+        # Should guard against unconfirmed multi-hour campaign window
+        assert octoplus.is_power_up_slot_dt(slot_start, slot_end, live_sessions=multihour_session) is False
+
+    def test_is_power_up_slot_dt_accepts_joined_session(self):
+        import octoplus
+        now = datetime.now(timezone.utc)
+        joined_session = [{
+            "session_type": "power_up",
+            "start": now + timedelta(hours=2),
+            "end": now + timedelta(hours=3),
+            "is_joined": True
+        }]
+        slot_start = now + timedelta(hours=2, minutes=15)
+        slot_end = now + timedelta(hours=2, minutes=45)
+        assert octoplus.is_power_up_slot_dt(slot_start, slot_end, live_sessions=joined_session) is True
+
+    @patch('octoplus.requests.post')
+    def test_fetch_live_octoplus_sessions_uses_joined_events_exact_times(self, mock_post, monkeypatch):
+        import octoplus
+        monkeypatch.setattr(octoplus, '_octoplus_sessions_cache', {"sessions": [], "fetched_at": None})
+        monkeypatch.setattr(octoplus, 'obtain_kraken_token', lambda *a, **k: "mock-token")
+        monkeypatch.setattr(octoplus, 'fetch_ha_octoplus_sessions', lambda: [])
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {
+            "data": {
+                "savingSessions": {
+                    "events": [{
+                        "id": "CAMPAIGN-1",
+                        "code": "HAPPY_HOUR_CAMPAIGN",
+                        "startAt": "2026-11-01T11:00:00Z",
+                        "endAt": "2026-11-01T15:00:00Z",
+                        "eventType": "WEEKEND_HAPPY_HOUR"
+                    }],
+                    "account": {
+                        "joinedEvents": [{
+                            "eventId": "CAMPAIGN-1",
+                            "startAt": "2026-11-01T14:00:00Z",
+                            "endAt": "2026-11-01T15:00:00Z"
+                        }]
+                    }
+                }
+            }
+        }
+        mock_post.return_value = mock_resp
+
+        sessions = octoplus.fetch_live_octoplus_sessions(api_key="key", account_id="acc-123")
+        assert len(sessions) == 1
+        s = sessions[0]
+        assert s["is_joined"] is True
+        assert s["start"] == datetime(2026, 11, 1, 14, 0, tzinfo=timezone.utc)
+        assert s["end"] == datetime(2026, 11, 1, 15, 0, tzinfo=timezone.utc)
+
+
 
