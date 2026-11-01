@@ -14,9 +14,8 @@ try:
     from givenergy_modbus.model.plant import TimeSlot
     HAS_MODBUS = True
 except ImportError as _e:
-    logging.warning(
-        f"Modbus fallback DISABLED — could not import from givenergy_modbus: {_e}. "
-        f"GivTCP will be the ONLY write path. If GivTCP fails, plans will not be applied."
+    logging.debug(
+        f"Modbus fallback disabled — givenergy_modbus not loaded ({_e}). Operating in pure GivTCP REST mode."
     )
     HAS_MODBUS = False
 
