@@ -159,6 +159,19 @@ def join_octoplus_saving_session(account_id=None, event_code=None, event_id=None
     return False, "Could not enroll into session"
 
 
+# ── Re-exports from rewards module (backwards compatibility) ───────────────────
+try:
+    from rewards import (
+        spin_wheel_of_fortune,
+        get_available_wheel_spins,
+        auto_spin_available_wheels,
+        check_octoplus_scratchcard_status,
+        send_ha_notification,
+    )
+except ImportError:
+    pass
+
+
 def fetch_ha_octoplus_sensor(entity_id):
     """Fetch Octoplus entity state from Home Assistant REST API."""
     if not SUPERVISOR_TOKEN:

@@ -41,6 +41,10 @@ OCTOPLUS_POWER_UP_ENTITY = "sensor.octopus_energy_power_up_sessions"
 OCTOPLUS_SAVING_SESSIONS_FALLBACK_ENTITY = "sensor.octopus_energy_saving_sessions"
 OCTOPLUS_FREE_ELECTRICITY_FALLBACK_ENTITY = "sensor.octopus_energy_free_electricity_sessions"
 
+# Octopus Gamification & Rewards Automation (Wheel of Fortune & Monday Scratchcard)
+ENABLE_WHEEL_SPINS = True               # Automatically spin available monthly/weekly wheels
+ENABLE_SCRATCHCARD_ALERTS = True        # Alert via Home Assistant notification when Monday scratchcard is ready
+
 # Axle Energy Virtual Power Plant (ADR 0015: Self-Dispatch Mode)
 ENABLE_AXLE_DISPATCH = False           # Set True to enable automated export during Axle events
 AXLE_API_TOKEN = ""                    # Token from Axle Account Settings -> Home Assistant

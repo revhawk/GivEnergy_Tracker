@@ -1,6 +1,6 @@
 # Technical Specification & Architecture — GivEnergy Tariff Optimiser
 
-**Version:** 1.0.24.6  
+**Version:** 1.0.24.8  
 **Target Hardware:** GivEnergy Inverters (Gen 1, Gen 2, Gen 3, All-in-One)  
 **Target Platform:** Home Assistant Add-on Container (Linux ARM64 / AMD64)  
 
@@ -24,25 +24,33 @@ graph TD
         FSolar[Forecast.Solar API]
         OMeteo[Open-Meteo Solar API]
         OpenAI[OpenAI ChatGPT API]
+        Axle_Cloud[Axle Energy VPP Cloud]
     end
 
     subgraph GivEnergy Tariff Optimiser Add-on
-        Version[version.py - v1.0.24.3]
-        Config[config.py - Settings]
-        Optimiser[optimiser.py - Main Loop & Engine]
-        GivTCP_Mod[givtcp.py - GivTCP REST v2/v3]
-        Tariff_Mod[tariffs.py - Tariff Fetcher]
-        Solar_Mod[solar.py - Dual Solar Fetcher]
+        Version[version.py - v1.0.24.8]
+        Config[config.py - Settings & Options]
+        Optimiser[optimiser.py - Daemon & Scheduling Loop]
+        SimEngine[simulation.py - 24h Forward Physical Simulation]
+        Tariff_Mod[tariffs.py - Agile & Outgoing Fetcher]
+        Solar_Mod[solar.py - Dual Ensemble Solar Manager]
         Meteo_Mod[solar_openmeteo.py - Shadow Solar]
-        Profiler_Mod[profiler.py - Load & Power Down]
-        LLM_Mod[llm.py - ChatGPT Veto & Audit]
-        Hive_Mod[hive.py - Decoupled Hive Controller v1.0.21 Spec]
+        Profiler_Mod[profiler.py - Load & Session Profiler]
+        GivTCP_Mod[givtcp.py - GivTCP REST v2/v3 & Modbus]
+        Octoplus_Mod[octoplus.py - Octoplus Flexibility Sessions]
+        Axle_Mod[axle.py - Axle Self-Dispatch VPP]
+        Rewards_Mod[rewards.py - Wheel of Fortune & Scratchcard]
+        Appliance_Mod[appliance.py - Washing Machine Telemetry]
+        State_Mod[state.py - NAS Persistence & Daily Audits]
+        LLM_Mod[llm.py - ChatGPT Veto & Candidate Selection]
+        Hive_Mod[hive.py - Decoupled Hive Controller]
     end
 
-    subgraph Local Network
+    subgraph Local Network & Home Assistant
         GivTCP[GivTCP Service :6345]
         Inverter[GivEnergy Inverter]
         HA_API[Home Assistant Core REST API]
+        NAS_Share[NAS Storage /share/nas_logs]
         Hive[Hive Hot Water Controller]
     end
 
@@ -52,16 +60,26 @@ graph TD
     OMeteo --> Meteo_Mod
     Meteo_Mod --> Solar_Mod
 
-    Tariff_Mod --> Optimiser
-    Solar_Mod --> Optimiser
-    Profiler_Mod --> Optimiser
-    GivTCP_Mod <--> GivTCP
-    GivTCP <--> Inverter
+    Tariff_Mod --> SimEngine
+    Solar_Mod --> SimEngine
+    Profiler_Mod --> SimEngine
+    Octoplus_Mod --> SimEngine
+    Axle_Mod --> SimEngine
 
+    SimEngine --> Optimiser
     Optimiser --> LLM_Mod
     LLM_Mod <--> OpenAI
     Optimiser --> GivTCP_Mod
-    Optimiser -. v1.0.21 .-> Hive_Mod
+    GivTCP_Mod <--> GivTCP
+    GivTCP <--> Inverter
+
+    Optimiser --> State_Mod
+    State_Mod --> NAS_Share
+
+    Optimiser --> Rewards_Mod
+    Rewards_Mod <--> HA_API
+
+    Optimiser -.-> Hive_Mod
     Hive_Mod <--> HA_API
     HA_API <--> Hive
 ```
@@ -386,4 +404,23 @@ Test results are saved in `test-results/contracts.xml` and output to standard lo
   3. **Add-on Configuration UI Options**: Add `enable_axle_dispatch: bool`, `axle_api_token: password`, and `axle_export_power_w: int` to `config.yaml` options and schema, allowing zero-YAML setup directly from Home Assistant's UI.
   4. **Simulation & Inverter Dispatch**: Integrate event detection into `simulation.py` and `givtcp.py`. When an export event is scheduled, prioritize pre-event battery charging to 100%, and automatically program GivTCP discharge slots (`/setDischargeSlot`, `/setBatteryMode` mode="Timed Export", `/setDischargeRate`, and `/enableDischargeSchedule`) during the event window. Automatically clear discharge slots and restore Eco mode when the event concludes.
 - **Consequences:** Users can monetize their battery via Axle Energy VPP in Self-Dispatch mode with zero manual app toggling and zero conflict between cloud commands and GivTCP.
+
+---
+
+## 4. Gamification & Rewards Component Architecture (`rewards.py`)
+
+The `rewards.py` module encapsulates Octopus Energy's loyalty gamification features, separating rewards automation from core physics simulation and tariff dispatching.
+
+### 4.1 Capabilities & Design
+1. **Automated Wheel of Fortune Spinning (`spin_wheel_of_fortune`, `auto_spin_available_wheels`)**:
+   - **Multi-Tier Execution**: Directly queries the Octopus Kraken GraphQL backend mutation (`spinWheelOfFortune`) when account credentials are available, falling back to the Home Assistant Supervisor service `octopus_energy.spin_wheel_of_fortune`.
+   - **Zero-Friction Scheduling**: Reads remaining spin counts from `sensor.octopus_energy_wheel_of_fortune_spins_*` during add-on startup and scheduled planning ticks. If spins are available ($> 0$), executes spins and publishes a Home Assistant persistent notification with winnings.
+2. **Weekly Monday Scratchcard Availability Monitor (`check_octoplus_scratchcard_status`)**:
+   - Continuously inspects `binary_sensor.octoplus_scratchcard_available` (introduced in `HomeAssistant-OctopusEnergy` v19.3.0).
+   - Upon release on Monday mornings, dispatches a persistent notification containing a direct link to the user's dashboard (`https://octopus.energy/dashboard/new/accounts/<account_id>/octoplus`) to scratch and claim points.
+3. **Independent UI Configuration Controls**:
+   - `enable_wheel_spins` (boolean toggle): Enables or disables automated wheel spinning.
+   - `enable_scratchcard_alerts` (boolean toggle): Enables or disables Monday scratchcard notifications.
+
+
 

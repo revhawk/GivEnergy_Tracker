@@ -40,6 +40,8 @@ ENABLE_AXLE_DISPATCH=$(jq --raw-output '.enable_axle_dispatch // false' /data/op
 AXLE_API_TOKEN=$(jq --raw-output '.axle_api_token // ""' /data/options.json)
 AXLE_EXPORT_POWER_W=$(jq --raw-output '.axle_export_power_w // 3000' /data/options.json)
 AUTO_JOIN_SAVING_SESSIONS=$(jq --raw-output '.auto_join_saving_sessions // true' /data/options.json 2>/dev/null || echo "true")
+ENABLE_WHEEL_SPINS=$(jq --raw-output '.enable_wheel_spins // .auto_spin_wheel_of_fortune // true' /data/options.json 2>/dev/null || echo "true")
+ENABLE_SCRATCHCARD_ALERTS=$(jq --raw-output '.enable_scratchcard_alerts // .notify_octoplus_scratchcard // true' /data/options.json 2>/dev/null || echo "true")
 OCTOPUS_API_KEY=$(jq --raw-output '.octopus_api_key // ""' /data/options.json 2>/dev/null || echo "")
 OCTOPUS_ACCOUNT_ID=$(jq --raw-output '.octopus_account_id // ""' /data/options.json 2>/dev/null || echo "")
 
@@ -55,6 +57,8 @@ export ENABLE_AXLE_DISPATCH
 export AXLE_API_TOKEN
 export AXLE_EXPORT_POWER_W
 export AUTO_JOIN_SAVING_SESSIONS
+export ENABLE_WHEEL_SPINS
+export ENABLE_SCRATCHCARD_ALERTS
 export OCTOPUS_API_KEY
 export OCTOPUS_ACCOUNT_ID
 

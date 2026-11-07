@@ -32,7 +32,7 @@ A Home Assistant add-on that automatically schedules your GivEnergy battery to c
 - 🔄 **Dynamic SoC Drift Re-Planning** — periodic 30-minute light monitor tick checks live SoC against planned schedule, triggering immediate re-planning if drift > `15.0%`
 - 🧩 **Flattened Modular Architecture** — clean separation into `givtcp.py`, `tariffs.py`, `solar.py`, `solar_openmeteo.py`, `profiler.py`, and `llm.py`
 - 📋 **Technical Specification & Contract Testing** — formal [`SPECIFICATION.md`](file:///home/reg/Coding/GivEnergy_Tracker/ha-addon/SPECIFICATION.md) and API contract test suite (`tests/test_contracts.py`)
-- 🏷️ **Single-Source Versioning** — `version.py` (`1.0.23.4`) synced with `config.yaml` to ensure zero version drift
+- 🏷️ **Single-Source Versioning** — `version.py` (`1.0.24.8`) synced with `config.yaml` to ensure zero version drift
 - 🏠 **Native Home Assistant add-on** — installs directly from a local repository
 
 ---
@@ -44,19 +44,27 @@ For complete API contracts, component specifications, and Mermaid sequence diagr
 ```
 GivEnergy_Tracker/
 ├── ha-addon/                      ← The Home Assistant add-on package
-│   ├── version.py                 ← Single source of truth for version (__version__ = "1.0.23.4")
+│   ├── version.py                 ← Single source of truth for version (__version__ = "1.0.24.8")
 │   ├── config.yaml                ← Add-on manifest (name, version, options)
 │   ├── Dockerfile                 ← Builds the add-on container (python:3.11-slim)
 │   ├── run.sh                     ← Entrypoint: reads HA options, launches optimiser
 │   ├── config.py                  ← Real credentials & settings
-│   ├── optimiser.py               ← Main optimization orchestrator & simulation loop
+│   ├── optimiser.py               ← Main daemon orchestrator & scheduling loop
+│   ├── simulation.py              ← 24-hour deterministic physical energy balance simulation
 │   ├── givtcp.py                  ← GivTCP REST API v2/v3 & Modbus TCP integration
-│   ├── tariffs.py                 ← Octopus Agile & Outgoing export rates
-│   ├── solar.py                   ← Forecast.Solar API client & parallel comparison manager
+│   ├── tariffs.py                 ← Octopus Agile & Outgoing export rates fetcher
+│   ├── solar.py                   ← Forecast.Solar API client & parallel ensemble manager
 │   ├── solar_openmeteo.py         ← Open-Meteo Solar API client (shadow provider)
-│   ├── profiler.py                ← Dynamic load profiling & Power Down detection
-│   ├── llm.py                     ← Smart ChatGPT veto validator & daily summary report
-│   ├── tracker.py                 ← Lightweight Octopus API connection test
+│   ├── octoplus.py                ← Octoplus Power Down & Power Up session detection & auto-join
+│   ├── axle.py                    ← Axle Energy Virtual Power Plant (VPP) Self-Dispatch client
+│   ├── rewards.py                 ← Wheel of Fortune auto-spins & Monday scratchcard alerts
+│   ├── appliance.py               ← Washing machine & smart plug telemetry tracking
+│   ├── state.py                   ← NAS state persistence & rolling telemetry history
+│   ├── profiler.py                ← Dynamic load profiling & half-hourly history
+│   ├── llm.py                     ← ChatGPT AI candidate selection & daily audit reporter
+│   ├── contracts.py               ← Pydantic v2 data models & validation schemas
+│   ├── hive.py                    ← Decoupled Hive hot water controller integration
+│   ├── tracker.py                 ← Lightweight Octopus API connection probe
 │   ├── requirements.txt           ← Python dependencies
 │   ├── SPECIFICATION.md           ← Complete technical specification & architecture
 │   └── DOCS.md                    ← Add-on user documentation
@@ -115,21 +123,29 @@ graph TD
         CONTRACTS["contracts.py (Pydantic v2 Models)"]
         STATE["state.py (State & Daily Stats)"]
         SIMULATION["simulation.py (24h Simulation Engine)"]
-        OCTOPLUS["octoplus.py (Octoplus ADR 0004)"]
+        OCTOPLUS["octoplus.py (Octoplus Sessions & Auto-Join)"]
+        AXLE["axle.py (Axle Self-Dispatch VPP)"]
+        REWARDS["rewards.py (Wheel of Fortune & Scratchcard)"]
+        APPLIANCE["appliance.py (Washing Machine Telemetry)"]
+        PROFILER["profiler.py (Dynamic Load Profiling)"]
         HIVE["hive.py (Hive Hot Water Controller)"]
     end
 
-    subgraph External Services
-        GIVTCP["givtcp.py (GivTCP REST & Socket Handling)"]
-        TARIFFS["tariffs.py (Octopus API)"]
-        SOLAR["solar.py (Forecast.Solar & Open-Meteo)"]
-        LLM["llm.py (ChatGPT LLM Veto & Audit)"]
+    subgraph External Services & Integrations
+        GIVTCP["givtcp.py (GivTCP REST & Inverter Communication)"]
+        TARIFFS["tariffs.py (Octopus Agile & Outgoing API)"]
+        SOLAR["solar.py (Forecast.Solar & Open-Meteo Ensemble)"]
+        LLM["llm.py (ChatGPT LLM Candidate Selection)"]
     end
 
     OPTIMISER --> CONTRACTS
     OPTIMISER --> STATE
     OPTIMISER --> SIMULATION
     OPTIMISER --> OCTOPLUS
+    OPTIMISER --> AXLE
+    OPTIMISER --> REWARDS
+    OPTIMISER --> APPLIANCE
+    OPTIMISER --> PROFILER
     OPTIMISER --> HIVE
     OPTIMISER --> GIVTCP
     OPTIMISER --> TARIFFS

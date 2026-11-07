@@ -43,7 +43,7 @@ from state import (
     _last_plan,
 )
 
-# Re-export Octoplus ADR 0004 & ADR 0013 helpers
+# Re-export Octoplus flexibility session helpers
 from octoplus import (
     get_octoplus_entity_name,
     parse_octoplus_session,
@@ -52,6 +52,14 @@ from octoplus import (
     is_power_down_slot_dt,
     is_power_up_slot_dt,
     clear_octoplus_cache,
+)
+
+# Re-export rewards helpers (Wheel of Fortune & Monday scratchcard)
+from rewards import (
+    is_wheel_spins_enabled,
+    is_scratchcard_alerts_enabled,
+    auto_spin_available_wheels,
+    check_octoplus_scratchcard_status,
 )
 
 # Re-export Axle Energy Self-Dispatch VPP helpers (ADR 0015)
@@ -310,6 +318,20 @@ async def main():
                     if now_local.hour >= plan_hour:
                         state['last_daily_plan_date'] = today_str
                     save_state(state)
+
+                # Check Octoplus Wheel of Fortune spins & Monday scratchcard
+                try:
+                    if is_wheel_spins_enabled():
+                        spin_res = auto_spin_available_wheels()
+                        if spin_res.get('spins_executed', 0) > 0:
+                            logging.info(f"🎡 [OCTOPUS REWARDS] Auto-spin executed: {spin_res.get('spins_executed')} spin(s). Prizes: {spin_res.get('prizes')}")
+                    if is_scratchcard_alerts_enabled():
+                        scratch_res = check_octoplus_scratchcard_status()
+                        if scratch_res.get('available'):
+                            logging.info("🎟️ [OCTOPUS REWARDS] Monday scratchcard is available!")
+                except Exception as _e_octo:
+                    logging.debug(f"Octopus rewards wheel/scratchcard check notice: {_e_octo}")
+
                 is_startup = False
             else:
                 replan_needed = await run_light_monitor()

@@ -480,6 +480,12 @@ class TestOctoplusLiveGraphQL:
         monkeypatch.setattr(octoplus, 'obtain_kraken_token', lambda *a, **k: "mock-token")
         monkeypatch.setattr(octoplus, 'fetch_ha_octoplus_sessions', lambda: [])
 
+        now = datetime.now(timezone.utc)
+        camp_start = (now + timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        camp_end = (now + timedelta(hours=5)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        exact_start = (now + timedelta(hours=3)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        exact_end = (now + timedelta(hours=4)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.json.return_value = {
@@ -488,15 +494,15 @@ class TestOctoplusLiveGraphQL:
                     "events": [{
                         "id": "CAMPAIGN-1",
                         "code": "HAPPY_HOUR_CAMPAIGN",
-                        "startAt": "2026-11-01T11:00:00Z",
-                        "endAt": "2026-11-01T15:00:00Z",
+                        "startAt": camp_start,
+                        "endAt": camp_end,
                         "eventType": "WEEKEND_HAPPY_HOUR"
                     }],
                     "account": {
                         "joinedEvents": [{
                             "eventId": "CAMPAIGN-1",
-                            "startAt": "2026-11-01T14:00:00Z",
-                            "endAt": "2026-11-01T15:00:00Z"
+                            "startAt": exact_start,
+                            "endAt": exact_end
                         }]
                     }
                 }
@@ -508,8 +514,108 @@ class TestOctoplusLiveGraphQL:
         assert len(sessions) == 1
         s = sessions[0]
         assert s["is_joined"] is True
-        assert s["start"] == datetime(2026, 11, 1, 14, 0, tzinfo=timezone.utc)
-        assert s["end"] == datetime(2026, 11, 1, 15, 0, tzinfo=timezone.utc)
+        assert s["start"] == datetime.strptime(exact_start, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+        assert s["end"] == datetime.strptime(exact_end, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+
+
+class TestOctoplusWheelAndScratchcard:
+    """Validate automated Wheel of Fortune spinning and Scratchcard availability alerts (rewards.py)."""
+
+    @patch('rewards.requests.post')
+    def test_spin_wheel_of_fortune_graphql_success(self, mock_post, monkeypatch):
+        import rewards
+        import octoplus
+        monkeypatch.setattr(octoplus, 'obtain_kraken_token', lambda *a, **k: "mock-token")
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {
+            "data": {
+                "spinWheelOfFortune": {
+                    "prize": {"value": 800}
+                }
+            }
+        }
+        mock_post.return_value = mock_resp
+
+        success, result = rewards.spin_wheel_of_fortune(fuel_type="ELECTRICITY", account_id="A-12345", token="mock-token")
+        assert success is True
+        assert result["method"] == "graphql"
+        assert result["prize"] == 800
+        assert result["fuel_type"] == "ELECTRICITY"
+
+        # Verify re-export in octoplus module works identically
+        assert octoplus.spin_wheel_of_fortune is rewards.spin_wheel_of_fortune
+
+    @patch('rewards.requests.post')
+    def test_spin_wheel_of_fortune_ha_service_fallback(self, mock_post, monkeypatch):
+        import rewards
+        import octoplus
+        monkeypatch.setattr(octoplus, 'obtain_kraken_token', lambda *a, **k: None)
+        monkeypatch.setattr(rewards, 'SUPERVISOR_TOKEN', "ha-token")
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {"points": 100}
+        mock_post.return_value = mock_resp
+
+        success, result = rewards.spin_wheel_of_fortune(fuel_type="GAS", account_id="A-12345", token=None)
+        assert success is True
+        assert result["method"] == "home_assistant"
+        assert result["fuel_type"] == "GAS"
+
+    def test_get_available_wheel_spins(self, monkeypatch):
+        import rewards
+        def mock_fetch(entity_id):
+            if "spins_electricity" in entity_id:
+                return {"state": "2"}
+            if "spins_gas" in entity_id:
+                return {"state": "0"}
+            return None
+
+        monkeypatch.setattr(rewards, 'fetch_ha_sensor', mock_fetch)
+        spins = rewards.get_available_wheel_spins(account_id="A-12345")
+        assert spins["ELECTRICITY"] == 2
+        assert spins["GAS"] == 0
+
+    @patch('rewards.send_ha_notification')
+    @patch('rewards.spin_wheel_of_fortune')
+    def test_auto_spin_available_wheels_executes_and_notifies(self, mock_spin, mock_notify, monkeypatch):
+        import rewards
+        monkeypatch.setattr(rewards, 'get_available_wheel_spins', lambda *a, **k: {"ELECTRICITY": 1, "GAS": 0})
+        mock_spin.return_value = (True, {"prize": "500 points", "method": "home_assistant"})
+
+        res = rewards.auto_spin_available_wheels(account_id="A-12345")
+        assert res["spins_executed"] == 1
+        assert len(res["prizes"]) == 1
+        assert "ELECTRICITY: 500 points" in res["prizes"][0]
+        assert mock_notify.called
+
+    def test_check_octoplus_scratchcard_status(self, monkeypatch):
+        import rewards
+        monkeypatch.setattr(rewards, 'SUPERVISOR_TOKEN', "ha-token")
+        monkeypatch.setattr(rewards, 'send_ha_notification', lambda *a, **k: True)
+
+        def mock_fetch(entity_id):
+            if "scratchcard_available" in entity_id:
+                return {"state": "on"}
+            return None
+
+        monkeypatch.setattr(rewards, 'fetch_ha_sensor', mock_fetch)
+        status = rewards.check_octoplus_scratchcard_status(account_id="A-12345", notify=True)
+        assert status["available"] is True
+        assert status["notified"] is True
+
+    def test_rewards_toggles(self, monkeypatch):
+        import rewards
+        monkeypatch.setenv("ENABLE_WHEEL_SPINS", "false")
+        monkeypatch.setenv("ENABLE_SCRATCHCARD_ALERTS", "false")
+        assert rewards.is_wheel_spins_enabled() is False
+        assert rewards.is_scratchcard_alerts_enabled() is False
+
+        monkeypatch.setenv("ENABLE_WHEEL_SPINS", "true")
+        monkeypatch.setenv("ENABLE_SCRATCHCARD_ALERTS", "true")
+        assert rewards.is_wheel_spins_enabled() is True
+        assert rewards.is_scratchcard_alerts_enabled() is True
 
 
 

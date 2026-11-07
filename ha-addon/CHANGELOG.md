@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.24.8] - 2026-11-05
+
+### Added
+- **Dedicated Gamification & Rewards Module (`rewards.py`)**:
+  - Extracted Wheel of Fortune spin-to-win (`spin_wheel_of_fortune`, `auto_spin_available_wheels`) and Monday scratchcard monitoring (`check_octoplus_scratchcard_status`) into dedicated domain module `ha-addon/rewards.py`.
+  - Cleaned `ha-addon/octoplus.py` to focus strictly on flexibility session parsing (Power Down / Power Up) and automated saving session enrollment.
+- **Dedicated UI Configuration Toggles**:
+  - Added explicit, user-friendly UI configuration toggles: `enable_wheel_spins` and `enable_scratchcard_alerts` in `config.yaml`, mapped through `run.sh` and `config.py.example` with full backward-compatibility.
+- **Architecture Documentation & Diagram Synchronization**:
+  - Updated system architecture Mermaid diagrams in `ha-addon/SPECIFICATION.md` and `README.md` to reflect all modern modules (`rewards.py`, `axle.py`, `appliance.py`, `profiler.py`, `state.py`).
+  - Archived internal developer ADRs into workstation `DEVELOPMENT.md` while keeping production technical specifications clean and user-focused.
+
+## [1.0.24.7] - 2026-11-05
+
+### Added
+- **Automated Octoplus Wheel of Fortune Spins & Scratchcard Alerts (ADR 0016)**:
+  - Added native Wheel of Fortune spin-to-win automation (`spin_wheel_of_fortune`, `auto_spin_available_wheels`) in `ha-addon/octoplus.py`.
+  - Supports dual-tier execution: direct Octopus backend Kraken GraphQL mutation (`spinWheelOfFortune`) with fallback to Home Assistant Supervisor service `octopus_energy.spin_wheel_of_fortune`.
+  - Queries available electricity and gas wheel spin counters (`sensor.octopus_energy_wheel_of_fortune_spins_*`) during add-on startup and daily planning runs, automatically spinning when spins $> 0$ and sending a Home Assistant persistent notification summary with prizes won.
+  - Added weekly Monday Octoplus scratchcard availability monitor (`check_octoplus_scratchcard_status`), integrating with `binary_sensor.octoplus_scratchcard_available` from `HomeAssistant-OctopusEnergy` v19.3.0 and alerting the user with direct dashboard links to claim Octopoints.
+  - Added `auto_spin_wheel_of_fortune` and `notify_octoplus_scratchcard` configuration options across `config.yaml`, `options.json`, `run.sh`, and `config.py.example`.
+- **Test Suite Expansion**:
+  - Added unit and contract tests in `tests/test_helpers.py` (`TestOctoplusWheelAndScratchcard`) covering GraphQL spin execution, HA service fallbacks, spin counter ingestion, and Monday scratchcard alerts. Fixed temporal relative timestamps in `test_fetch_live_octoplus_sessions_uses_joined_events_exact_times`.
+
 ## [1.0.24.6] - 2026-11-01
 
 ### Fixed
