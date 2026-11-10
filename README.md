@@ -51,8 +51,9 @@ GivEnergy_Tracker/
 │   ├── config.py                  ← Real credentials & settings
 │   ├── optimiser.py               ← Main daemon orchestrator & scheduling loop
 │   ├── simulation.py              ← 24-hour deterministic physical energy balance simulation
+│   ├── planner.py                 ← Cost-based plan simulator and target-SoC search (ADR 0016)
 │   ├── givtcp.py                  ← GivTCP REST API v2/v3 & Modbus TCP integration
-│   ├── tariffs.py                 ← Octopus Agile & Outgoing export rates fetcher
+│   ├── tariffs.py                 ← Octopus Agile & Outgoing export rates fetcher & account auto-discovery
 │   ├── solar.py                   ← Forecast.Solar API client & parallel ensemble manager
 │   ├── solar_openmeteo.py         ← Open-Meteo Solar API client (shadow provider)
 │   ├── octoplus.py                ← Octoplus Power Down & Power Up session detection & auto-join
@@ -65,6 +66,8 @@ GivEnergy_Tracker/
 │   ├── contracts.py               ← Pydantic v2 data models & validation schemas
 │   ├── hive.py                    ← Decoupled Hive hot water controller integration
 │   ├── tracker.py                 ← Lightweight Octopus API connection probe
+│   ├── translations/              ← Home Assistant UI localization & descriptive subtitles
+│   │   └── en.yaml                ← Full configuration titles and inline option descriptions
 │   ├── requirements.txt           ← Python dependencies
 │   ├── SPECIFICATION.md           ← Complete technical specification & architecture
 │   └── DOCS.md                    ← Add-on user documentation

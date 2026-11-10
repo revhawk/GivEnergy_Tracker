@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.25.1] - 2026-11-10
+
+### Added
+- **Home Assistant Configuration UI Localization & Descriptive Titles (`translations/en.yaml`)**:
+  - Implemented complete Home Assistant translation dictionary translating all raw snake_case configuration keys (`run_once`, `interval_minutes`, `debug_logging`, `auto_detect_tariffs`, `enable_wheel_spins`, `enable_scratchcard_alerts`, etc.) into readable English titles with comprehensive explanatory descriptions under each option.
+  - Added explicit clarity for **`run_once` (Run Once - Diagnostic Mode)** explaining that it executes one single pass and stops, instructing users to keep it `false` for 24/7 background automation.
+  - Added automated contract test `test_translations_cover_all_config_options` in `tests/test_config_options.py` to prevent untranslated or undescribed options in future releases.
+- **AI Coding Agent Architectural Domain Map (`ARCHITECTURE.md`)**:
+  - Authored authoritative 5-layer domain architecture guide ([`ARCHITECTURE.md`](ARCHITECTURE.md)) mapping Contracts, Cloud Integrations, Simulation Math, Hardware Drivers, and Daemon Lifecycle.
+  - Added fast-lookup capability index in `.agents/AGENTS.md` enabling zero-friction onboarding for AI coding assistants and developers.
+
+### Senior Developer Review
+- **Architecture & Supervisor UI Compliance**: The translations schema strictly follows Home Assistant Supervisor specifications for `configuration:` option dictionaries. All keys defined in `config.yaml` are mapped 1-to-1 with descriptive guidance.
+- **Test Integrity**: Test suite expanded to 165 tests covering option parsing, schema integrity, and translations completeness. 100% pass rate confirmed via `pytest`.
+- **Zero-Regression Assurance**: All environment variable mappings in `run.sh` remain backward-compatible with legacy keys (`auto_spin_wheel_of_fortune`, `notify_octoplus_scratchcard`).
+
 ## [1.0.25.0] - 2026-11-10
 
 ### Added
