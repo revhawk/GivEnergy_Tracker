@@ -494,6 +494,14 @@ async def run_optimization():
         else:
             logging.info("Axle Energy VPP: Polled successfully — no active or upcoming flexibility events scheduled.")
         
+    # Attach live export rate for each slot if not already set (e.g. by Axle VPP)
+    for s in upcoming_slots:
+        if 'export_rate' not in s:
+            try:
+                s['export_rate'] = fetch_export_fn(s['start'])
+            except TypeError:
+                s['export_rate'] = fetch_export_fn()
+
     # 2. Fetch primary & shadow solar forecasts in parallel
     solar_forecasts, solar_comparison = fetch_solar_fn()
     
@@ -644,7 +652,10 @@ async def run_optimization():
     arbitrage_threshold = export_rate - margin
 
     negative_slots = [s for s in upcoming_slots if s['price'] < 0]
-    arbitrage_slots = [s for s in upcoming_slots if s['price'] < arbitrage_threshold]
+    arbitrage_slots = [
+        s for s in upcoming_slots
+        if s['price'] < (s.get('export_rate', export_rate) - margin)
+    ]
     available_capacity_kwh = max_energy - current_energy
 
     logging.info(f"Export rate now: {export_rate:.2f}p/kWh  |  Arbitrage threshold: <{arbitrage_threshold:.2f}p")

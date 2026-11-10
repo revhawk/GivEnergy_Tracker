@@ -95,7 +95,11 @@ from tariffs import (
     parse_utc_iso,
     fetch_export_rate,
     fetch_agile_rates,
+    discover_account_tariffs,
+    extract_product_code_from_tariff,
+    is_auto_detect_enabled,
     _export_rate_cache,
+    _account_tariffs_cache,
 )
 
 # Re-export solar API operations

@@ -13,7 +13,8 @@ import optimiser
 
 @pytest.fixture(autouse=True)
 def clear_export_cache():
-    optimiser._export_rate_cache = {"rate": None, "fetched_at": None}
+    optimiser._export_rate_cache = {"rate": None, "results": [], "fetched_at": None}
+    optimiser._account_tariffs_cache = {"tariffs": None, "fetched_at": None}
     yield
 
 
@@ -134,3 +135,121 @@ class TestFetchSolarForecast:
             status=429,
         )
         assert optimiser.fetch_solar_forecast() == []
+
+
+class TestExtractProductCode:
+    def test_extract_standard_codes(self):
+        assert optimiser.extract_product_code_from_tariff("E-1R-FLUX-IMPORT-23-02-14-E") == "FLUX-IMPORT-23-02-14"
+        assert optimiser.extract_product_code_from_tariff("E-1R-AGILE-24-10-01-E") == "AGILE-24-10-01"
+        assert optimiser.extract_product_code_from_tariff("E-1R-OUTGOING-VAR-24-10-26-E") == "OUTGOING-VAR-24-10-26"
+        assert optimiser.extract_product_code_from_tariff("G-1R-OE-FIX-12M-25-11-24-E") == "OE-FIX-12M-25-11-24"
+
+    def test_fallback_or_empty(self):
+        assert optimiser.extract_product_code_from_tariff("") == ""
+        assert optimiser.extract_product_code_from_tariff(None) == ""
+        assert optimiser.extract_product_code_from_tariff("PRODUCT-E") == "PRODUCT"
+
+
+class TestDiscoverAccountTariffs:
+    @responses.activate
+    def test_parses_import_export_and_gas(self):
+        account_data = {
+            "properties": [
+                {
+                    "electricity_meter_points": [
+                        {
+                            "mpan": "1419585700009",
+                            "is_export": False,
+                            "agreements": [
+                                {
+                                    "tariff_code": "E-1R-FLUX-IMPORT-23-02-14-E",
+                                    "valid_from": "2026-11-10T00:00:00Z",
+                                    "valid_to": None,
+                                }
+                            ],
+                        },
+                        {
+                            "mpan": "1470001817590",
+                            "is_export": True,
+                            "agreements": [
+                                {
+                                    "tariff_code": "E-1R-OUTGOING-VAR-24-10-26-E",
+                                    "valid_from": "2024-11-08T00:00:00Z",
+                                    "valid_to": None,
+                                }
+                            ],
+                        },
+                    ],
+                    "gas_meter_points": [
+                        {
+                            "mprn": "2488354103",
+                            "agreements": [
+                                {
+                                    "tariff_code": "G-1R-OE-FIX-12M-25-11-24-E",
+                                    "valid_from": "2025-12-09T00:00:00Z",
+                                    "valid_to": "2026-12-09T00:00:00Z",
+                                }
+                            ],
+                        }
+                    ],
+                }
+            ]
+        }
+        responses.add(
+            responses.GET,
+            "https://api.octopus.energy/v1/accounts/A-TEST0000/",
+            json=account_data,
+        )
+
+        discovered = optimiser.discover_account_tariffs(api_key="sk_test", account_id="A-TEST0000")
+        assert discovered is not None
+        assert discovered["import"]["product_code"] == "FLUX-IMPORT-23-02-14"
+        assert discovered["import"]["tariff_code"] == "E-1R-FLUX-IMPORT-23-02-14-E"
+        assert discovered["export"]["product_code"] == "OUTGOING-VAR-24-10-26"
+        assert discovered["export"]["tariff_code"] == "E-1R-OUTGOING-VAR-24-10-26-E"
+        assert discovered["gas"]["product_code"] == "OE-FIX-12M-25-11-24"
+
+    def test_missing_credentials_returns_none(self):
+        import tariffs
+        assert tariffs.discover_account_tariffs(api_key="", account_id="") is None
+
+    @responses.activate
+    def test_account_api_error_returns_none(self):
+        responses.add(
+            responses.GET,
+            "https://api.octopus.energy/v1/accounts/A-TEST0000/",
+            status=500,
+        )
+        import tariffs
+        assert tariffs.discover_account_tariffs(api_key="sk_test", account_id="A-TEST0000") is None
+
+
+class TestTimeOfUseExport:
+    @responses.activate
+    def test_slot_specific_rate_matching(self):
+        responses.add(
+            responses.GET,
+            "https://api.octopus.energy/v1/products/FLUX-EXPORT-23-02-14/electricity-tariffs/E-1R-FLUX-EXPORT-23-02-14-E/standard-unit-rates/",
+            json={"results": [
+                {"valid_from": "2026-11-10T02:00:00Z", "valid_to": "2026-11-10T05:00:00Z", "value_inc_vat": 5.40},
+                {"valid_from": "2026-11-10T16:00:00Z", "valid_to": "2026-11-10T19:00:00Z", "value_inc_vat": 27.20},
+                {"valid_from": "2026-11-10T05:00:00Z", "valid_to": "2026-11-10T16:00:00Z", "value_inc_vat": 15.10},
+            ]},
+        )
+        import tariffs
+        import config
+        config.EXPORT_PRODUCT_CODE = "FLUX-EXPORT-23-02-14"
+        config.EXPORT_TARIFF_CODE = "E-1R-FLUX-EXPORT-23-02-14-E"
+
+        dt_night = datetime(2026, 11, 10, 3, 0, tzinfo=timezone.utc)
+        dt_peak = datetime(2026, 11, 10, 17, 30, tzinfo=timezone.utc)
+        dt_day = datetime(2026, 11, 10, 12, 0, tzinfo=timezone.utc)
+
+        assert tariffs.fetch_export_rate(dt_night) == 5.40
+        assert tariffs.fetch_export_rate(dt_peak) == 27.20
+        assert tariffs.fetch_export_rate(dt_day) == 15.10
+
+        # Reset config to original
+        config.EXPORT_PRODUCT_CODE = "OUTGOING-VAR-24-10-26"
+        config.EXPORT_TARIFF_CODE = "E-1R-OUTGOING-VAR-24-10-26-E"
+

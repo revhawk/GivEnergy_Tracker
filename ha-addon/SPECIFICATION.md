@@ -1,6 +1,6 @@
 # Technical Specification & Architecture — GivEnergy Tariff Optimiser
 
-**Version:** 1.0.24.8  
+**Version:** 1.0.24.9  
 **Target Hardware:** GivEnergy Inverters (Gen 1, Gen 2, Gen 3, All-in-One)  
 **Target Platform:** Home Assistant Add-on Container (Linux ARM64 / AMD64)  
 
@@ -28,7 +28,7 @@ graph TD
     end
 
     subgraph GivEnergy Tariff Optimiser Add-on
-        Version[version.py - v1.0.24.8]
+        Version[version.py - v1.0.24.9]
         Config[config.py - Settings & Options]
         Optimiser[optimiser.py - Daemon & Scheduling Loop]
         SimEngine[simulation.py - 24h Forward Physical Simulation]
@@ -421,6 +421,25 @@ The `rewards.py` module encapsulates Octopus Energy's loyalty gamification featu
 3. **Independent UI Configuration Controls**:
    - `enable_wheel_spins` (boolean toggle): Enables or disables automated wheel spinning.
    - `enable_scratchcard_alerts` (boolean toggle): Enables or disables Monday scratchcard notifications.
+
+---
+
+## 5. Automated Tariff Discovery & Time-of-Use Export Integration (`tariffs.py`)
+
+The `tariffs.py` module integrates directly with Octopus Energy REST APIs to retrieve half-hourly import pricing, dynamic export rates, and live customer agreements.
+
+### 5.1 Automated Account Tariff Discovery (`discover_account_tariffs`)
+1. **Dynamic Agreement Detection**:
+   - Directly queries the Octopus Account API (`/v1/accounts/<account_number>/`) using the customer's API credentials.
+   - Automatically detects active import and export meter points (MPANs), agreement dates, and authoritative tariff codes without manual configuration.
+   - Seamlessly adopts multi-rate tariffs (such as **Octopus Flux Import** `FLUX-IMPORT-23-02-14` / `E-1R-FLUX-IMPORT-23-02-14-E`) and tracks interim export agreements (`OUTGOING-VAR-24-10-26`).
+   - Automatically migrates to **Octopus Flux Export** (`FLUX-EXPORT-23-02-14`) as soon as Octopus finishes the DNO/MCS export transfer, requiring zero manual configuration changes.
+2. **Time-of-Use Export Integration (`fetch_export_rate`)**:
+   - Supports time-varying export rates (e.g. Octopus Flux Export with ~5p off-peak, ~15p day, and ~27p peak export bonus) as well as flat export rates (Outgoing Fixed at 15p, Outgoing Variable at 12p).
+   - Evaluates arbitrage profitability slot-by-slot in `simulation.py`, comparing slot import costs directly against the slot's respective export value.
+3. **Graceful Fallback & Configuration Safety**:
+   - Falls back transparently to static `config.py` definitions (`AGILE_PRODUCT_CODE`, `EXPORT_PRODUCT_CODE`, `EXPORT_RATE_P_FALLBACK`) if account auto-discovery is disabled or the Octopus Account API is temporarily unreachable.
+
 
 
 

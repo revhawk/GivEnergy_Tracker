@@ -42,6 +42,7 @@ AXLE_EXPORT_POWER_W=$(jq --raw-output '.axle_export_power_w // 3000' /data/optio
 AUTO_JOIN_SAVING_SESSIONS=$(jq --raw-output '.auto_join_saving_sessions // true' /data/options.json 2>/dev/null || echo "true")
 ENABLE_WHEEL_SPINS=$(jq --raw-output '.enable_wheel_spins // .auto_spin_wheel_of_fortune // true' /data/options.json 2>/dev/null || echo "true")
 ENABLE_SCRATCHCARD_ALERTS=$(jq --raw-output '.enable_scratchcard_alerts // .notify_octoplus_scratchcard // true' /data/options.json 2>/dev/null || echo "true")
+AUTO_DETECT_TARIFFS=$(jq --raw-output '.auto_detect_tariffs // true' /data/options.json 2>/dev/null || echo "true")
 OCTOPUS_API_KEY=$(jq --raw-output '.octopus_api_key // ""' /data/options.json 2>/dev/null || echo "")
 OCTOPUS_ACCOUNT_ID=$(jq --raw-output '.octopus_account_id // ""' /data/options.json 2>/dev/null || echo "")
 
@@ -59,6 +60,7 @@ export AXLE_EXPORT_POWER_W
 export AUTO_JOIN_SAVING_SESSIONS
 export ENABLE_WHEEL_SPINS
 export ENABLE_SCRATCHCARD_ALERTS
+export AUTO_DETECT_TARIFFS
 export OCTOPUS_API_KEY
 export OCTOPUS_ACCOUNT_ID
 

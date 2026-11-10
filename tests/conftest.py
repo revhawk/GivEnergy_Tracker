@@ -53,7 +53,10 @@ import pytest
 def reset_export_rate_cache():
     import tariffs
     tariffs._export_rate_cache["rate"] = None
+    tariffs._export_rate_cache["results"] = []
     tariffs._export_rate_cache["fetched_at"] = None
+    tariffs._account_tariffs_cache["tariffs"] = None
+    tariffs._account_tariffs_cache["fetched_at"] = None
 
 
 

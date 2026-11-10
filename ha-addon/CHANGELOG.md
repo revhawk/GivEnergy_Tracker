@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.24.9] - 2026-11-10
+
+### Added
+- **Automated Account Tariff Discovery & Switchover (`tariffs.py`)**:
+  - Added `discover_account_tariffs()` connecting to Octopus Energy Account API (`/v1/accounts/<account_number>/`) to automatically detect active import and export meter points (MPANs) and live agreements.
+  - Automatically identifies tariff switches (e.g. from Octopus Agile to **Octopus Flux Import** `FLUX-IMPORT-23-02-14` / `E-1R-FLUX-IMPORT-23-02-14-E`).
+  - Seamless zero-touch transition: will automatically detect and adopt **Octopus Flux Export** (`FLUX-EXPORT-23-02-14`) as soon as Octopus completes the backend export transfer, without requiring manual config edits.
+  - Added `auto_detect_tariffs` toggle (default: `true`) in `config.yaml`, `options.json`, and `run.sh` with graceful fallback to manual configuration codes.
+- **Time-of-Use Export Rate Simulation Support**:
+  - Enhanced `fetch_export_rate(dt)` to support slot-specific datetime lookups for multi-rate export tariffs (e.g. Flux Export ~5p night, ~15p day, ~27p peak).
+  - Updated `simulation.py` to evaluate arbitrage profitability dynamically slot-by-slot against each half-hour's respective export rate.
+- **Interactive Tariff Inspection Tool**:
+  - Added [`scripts/check_tariffs.py`](file:///home/reg/Coding/GivEnergy_Tracker/scripts/check_tariffs.py) allowing users to audit live account agreements and compare against local configuration.
+
 ## [1.0.24.8] - 2026-11-05
 
 ### Added
