@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.25.2] - 2026-11-10
+
+### Fixed
+- **Multi-Hour Rate Window Disaggregation for Octopus Flux (`tariffs.py`)**:
+  - Fixed critical scheduling defect where Octopus Flux multi-hour tariff periods (e.g. 02:00–05:00 3-hour super off-peak, 05:00–16:00 11-hour day shoulder) were ingested as raw multi-hour blocks rather than 30-minute simulation slots.
+  - Subdivided multi-hour windows into standardized 30-minute intervals (`timedelta(minutes=30)`).
+  - Prevents charging blocks from improperly spanning across day shoulder rates (fixing the erroneous `02:00 to 16:00` charge slot) so charging is strictly confined to the cheap 02:00–05:00 super off-peak window (15.6p/kWh).
+  - Added unit test `test_subdivides_multi_hour_rate_blocks_into_half_hours` in `tests/test_api_parsing.py`.
+
+### Senior Developer Review
+- **Root Cause Analysis**: Octopus Agile returns 48 discrete half-hour rates per day, while Octopus Flux returns 4 daily block periods. The forward simulation engine and GivTCP register programmer expect 30-minute quantization. Ingesting multi-hour intervals without expansion caused the merger logic (`_merge_slot_blocks`) to bind adjacent periods into a 14-hour continuous window.
+- **Verification**: Pytest expanded to 166 tests. Disaggregation verified with 100% test pass rate. Zero regressions.
+
 ## [1.0.25.1] - 2026-11-10
 
 ### Added

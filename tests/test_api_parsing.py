@@ -46,6 +46,31 @@ class TestFetchAgileRates:
         )
         assert optimiser.fetch_agile_rates() == []
 
+    @responses.activate
+    def test_subdivides_multi_hour_rate_blocks_into_half_hours(self):
+        # Flux multi-hour windows: 3 hours off-peak (02:00-05:00) and 11 hours day shoulder (05:00-16:00)
+        responses.add(
+            responses.GET,
+            "https://api.octopus.energy/v1/products/AGILE-24-10-01/electricity-tariffs/E-1R-AGILE-24-10-01-E/standard-unit-rates/",
+            json={"results": [
+                {"valid_from": "2026-11-10T02:00:00Z", "valid_to": "2026-11-10T05:00:00Z", "value_inc_vat": 15.60},
+                {"valid_from": "2026-11-10T05:00:00Z", "valid_to": "2026-11-10T16:00:00Z", "value_inc_vat": 25.80},
+            ]},
+        )
+        slots = optimiser.fetch_agile_rates()
+        # 3h = 6 slots of 30 min; 11h = 22 slots of 30 min -> 28 slots total
+        assert len(slots) == 28
+        assert all(s["price"] == 15.60 for s in slots[:6])
+        assert all(s["price"] == 25.80 for s in slots[6:])
+        # Check first and last slot boundaries
+        assert slots[0]["start"].strftime("%H:%M") == "02:00"
+        assert slots[0]["end"].strftime("%H:%M") == "02:30"
+        assert slots[5]["start"].strftime("%H:%M") == "04:30"
+        assert slots[5]["end"].strftime("%H:%M") == "05:00"
+        assert slots[6]["start"].strftime("%H:%M") == "05:00"
+        assert slots[-1]["end"].strftime("%H:%M") == "16:00"
+
+
 
 class TestFetchExportRate:
     @responses.activate

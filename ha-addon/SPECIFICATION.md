@@ -1,6 +1,6 @@
 # Technical Specification & Architecture — GivEnergy Tariff Optimiser
 
-**Version:** 1.0.25.1  
+**Version:** 1.0.25.2  
 **Target Hardware:** GivEnergy Inverters (Gen 1, Gen 2, Gen 3, All-in-One)  
 **Target Platform:** Home Assistant Add-on Container (Linux ARM64 / AMD64)  
 
@@ -28,7 +28,7 @@ graph TD
     end
 
     subgraph GivEnergy Tariff Optimiser Add-on
-        Version[version.py - v1.0.25.1]
+        Version[version.py - v1.0.25.2]
         Config[config.py - Settings & Options]
         Optimiser[optimiser.py - Daemon & Scheduling Loop]
         SimEngine[simulation.py - 24h Forward Physical Simulation]

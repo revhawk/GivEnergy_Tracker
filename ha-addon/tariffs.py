@@ -2,7 +2,7 @@
 import os
 import logging
 import requests
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 try:
     import config
@@ -224,16 +224,25 @@ def fetch_agile_rates():
         response.raise_for_status()
         data = response.json()
 
+        half_hour = timedelta(minutes=30)
         slots = []
         for r in data.get('results', []):
             start = parse_utc_iso(r['valid_from'])
-            end = parse_utc_iso(r['valid_to'])
+            end_val = r.get('valid_to')
+            end = parse_utc_iso(end_val) if end_val else start + timedelta(hours=24)
             price = r['value_inc_vat']
-            slots.append({
-                'start': start,
-                'end': end,
-                'price': price
-            })
+
+            # If rate period covers multiple half-hours (e.g. Octopus Flux 3h / 11h blocks),
+            # subdivide into standard 30-minute slots for the 48-slot simulation engine.
+            curr = start
+            while curr < end:
+                nxt = min(curr + half_hour, end)
+                slots.append({
+                    'start': curr,
+                    'end': nxt,
+                    'price': price
+                })
+                curr = nxt
 
         slots.sort(key=lambda s: s['start'])
         return slots
