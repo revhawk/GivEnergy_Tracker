@@ -248,6 +248,7 @@ async def main():
     fallback_export = getattr(config, 'EXPORT_RATE_P_FALLBACK', 12.0)
     logging.info(f"  EXPORT_RATE (live)     = {live_export:.2f}p/kWh  (fallback: {fallback_export:.2f}p)")
     logging.info(f"  ARBITRAGE_MARGIN_P     = {getattr(config, 'ARBITRAGE_MARGIN_P', 1.5)}p")
+    logging.info(f"  ROUND_TRIP_EFFICIENCY  = {getattr(config, 'BATTERY_ROUND_TRIP_EFFICIENCY', 0.92)}")
     logging.info(f"  GIVTCP_URL             = {getattr(config, 'GIVTCP_URL', None) or 'not set (Modbus fallback)'}")
     logging.info(f"  INTERVAL_MINUTES       = {interval}")
     logging.info(f"  RUN_ONCE               = {run_once}")

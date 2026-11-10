@@ -105,3 +105,31 @@ def test_octopus_api_key_and_account_id_configuration(monkeypatch):
     monkeypatch.setenv("OCTOPUS_ACCOUNT_ID", "A-12345678")
     assert os.environ.get("OCTOPUS_API_KEY") == "sk_live_testkey123"
     assert os.environ.get("OCTOPUS_ACCOUNT_ID") == "A-12345678"
+
+
+def test_translations_cover_all_config_options():
+    """Verify that translations/en.yaml covers all options defined in config.yaml."""
+    import yaml
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parent.parent / "ha-addon"
+    config_yaml_path = root / "config.yaml"
+    translations_path = root / "translations" / "en.yaml"
+
+    assert translations_path.is_file(), "translations/en.yaml must exist for Home Assistant UI"
+
+    with open(config_yaml_path, "r", encoding="utf-8") as f:
+        config_data = yaml.safe_load(f)
+
+    with open(translations_path, "r", encoding="utf-8") as f:
+        trans_data = yaml.safe_load(f)
+
+    options = config_data.get("options", {})
+    trans_config = trans_data.get("configuration", {})
+
+    for opt_key in options:
+        assert opt_key in trans_config, f"Option '{opt_key}' is missing a translation in en.yaml"
+        assert "name" in trans_config[opt_key], f"Option '{opt_key}' is missing 'name' in en.yaml"
+        assert "description" in trans_config[opt_key], f"Option '{opt_key}' is missing 'description' in en.yaml"
+        assert len(trans_config[opt_key]["description"].strip()) > 10, f"Description for '{opt_key}' is too short"
+

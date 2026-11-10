@@ -23,6 +23,7 @@ import givtcp
 import llm
 import octoplus
 import axle
+import planner
 
 
 def _op():
@@ -525,7 +526,8 @@ async def run_optimization():
     max_charge_rate = getattr(config, 'MAX_BATTERY_CHARGE_RATE', 3000) if config else 3000
     max_charge_kwh_per_slot = (max_charge_rate / 1000.0) * 0.5 # 3kW * 0.5h = 1.5kWh
     
-    min_soc = 10.0 # Standard minimum reserve (10%)
+    # Minimum reserve from config (previously hard-coded to 10%)
+    min_soc = float(getattr(config, 'BATTERY_RESERVE_PERCENT', 10) if config else 10)
     min_energy = battery_capacity * (min_soc / 100.0)
     max_energy = battery_capacity
     
@@ -712,9 +714,81 @@ async def run_optimization():
         total_import_kwh=total_import_kwh,
     )
 
+    # 5b. Simulate & cost every candidate, then search for a cheaper plan (ADR 0016)
+    planner_settings = planner.get_planner_settings()
+    sim_prices = [0.0 if s.get('is_power_up') else s['price'] for s in upcoming_slots]
+    iboost_slot_kwh = (getattr(config, 'IBOOST_MAX_DIVERT_RATE', 3000) / 1000.0 if config else 3.0) * 0.5
+    sim_inputs = {
+        'solar': [i['solar'] for i in imports],
+        'load': [i['load'] for i in imports],
+        'prices': sim_prices,
+        'export_rates': [s.get('export_rate', export_rate) for s in upcoming_slots],
+        'capacity': battery_capacity,
+        'start_energy': current_energy,
+        'reserve_energy': min_energy,
+        'max_rate_kwh': max_charge_kwh_per_slot,
+        'iboost_kwh': iboost_slot_kwh,
+        'force_export_mask': [bool(s.get('is_axle_export')) for s in upcoming_slots],
+        'value_rate': planner.end_value_rate(sim_prices),
+    }
+
+    def _attach_sim(cand, mask, target_energy):
+        score, cen, pes = planner.score_plan(sim_inputs, mask, target_energy, planner_settings)
+        cand['sim_score_p'] = round(score, 1)
+        cand['sim_cost_p'] = round(cen['net_cost_p'], 1)
+        cand['sim_cost_pessimistic_p'] = round(pes['net_cost_p'], 1)
+        cand['sim_min_soc'] = round(cen['min_soc'], 1)
+        cand['sim_export_kwh'] = round(cen['export_kwh'], 2)
+
+    for c in candidates:
+        c_mask = planner.slots_in_windows(upcoming_slots, c.get('slots'))
+        c_target = (100 if c.get('strategy') == 'negative_rates' else c.get('target_soc', 100)) / 100.0 * battery_capacity
+        _attach_sim(c, c_mask, c_target if any(c_mask) else None)
+
+    try:
+        best = planner.search_best_plan(
+            sim_inputs,
+            eligible_mask=[not s.get('is_power_down') for s in upcoming_slots],
+            capacity=battery_capacity,
+            reserve_pct=min_soc,
+            settings=planner_settings,
+        )
+        best_rule_score = min(c['sim_score_p'] for c in candidates)
+        if best['target_soc'] and best['score'] < best_rule_score - planner_settings['min_improvement_p']:
+            chosen = [s for s, m in zip(upcoming_slots, best['mask']) if m]
+            blocks = _merge_slot_blocks(chosen)
+            s_slots = [(b['start'].astimezone(), b['end'].astimezone()) for b in blocks]
+            avg_p = sum(0.0 if s.get('is_power_up') else s['price'] for s in chosen) / len(chosen)
+            g_kwh = best['central']['grid_charge_kwh']
+            search_cand = {
+                'id': max(c['id'] for c in candidates) + 1,
+                'name': f"Cost-Optimised Search (Target {best['target_soc']}%)",
+                'strategy': 'cost_optimised',
+                'target_soc': int(best['target_soc']),
+                'kwh': round(g_kwh, 2),
+                'avg_price': round(avg_p, 2),
+                'estimated_cost_pence': round(g_kwh * avg_p, 1),
+                'headroom_kwh': round(max(0.0, battery_capacity * (1 - best['target_soc'] / 100.0)), 2),
+                'slots': s_slots,
+                'slots_desc': ', '.join(f"{a.strftime('%H:%M')}-{b.strftime('%H:%M')}" for a, b in s_slots),
+                'rationale': (
+                    f"Lowest simulated cost from searching target SoC x cheapest slots, including "
+                    f"{planner_settings['efficiency']*100:.0f}% round-trip efficiency, solar spill and a "
+                    f"{planner_settings['pessimistic_weight']*100:.0f}% weighting to a pessimistic solar outcome."
+                ),
+            }
+            _attach_sim(search_cand, best['mask'], best['target_soc'] / 100.0 * battery_capacity)
+            candidates.append(search_cand)
+    except Exception as e:
+        logging.warning(f"Plan search failed, continuing with rule-based candidates: {e}")
+
     logging.info(f"Generated {len(candidates)} Candidate Charging Strategies for AI Evaluation (Option B):")
     for c in candidates:
-        logging.info(f"  • Option {c['id']}: [{c['name']}] Target {c['target_soc']}% | {c['kwh']} kWh | Headroom: {c['headroom_kwh']} kWh | Slots: {c['slots_desc']}")
+        logging.info(
+            f"  • Option {c['id']}: [{c['name']}] Target {c['target_soc']}% | {c['kwh']} kWh | Headroom: {c['headroom_kwh']} kWh "
+            f"| Sim net cost: {c.get('sim_cost_p', 0):.1f}p (pessimistic {c.get('sim_cost_pessimistic_p', 0):.1f}p, "
+            f"blended {c.get('sim_score_p', 0):.1f}p) | Slots: {c['slots_desc']}"
+        )
 
     # 6. Evaluate Candidate Strategies via ChatGPT AI Co-Pilot
     approve, sel_id, score, reason, weather_commentary = chatgpt_select_fn(
@@ -738,7 +812,7 @@ async def run_optimization():
         logging.info(f"⚡ OVERRIDING LLM VETO: candidate cost is negative ({selected_candidate['avg_price']:.2f}p/kWh). Proceeding with plan.")
         approve = True
     elif not approve:
-        if day_classification in ("LOW_SOLAR_DEFENSIVE_PRECHARGE", "MEDIUM_SOLAR_PARTIAL_PRECHARGE") or total_import_kwh > 0.2:
+        if day_classification in ("LOW_SOLAR_GRID_PRECHARGE", "MEDIUM_SOLAR_PARTIAL_PRECHARGE") or total_import_kwh > 0.2:
             logging.warning(
                 f"LLM vetoed candidate {selected_candidate['id']}, but day classification is {day_classification} "
                 f"(import deficit {total_import_kwh:.2f} kWh). Falling back to deterministic Option 1 safety plan."
@@ -746,8 +820,23 @@ async def run_optimization():
             selected_candidate = candidates[0]
             approve = True
         else:
-            logging.info(f"LLM vetoed candidate {selected_candidate['id']} on high solar day — falling back to Option 3 (Solar self-consumption).")
-            selected_candidate = candidates[-1]
+            solar_only = next((c for c in candidates if c.get('strategy') == 'solar_only'), candidates[-1])
+            logging.info(f"LLM vetoed candidate {selected_candidate['id']} on high solar day — falling back to Option {solar_only['id']} (Solar self-consumption).")
+            selected_candidate = solar_only
+
+    # Shadow comparison: how does the chosen plan compare with the cheapest simulated plan?
+    scored = [c for c in candidates if 'sim_score_p' in c]
+    if scored and 'sim_score_p' in selected_candidate:
+        cheapest = min(scored, key=lambda c: c['sim_score_p'])
+        gap = selected_candidate['sim_score_p'] - cheapest['sim_score_p']
+        selected_candidate['sim_gap_to_cheapest_p'] = round(gap, 1)
+        if cheapest['id'] != selected_candidate['id']:
+            logging.info(
+                f"📊 [SHADOW] Selected Option {selected_candidate['id']} is {gap:.1f}p above cheapest simulated "
+                f"Option {cheapest['id']} ({cheapest['name']})."
+            )
+        else:
+            logging.info(f"📊 [SHADOW] Selected Option {selected_candidate['id']} is the cheapest simulated plan.")
 
     slots_to_apply = selected_candidate.get('slots', [])
     target_soc_to_apply = selected_candidate.get('target_soc', 100)
@@ -793,50 +882,23 @@ async def run_optimization():
 
     # Calculate and persist planned SoC trajectory accounting for applied charge blocks
     # (Prevents light monitor false drift triggers that otherwise re-plan in a loop)
-    sim_energy = (current_soc / 100.0) * battery_capacity
-    planned_soc_schedule = []
-    target_energy = (target_soc_to_apply / 100.0) * battery_capacity
-
-    for imp in imports:
-        slot_start = imp['slot']['start']
-        # Check if slot falls within any charge block
-        is_charge_slot = False
-        if approve and slots_to_apply:
-            for c_start, c_end in slots_to_apply:
-                if c_start <= slot_start < c_end:
-                    is_charge_slot = True
-                    break
-
-        solar_kwh = imp['solar']
-        load_kwh = imp['load']
-
-        if is_charge_slot:
-            grid_charge = min(max_charge_kwh_per_slot, max(0.0, target_energy - sim_energy))
-            sim_energy += grid_charge
-            net = load_kwh - solar_kwh
-            if net > 0:
-                discharge = min(net, max(0.0, sim_energy - min_energy))
-                sim_energy -= discharge
-            else:
-                excess_solar = -net
-                solar_charge = min(excess_solar, max_charge_kwh_per_slot, max_energy - sim_energy)
-                sim_energy += solar_charge
-        else:
-            net = load_kwh - solar_kwh
-            if net < 0:
-                excess_solar = -net
-                solar_charge = min(excess_solar, max_charge_kwh_per_slot, max_energy - sim_energy)
-                sim_energy += solar_charge
-            else:
-                discharge = min(net, max(0.0, sim_energy - min_energy))
-                sim_energy -= discharge
-
-        batt_soc = (sim_energy / battery_capacity) * 100.0
-        planned_soc_schedule.append({
-            'start': slot_start.isoformat(),
+    applied_mask = planner.slots_in_windows(upcoming_slots, slots_to_apply if (approve and slots_to_apply) else [])
+    sim_common = {k: v for k, v in sim_inputs.items() if k != 'solar'}
+    planned_run = planner.simulate_plan(
+        sim_inputs['solar'],
+        charge_mask=applied_mask,
+        target_energy=(target_soc_to_apply / 100.0) * battery_capacity,
+        efficiency=planner_settings['efficiency'],
+        **sim_common,
+    )
+    planned_soc_schedule = [
+        {
+            'start': imp['slot']['start'].isoformat(),
             'end': imp['slot']['end'].isoformat(),
-            'soc': round(batt_soc, 1)
-        })
+            'soc': round(soc_v, 1),
+        }
+        for imp, soc_v in zip(imports, planned_run['soc'])
+    ]
 
     cur_state = load_state_fn()
     cur_state['planned_soc_schedule'] = planned_soc_schedule

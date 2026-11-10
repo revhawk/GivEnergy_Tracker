@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.25.0] - 2026-11-10
+
+### Added
+- **Cost-Based Plan Simulation & Search (`planner.py`, ADR 0016)**:
+  - Every candidate is now simulated slot-by-slot with ~8% round-trip loss (`BATTERY_ROUND_TRIP_EFFICIENCY = 0.92`), solar spill, iBoost, Axle export and end-of-horizon battery value.
+  - Ranking blends central (70%) and pessimistic-solar (30%) net cost.
+  - New `cost_optimised` candidate from a target-SoC × cheapest-slots search, offered when ≥ 2p cheaper than the rule-based options.
+  - ChatGPT prompt now includes simulated costs; `[SHADOW]` log compares its pick with the cheapest plan.
+  - `PlanResult` contract and optional `sim_*` fields on `CandidatePlanOption`; new `tests/test_planner.py`.
+
+### Fixed
+- LLM-veto safety fallback checked non-existent `LOW_SOLAR_DEFENSIVE_PRECHARGE`; now `LOW_SOLAR_GRID_PRECHARGE`.
+- Simulation reserve now uses `BATTERY_RESERVE_PERCENT` instead of a hard-coded 10%.
+- Solar-only fallback is found by strategy rather than list position.
+
+### Senior Developer Review
+- Planner is pure and fully unit-tested; integration is additive, with search failures logged and ignored. Search cost is ~20 targets × ≤48 slots × 2 sims (milliseconds).
+- Known limits: base no-charge simulation (day classification) still lossless; rule candidates still use fixed 07/16/21h windows; forced export outside Axle not yet planned.
+
 ## [1.0.24.9] - 2026-11-10
 
 ### Added

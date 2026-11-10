@@ -1,0 +1,59 @@
+configuration:
+  interval_minutes:
+    name: "Monitoring Interval (Minutes)"
+    description: "Frequency in minutes to check inverter telemetry, battery state of charge (SoC), and solar production. Default: 30."
+  run_once:
+    name: "Run Once (Diagnostic Mode)"
+    description: "Execute a single optimization cycle and exit immediately. Keep OFF for normal 24/7 background operation."
+  debug_logging:
+    name: "Debug Logging"
+    description: "Enable verbose debug logging for HTTP requests, raw inverter telemetry, and detailed troubleshooting."
+  openai_api_key:
+    name: "OpenAI API Key"
+    description: "Optional OpenAI API key for AI-generated daily savings reports and schedule veto evaluations."
+  openai_model:
+    name: "OpenAI Model"
+    description: "AI model used to generate daily financial summaries and evaluate plan vetoes. Default: gpt-4o-mini."
+  daily_plan_hour:
+    name: "Daily Planning Hour (0-23)"
+    description: "Hour of day (0-23, typically 17 for 17:00 / 5 PM) when next-day Agile/Flux rates are published and optimized."
+  daily_audit_hour:
+    name: "Daily Audit Hour (0-23)"
+    description: "Hour of day (0-23, typically 23 for 23:00 / 11 PM) when end-of-day financial audit and accounting runs."
+  log_file_path:
+    name: "Log File Path"
+    description: "Optional path to persist add-on logs on disk or network storage (e.g. /share/nas_logs/givenergy_tracker.log)."
+  enable_axle_dispatch:
+    name: "Enable Axle Energy VPP"
+    description: "Enable automated participation in Axle Energy Self-Dispatch Virtual Power Plant flexibility events."
+  axle_api_token:
+    name: "Axle API Token"
+    description: "Bearer authentication token from Axle Energy developer portal for Home Assistant VPP integration."
+  axle_export_power_w:
+    name: "Axle Export Power Limit (Watts)"
+    description: "Target battery discharge rate in Watts during Axle flexibility events (range: 1000W - 6000W). Default: 3000W."
+  auto_join_saving_sessions:
+    name: "Auto-Join Octoplus Saving Sessions"
+    description: "Automatically enrol into Octopus Saving Sessions / Power Down flexibility events via Octopus GraphQL API."
+  enable_wheel_spins:
+    name: "Octopus Wheel of Fortune Auto-Spins"
+    description: "Automatically spin available monthly and weekly Octopus Wheel of Fortune spins to earn OctoPoints."
+  enable_scratchcard_alerts:
+    name: "Octopus Scratchcard Notifications"
+    description: "Check and notify when Monday scratchcards are available to claim in the Octopus Energy app."
+  auto_detect_tariffs:
+    name: "Auto-Detect Octopus Tariffs"
+    description: "Query Octopus Account API to automatically detect your active import (Flux/Agile), export, and gas tariffs."
+  octopus_api_key:
+    name: "Octopus API Key"
+    description: "Octopus Energy API key (sk_live_...) for account tariff detection and rewards automation."
+  octopus_account_id:
+    name: "Octopus Account ID"
+    description: "Octopus Energy Account Number (A-XXXXXXXX) found on your bill or online account."
+  auto_spin_wheel_of_fortune:
+    name: "Octopus Wheel of Fortune Auto-Spins (Legacy)"
+    description: "Legacy configuration key; please use enable_wheel_spins above."
+  notify_octoplus_scratchcard:
+    name: "Octopus Scratchcard Notifications (Legacy)"
+    description: "Legacy configuration key; please use enable_scratchcard_alerts above."
+

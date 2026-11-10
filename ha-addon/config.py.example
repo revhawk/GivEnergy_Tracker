@@ -39,6 +39,12 @@ ARBITRAGE_MARGIN_P = 1.5            # Import must be below (export − margin).
 ARBITRAGE_TARGET_SOC = 100          # Battery target SoC (%) when arbitrage slots appear (100% enables immediate solar export)
 LOW_SOLAR_TARGET_SOC = 100          # Pre-charge target to 100% on low-solar winter days to protect 16:00-19:00 peak
 
+# Cost-based planner (ADR 0016)
+BATTERY_ROUND_TRIP_EFFICIENCY = 0.92  # ~8% round-trip loss (split evenly charge/discharge)
+PESSIMISTIC_SOLAR_FACTOR = 0.6        # Pessimistic solar = forecast x this factor
+PESSIMISTIC_SOLAR_WEIGHT = 0.3        # Ranking blend: 70% central cost + 30% pessimistic cost
+PLAN_SEARCH_MIN_IMPROVEMENT_P = 2.0   # Search candidate only offered if >= this many pence cheaper
+
 # Octopus Octoplus sessions (ADR 0004 compliance: Power Down & Power Up)
 OCTOPLUS_POWER_DOWN_ENTITY = "sensor.octopus_energy_power_down_sessions"
 OCTOPLUS_POWER_UP_ENTITY = "sensor.octopus_energy_power_up_sessions"

@@ -107,6 +107,24 @@ class CandidatePlanOption(BaseModel):
     headroom_kwh: float = Field(..., ge=0.0, description="Battery capacity headroom left for solar surges in kWh")
     slots_desc: str = Field(..., description="Formatted string describing charge slots")
     rationale: str = Field(..., description="Strategic and economic trade-off rationale")
+    sim_cost_p: Optional[float] = Field(None, description="Simulated 24h net cost (central solar) in pence, incl. losses and end battery value")
+    sim_cost_pessimistic_p: Optional[float] = Field(None, description="Simulated net cost with pessimistic solar in pence")
+    sim_score_p: Optional[float] = Field(None, description="Blended central/pessimistic net cost used for ranking (pence)")
+    sim_min_soc: Optional[float] = Field(None, ge=0.0, le=100.0, description="Lowest simulated SoC % over the horizon")
+
+
+class PlanResult(BaseModel):
+    """Output of planner.simulate_plan (ADR 0016)."""
+    soc: List[float] = Field(..., description="Simulated end-of-slot SoC % per slot")
+    import_kwh: float = Field(..., ge=0.0)
+    export_kwh: float = Field(..., ge=0.0)
+    iboost_kwh: float = Field(..., ge=0.0)
+    grid_charge_kwh: float = Field(..., ge=0.0)
+    cost_p: float = Field(..., description="Import cost minus export revenue (pence)")
+    end_energy: float = Field(..., ge=0.0)
+    end_value_p: float = Field(..., ge=0.0)
+    net_cost_p: float = Field(..., description="cost_p minus end_value_p")
+    min_soc: float = Field(..., ge=0.0, le=100.0)
 
 
 class LLMCandidateSelection(BaseModel):

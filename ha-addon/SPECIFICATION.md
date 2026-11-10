@@ -1,6 +1,6 @@
 # Technical Specification & Architecture — GivEnergy Tariff Optimiser
 
-**Version:** 1.0.24.9  
+**Version:** 1.0.25.0  
 **Target Hardware:** GivEnergy Inverters (Gen 1, Gen 2, Gen 3, All-in-One)  
 **Target Platform:** Home Assistant Add-on Container (Linux ARM64 / AMD64)  
 
@@ -28,7 +28,7 @@ graph TD
     end
 
     subgraph GivEnergy Tariff Optimiser Add-on
-        Version[version.py - v1.0.24.9]
+        Version[version.py - v1.0.25.0]
         Config[config.py - Settings & Options]
         Optimiser[optimiser.py - Daemon & Scheduling Loop]
         SimEngine[simulation.py - 24h Forward Physical Simulation]
@@ -404,6 +404,18 @@ Test results are saved in `test-results/contracts.xml` and output to standard lo
   3. **Add-on Configuration UI Options**: Add `enable_axle_dispatch: bool`, `axle_api_token: password`, and `axle_export_power_w: int` to `config.yaml` options and schema, allowing zero-YAML setup directly from Home Assistant's UI.
   4. **Simulation & Inverter Dispatch**: Integrate event detection into `simulation.py` and `givtcp.py`. When an export event is scheduled, prioritize pre-event battery charging to 100%, and automatically program GivTCP discharge slots (`/setDischargeSlot`, `/setBatteryMode` mode="Timed Export", `/setDischargeRate`, and `/enableDischargeSchedule`) during the event window. Automatically clear discharge slots and restore Eco mode when the event concludes.
 - **Consequences:** Users can monetize their battery via Axle Energy VPP in Self-Dispatch mode with zero manual app toggling and zero conflict between cloud commands and GivTCP.
+
+### ADR 0016: Cost-Based Plan Simulation & Search (`planner.py`)
+- **Status:** Accepted
+- **Context:** Candidates from ADR 0013 were costed as `kWh × avg price` and never simulated, so solar spill, battery losses and leftover energy were ignored and the LLM compared estimates. Fixed targets (55/95%) and windows were hand-tuned. Concepts (not code) inspired by public Predbat documentation, whose licence is personal-use only.
+- **Decision:**
+  1. New side-effect-free `planner.simulate_plan()` — per-slot model with round-trip efficiency (`BATTERY_ROUND_TRIP_EFFICIENCY`, default 0.92, split evenly charge/discharge), grid covering load during Timed Charge slots, iBoost, Axle forced export, reserve from `BATTERY_RESERVE_PERCENT`. Output contract: `contracts.PlanResult`.
+  2. Score = import cost − export revenue − value of usable end energy (valued at the mean of the cheapest quarter of import prices), blended 70/30 between central and pessimistic solar (`PESSIMISTIC_SOLAR_FACTOR` 0.6, `PESSIMISTIC_SOLAR_WEIGHT` 0.3).
+  3. Every rule-based candidate is simulated and annotated (`sim_cost_p`, `sim_cost_pessimistic_p`, `sim_score_p`, `sim_min_soc`).
+  4. `search_best_plan()` grid-searches target SoC (5% steps) × cheapest-N eligible (non-Power-Down) slots; offered as an extra `cost_optimised` candidate only if ≥ `PLAN_SEARCH_MIN_IMPROVEMENT_P` (2p) cheaper than the best rule candidate.
+  5. The LLM remains the selector but sees simulated costs; a `[SHADOW]` log line and `sim_gap_to_cheapest_p` record how far its choice is from the cheapest plan, to evaluate its value over time.
+  6. The persisted `planned_soc_schedule` is produced by the same simulator.
+- **Consequences:** Plans are compared on a like-for-like cost basis; hard-coded rules remain as safe, explainable candidates. The base (no-charge) simulation used for day classification is unchanged in this release. Planned SoC during charge slots is now higher (grid covers load), which may slightly change drift-trigger behaviour.
 
 ---
 

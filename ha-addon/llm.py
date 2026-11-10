@@ -160,7 +160,13 @@ def chatgpt_select_candidate(day_classification, current_soc, battery_capacity_k
             f"  • Grid Charge: {c.get('kwh', 0.0):.1f} kWh at avg {c.get('avg_price', 0.0):.2f}p/kWh (est: {c.get('estimated_cost_pence', 0):.0f}p)\n"
             f"  • Solar Headroom Left: {c.get('headroom_kwh', 0.0):.1f} kWh ({(c.get('headroom_kwh', 0.0)/max(0.1, battery_capacity_kwh))*100:.0f}% space for solar)\n"
             f"  • Slots: {c.get('slots_desc', 'None')}\n"
-            f"  • Trade-off / Rationale: {c.get('rationale', '')}"
+            + (
+                f"  • Simulated Net Cost (24h, incl. losses, solar spill & end battery value): "
+                f"{c.get('sim_cost_p', 0.0):.0f}p central | {c.get('sim_cost_pessimistic_p', 0.0):.0f}p if solar underperforms "
+                f"| blended {c.get('sim_score_p', 0.0):.0f}p | lowest SoC {c.get('sim_min_soc', 0.0):.0f}%\n"
+                if 'sim_score_p' in c else ""
+            )
+            + f"  • Trade-off / Rationale: {c.get('rationale', '')}"
         )
     candidates_text = "\n\n".join(candidates_formatted)
 
@@ -209,10 +215,13 @@ def chatgpt_select_candidate(day_classification, current_soc, battery_capacity_k
         f"4. OCTOPLUS SESSIONS & VPP FLEXIBILITY ARBITRAGE:\n"
         f"   - Power Up (Free Electricity): Electricity is 0.0p/kWh. Maximize grid charging to 100% at full charge rate for £0.00 cost during the session.\n"
         f"   - Power Down (Saving Session): Enforce zero grid import to maximize OctoPoints rewards.\n"
-        f"   - Axle Energy Self-Dispatch (VPP): High-value force export window paying 100.0p/kWh (£1.00/unit). ALWAYS prioritize entering the event window with 100% battery capacity so the home can continuously export at full 3 kW to the grid for maximum revenue.\n\n"
+        f"   - Axle Energy Self-Dispatch (VPP): High-value force export window paying 100.0p/kWh (£1.00/unit). ALWAYS prioritize entering the event window with 100% battery capacity so the home can continuously export at full 3 kW to the grid for maximum revenue.\n"
+        f"5. SIMULATED COSTS:\n"
+        f"   - Each option shows a simulated net cost (lower is better) that already includes battery losses, solar spill and a pessimistic-solar weighting.\n"
+        f"   - Prefer the lowest blended cost unless a specific weather or event risk above justifies paying more; say so in 'reason'.\n\n"
         f"Reply ONLY with valid JSON:\n"
         f"  'approve': (bool)\n"
-        f"  'selected_candidate_id': (int: 1, 2, or 3)\n"
+        f"  'selected_candidate_id': (int: one of {', '.join(str(c.get('id')) for c in candidates)})\n"
         f"  'score': (int 1-10)\n"
         f"  'reason': (string <= 180 chars explaining why this candidate was selected)\n"
         f"  'weather_risk_commentary': (string <= 180 chars assessing solar forecast uncertainty and cloud cushion)"
