@@ -5,6 +5,7 @@ load profile forecasts, iBoost hot water diversion, export pricing, and calculat
 optimal grid charge windows and arbitrage opportunities.
 """
 
+import os
 import sys
 import math
 import logging
@@ -237,6 +238,20 @@ def _merge_slot_blocks(slot_list):
     return merged
 
 
+def is_winter_season(dt=None):
+    """Check if datetime falls within UK winter months (November through February)."""
+    check_dt = dt or datetime.now().astimezone()
+    return check_dt.month in (11, 12, 1, 2)
+
+
+def is_winter_full_charge_enabled():
+    """Determine if Winter 100% pre-charge mode is active."""
+    env_val = os.environ.get('ENABLE_WINTER_FULL_CHARGE')
+    if env_val is not None:
+        return env_val.lower() in ('true', '1', 'yes')
+    return getattr(config, 'ENABLE_WINTER_FULL_CHARGE', True) if config else True
+
+
 def build_plan_candidates(day_classification, current_soc, battery_capacity,
                           upcoming_slots, total_solar_kwh, solar_comparison, export_rate,
                           total_import_kwh=0.0):
@@ -258,13 +273,16 @@ def build_plan_candidates(day_classification, current_soc, battery_capacity,
     arbitrage_slots = [s for s in upcoming_slots if s['price'] < arbitrage_threshold and not s.get('is_power_down')]
 
     # Target SoC determination based on user rules
+    now_dt = upcoming_slots[0]['start'].astimezone() if upcoming_slots else datetime.now().astimezone()
+    is_winter = is_winter_season(now_dt) and is_winter_full_charge_enabled()
+
     if day_classification == "MEDIUM_SOLAR_PARTIAL_PRECHARGE":
         # Target 55% defensive floor, leaving ~45% headroom for sunny bursts
         target_soc_opt1 = int(getattr(config, 'DEFENSIVE_HEADROOM_TARGET_SOC', 55))
         target_soc_opt2 = min(80, target_soc_opt1 + 10)
     elif day_classification == "LOW_SOLAR_GRID_PRECHARGE":
-        # Overcast/winter: target 95% full pre-charge so battery is never stranded at 4%
-        target_soc_opt1 = int(getattr(config, 'LOW_SOLAR_TARGET_SOC', 95))
+        # Overcast/winter: target 100% full pre-charge so battery is never stranded at 4%
+        target_soc_opt1 = int(getattr(config, 'LOW_SOLAR_TARGET_SOC', 100) if config else 100)
         target_soc_opt2 = 90
     elif day_classification == "NEGATIVE_RATE_OPPORTUNITY":
         target_soc_opt1 = 100
@@ -274,7 +292,6 @@ def build_plan_candidates(day_classification, current_soc, battery_capacity,
         target_soc_opt2 = min(60, int(current_soc) + 10)
 
     # Determine pre-peak candidate slots relative to current execution time
-    now_dt = upcoming_slots[0]['start'].astimezone() if upcoming_slots else datetime.now().astimezone()
     if now_dt.hour < 7:
         pre_peak_slots = [
             s for s in upcoming_slots
@@ -348,14 +365,30 @@ def build_plan_candidates(day_classification, current_soc, battery_capacity,
     elif total_import_kwh > 0.2:
         opt1_slots_raw = pre_peak_slots
         opt1_strategy = "scheduled"
-        opt1_name = f"Optimal Deficit Pre-Charge"
-        effective_headroom = battery_capacity * 0.90 if now_dt.hour >= 16 else battery_capacity * (100.0 - current_soc) / 100.0
-        kwh_opt1 = min(total_import_kwh * 1.10, effective_headroom)
-        target_soc_opt1 = min(100, int((current_soc if now_dt.hour < 16 else 10) + (kwh_opt1 / battery_capacity) * 100))
+        if 7 <= now_dt.hour < 16:
+            # Daytime re-plan: ONLY top up what is strictly needed to bridge the 16:00-19:00 peak!
+            # Never charge to 100% at expensive daytime shoulder rates (25.8p).
+            opt1_name = "Peak-Protection Daytime Top-Up"
+            peak_target_cap = int(getattr(config, 'DAYTIME_TOPUP_MAX_TARGET_SOC', 55) if config else 55)
+            target_soc_opt1 = min(peak_target_cap, max(int(current_soc), int(current_soc + (total_import_kwh / battery_capacity) * 100)))
+            kwh_opt1 = max(0.0, (target_soc_opt1 - current_soc) / 100.0 * battery_capacity)
+        elif is_winter and day_classification == "LOW_SOLAR_GRID_PRECHARGE":
+            opt1_name = "Winter Full Pre-Charge (Target 100% @ Off-Peak)"
+            target_soc_opt1 = int(getattr(config, 'LOW_SOLAR_TARGET_SOC', 100) if config else 100)
+            kwh_opt1 = max(0.0, (target_soc_opt1 - (current_soc if now_dt.hour < 16 else 10)) / 100.0 * battery_capacity)
+        else:
+            opt1_name = f"Optimal Deficit Pre-Charge"
+            effective_headroom = battery_capacity * 0.90 if now_dt.hour >= 16 else battery_capacity * (100.0 - current_soc) / 100.0
+            kwh_opt1 = min(total_import_kwh * 1.10, effective_headroom)
+            target_soc_opt1 = min(100, int((current_soc if now_dt.hour < 16 else 10) + (kwh_opt1 / battery_capacity) * 100))
     else:
         opt1_slots_raw = pre_peak_slots
         opt1_strategy = "midday_defensive" if (7 <= now_dt.hour < 16) else "overnight_defensive"
-        opt1_name = f"Defensive Pre-Charge (Target {target_soc_opt1}%)"
+        if is_winter and day_classification == "LOW_SOLAR_GRID_PRECHARGE" and (now_dt.hour >= 16 or now_dt.hour < 7):
+            opt1_name = "Winter Full Pre-Charge (Target 100% @ Off-Peak)"
+            target_soc_opt1 = int(getattr(config, 'LOW_SOLAR_TARGET_SOC', 100) if config else 100)
+        else:
+            opt1_name = f"Defensive Pre-Charge (Target {target_soc_opt1}%)"
         effective_headroom = battery_capacity * 0.90 if now_dt.hour >= 16 else battery_capacity * (100.0 - current_soc) / 100.0
         kwh_opt1 = min(max(0.0, (target_soc_opt1 - (current_soc if now_dt.hour < 16 else 10)) / 100.0 * battery_capacity), effective_headroom)
 
@@ -763,10 +796,14 @@ async def run_optimization():
         and total_solar_kwh >= 15.0
     )
 
+    now_dt = upcoming_slots[0]['start'].astimezone() if upcoming_slots else datetime.now().astimezone()
+    is_winter = is_winter_season(now_dt) and is_winter_full_charge_enabled()
+
     medium_solar_day = (
         (0.35 * available_capacity_kwh <= daytime_solar_surplus_kwh or total_solar_kwh < 15.0)
         and total_solar_kwh >= 4.0
         and not solar_self_sufficient
+        and not is_winter  # In winter (Nov-Feb), UK solar is never medium-solar partial charge
     )
 
     if negative_slots:

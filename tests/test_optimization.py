@@ -93,6 +93,7 @@ async def test_optimization_arbitrage_multi_slots(
 
 
 @pytest.mark.asyncio
+@patch('simulation.is_winter_full_charge_enabled', return_value=False)
 @patch('optimiser.set_inverter_charge_slots')
 @patch('optimiser.chatgpt_select_candidate')
 @patch('optimiser.fetch_export_rate')
@@ -100,7 +101,7 @@ async def test_optimization_arbitrage_multi_slots(
 @patch('optimiser.fetch_agile_rates')
 @patch('optimiser.get_inverter_telemetry')
 async def test_optimization_deficit_non_contiguous_cheapest_slots(
-    mock_telemetry, mock_rates, mock_solar, mock_export, mock_select, mock_set_slots
+    mock_telemetry, mock_rates, mock_solar, mock_export, mock_select, mock_set_slots, mock_winter
 ):
     # Setup 2 cheap slots separated by expensive slots (01:00 @ 11p, 02:00 @ 30p, 03:00 @ 11p)
     slots = [
@@ -878,6 +879,87 @@ async def test_run_energy_optimization_programs_axle_discharge_slot(
     d_start, d_end = mock_set_discharge.call_args[0][:2]
     assert d_start == event_start.astimezone()
     assert d_end == event_end.astimezone()
+
+
+def test_is_winter_season():
+    """Verify winter season detection for Nov-Feb (months 11, 12, 1, 2)."""
+    from simulation import is_winter_season
+    assert is_winter_season(datetime(2026, 11, 15, 12, 0, tzinfo=timezone.utc)) is True
+    assert is_winter_season(datetime(2026, 12, 25, 12, 0, tzinfo=timezone.utc)) is True
+    assert is_winter_season(datetime(2027, 1, 15, 12, 0, tzinfo=timezone.utc)) is True
+    assert is_winter_season(datetime(2027, 2, 28, 12, 0, tzinfo=timezone.utc)) is True
+    assert is_winter_season(datetime(2027, 3, 1, 12, 0, tzinfo=timezone.utc)) is False
+    assert is_winter_season(datetime(2026, 6, 21, 12, 0, tzinfo=timezone.utc)) is False
+    assert is_winter_season(datetime(2026, 10, 31, 12, 0, tzinfo=timezone.utc)) is False
+
+
+def test_winter_100_percent_overnight_precharge():
+    """Verify that in winter overnight planning, Candidate 1 targets 100% SoC."""
+    from simulation import build_plan_candidates
+    # Mock overnight slots starting at 02:00 in November
+    base_dt = datetime(2026, 11, 18, 2, 0, tzinfo=timezone.utc)
+    slots = []
+    for i in range(8):
+        s_time = base_dt + timedelta(minutes=30 * i)
+        slots.append({
+            'start': s_time,
+            'end': s_time + timedelta(minutes=30),
+            'price': 15.6 if i < 6 else 25.8,
+        })
+
+    candidates = build_plan_candidates(
+        day_classification="LOW_SOLAR_GRID_PRECHARGE",
+        current_soc=30.0,
+        battery_capacity=9.5,
+        upcoming_slots=slots,
+        total_solar_kwh=1.2,
+        solar_comparison={},
+        export_rate=12.0,
+        total_import_kwh=4.5
+    )
+
+    opt1 = candidates[0]
+    assert opt1['id'] == 1
+    assert opt1['target_soc'] == 100
+    assert "Winter Full Pre-Charge" in opt1['name']
+    assert opt1['strategy'] == "scheduled"
+    assert opt1['kwh'] > 0
+
+
+def test_daytime_replan_capped_to_peak_protection():
+    """Verify that daytime re-planning (e.g. 10:00) caps top-up at 55% to protect
+    the 16:00-19:00 peak, rather than charging to 100% at expensive daytime rates.
+    """
+    from simulation import build_plan_candidates
+    # Daytime slots from 10:00 to 16:00
+    base_dt = datetime(2026, 11, 18, 10, 0, tzinfo=timezone.utc)
+    slots = []
+    for i in range(12):
+        s_time = base_dt + timedelta(minutes=30 * i)
+        slots.append({
+            'start': s_time,
+            'end': s_time + timedelta(minutes=30),
+            'price': 25.8,
+        })
+
+    candidates = build_plan_candidates(
+        day_classification="LOW_SOLAR_GRID_PRECHARGE",
+        current_soc=20.0,
+        battery_capacity=9.5,
+        upcoming_slots=slots,
+        total_solar_kwh=1.0,
+        solar_comparison={},
+        export_rate=12.0,
+        total_import_kwh=6.0  # Large deficit
+    )
+
+    opt1 = candidates[0]
+    assert opt1['id'] == 1
+    # Target SoC must be capped at 55% peak protection, NOT 100%!
+    assert opt1['target_soc'] == 55
+    assert "Peak-Protection Daytime Top-Up" in opt1['name']
+    assert opt1['strategy'] == "scheduled"
+
 
 
 

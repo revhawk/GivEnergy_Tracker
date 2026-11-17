@@ -107,6 +107,18 @@ def test_octopus_api_key_and_account_id_configuration(monkeypatch):
     assert os.environ.get("OCTOPUS_ACCOUNT_ID") == "A-12345678"
 
 
+def test_winter_full_charge_configuration(monkeypatch):
+    from simulation import is_winter_full_charge_enabled
+    monkeypatch.delenv("ENABLE_WINTER_FULL_CHARGE", raising=False)
+    assert is_winter_full_charge_enabled() is True
+
+    monkeypatch.setenv("ENABLE_WINTER_FULL_CHARGE", "false")
+    assert is_winter_full_charge_enabled() is False
+
+    monkeypatch.setenv("ENABLE_WINTER_FULL_CHARGE", "true")
+    assert is_winter_full_charge_enabled() is True
+
+
 def test_translations_cover_all_config_options():
     """Verify that translations/en.yaml covers all options defined in config.yaml."""
     import yaml

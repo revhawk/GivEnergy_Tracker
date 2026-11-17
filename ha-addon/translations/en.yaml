@@ -50,6 +50,9 @@ configuration:
   octopus_account_id:
     name: "Octopus Account ID"
     description: "Octopus Energy Account Number (A-XXXXXXXX) found on your bill or online account."
+  enable_winter_full_charge:
+    name: "Winter 100% Overnight Pre-Charge"
+    description: "Automatically targets 100% battery pre-charge during cheap off-peak hours (02:00-05:00) from November to February, avoiding expensive daytime shoulder and peak imports."
   auto_spin_wheel_of_fortune:
     name: "Octopus Wheel of Fortune Auto-Spins (Legacy)"
     description: "Legacy configuration key; please use enable_wheel_spins above."

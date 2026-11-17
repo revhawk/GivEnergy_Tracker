@@ -1,6 +1,6 @@
 # Technical Specification & Architecture — GivEnergy Tariff Optimiser
 
-**Version:** 1.0.25.3  
+**Version:** 1.0.25.4  
 **Target Hardware:** GivEnergy Inverters (Gen 1, Gen 2, Gen 3, All-in-One)  
 **Target Platform:** Home Assistant Add-on Container (Linux ARM64 / AMD64)  
 
@@ -452,6 +452,24 @@ The `tariffs.py` module integrates directly with Octopus Energy REST APIs to ret
    - Evaluates arbitrage profitability slot-by-slot in `simulation.py`, comparing slot import costs directly against the slot's respective export value.
 3. **Graceful Fallback & Configuration Safety**:
    - Falls back transparently to static `config.py` definitions (`AGILE_PRODUCT_CODE`, `EXPORT_PRODUCT_CODE`, `EXPORT_RATE_P_FALLBACK`) if account auto-discovery is disabled or the Octopus Account API is temporarily unreachable.
+
+---
+
+## 6. Winter Full Overnight Pre-Charge & Peak-Protection Daytime Cap Architecture (ADR 0017)
+
+### 6.1 Motivation & Economic Model
+1. **Seasonal Solar Deficits**:
+   - In UK winter months (November through February), solar generation typically drops below 2–6 kWh/day, insufficient to carry the household through evening hours.
+   - Preserving 45% battery headroom for solar during winter risks running the battery down into deep discharge before the 16:00–19:00 peak, causing expensive daytime shoulder grid imports (25.8p/kWh on Flux) and peak grid imports (36.0p/kWh).
+2. **Pre-Charge Rule**:
+   - When `enable_winter_full_charge` is enabled (default `true`) and execution occurs in November, December, January, or February (`dt.month in (11, 12, 1, 2)`), overnight scheduling unconditionally targets **100% State of Charge (SoC)** during the cheap off-peak window (02:00–05:00 at 15.6p/kWh).
+   - This guarantees the battery enters the daytime fully charged from low-cost power, powering the home until evening peak and eliminating panic daytime imports.
+3. **Axle Energy VPP Readiness**:
+   - Entering the daytime at 100% SoC ensures the battery has surplus capacity to immediately service short-notice Axle Energy VPP flexibility export events (£1.00/kWh) without needing emergency pre-charging at day rates.
+4. **Daytime Re-Planning Safety Cap (`DAYTIME_TOPUP_MAX_TARGET_SOC = 55%`)**:
+   - Re-planning runs between 07:00 and 16:00 are strictly capped at 55% target SoC (`Peak-Protection Daytime Top-Up`).
+   - The engine never commands charging to 100% at expensive daytime shoulder rates (25.8p/kWh). Top-ups are limited strictly to what is required to protect the 16:00–19:00 peak from dropping below the 10% battery floor.
+
 
 
 

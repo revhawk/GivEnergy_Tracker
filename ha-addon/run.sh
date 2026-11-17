@@ -45,6 +45,7 @@ ENABLE_SCRATCHCARD_ALERTS=$(jq --raw-output '.enable_scratchcard_alerts // .noti
 AUTO_DETECT_TARIFFS=$(jq --raw-output '.auto_detect_tariffs // true' /data/options.json 2>/dev/null || echo "true")
 OCTOPUS_API_KEY=$(jq --raw-output '.octopus_api_key // ""' /data/options.json 2>/dev/null || echo "")
 OCTOPUS_ACCOUNT_ID=$(jq --raw-output '.octopus_account_id // ""' /data/options.json 2>/dev/null || echo "")
+ENABLE_WINTER_FULL_CHARGE=$(jq --raw-output '.enable_winter_full_charge // true' /data/options.json 2>/dev/null || echo "true")
 
 export INTERVAL_MINUTES
 export RUN_ONCE
@@ -63,6 +64,7 @@ export ENABLE_SCRATCHCARD_ALERTS
 export AUTO_DETECT_TARIFFS
 export OCTOPUS_API_KEY
 export OCTOPUS_ACCOUNT_ID
+export ENABLE_WINTER_FULL_CHARGE
 
 echo "Starting GivEnergy Tariff Optimiser add-on..."
 echo "Interval: $INTERVAL_MINUTES minutes  |  Run Once: $RUN_ONCE  |  Debug Logging: $DEBUG_LOGGING"

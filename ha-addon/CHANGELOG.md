@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.25.4] - 2026-11-17
+
+### Added
+- **Winter 100% Overnight Pre-Charge Policy (`simulation.py`, ADR 0017)**:
+  - Introduced automatic 100% battery pre-charging rule active from November through February (`is_winter_season(dt)` covering months 11, 12, 1, 2).
+  - During winter, the forward engine automatically classifies days as `LOW_SOLAR_GRID_PRECHARGE` (ignoring partial-headroom rules), charging the battery to 100% SoC during the cheap off-peak window (02:00–05:00 at 15.6p/kWh on Flux or Agile off-peak).
+  - Fully loads the battery from low-cost energy, carrying household consumption until the evening peak and eliminating panic daytime grid imports at expensive day rates.
+  - Leaves the battery armed and ready at high SoC to immediately service short-notice Axle Energy VPP flexibility export events (£1.00/kWh) without emergency daytime charging.
+- **Daytime Re-Planning Peak-Protection Cap (`DAYTIME_TOPUP_MAX_TARGET_SOC`)**:
+  - Re-planning cycles between 07:00 and 16:00 are strictly capped at 55% target SoC (`Peak-Protection Daytime Top-Up`).
+  - Completely prevents daytime re-plans from commanding grid imports to 100% at expensive daytime shoulder rates (25.8p/kWh).
+- **Configuration & Localization (`config.yaml`, `translations/en.yaml`, `run.sh`)**:
+  - Added `enable_winter_full_charge` toggle (default: `true`) with comprehensive English titles and subtitles in Home Assistant UI.
+  - Added environment variable bridging in `run.sh` and fallback defaults in `config.py.example`.
+- **Unit & Contract Test Expansion (`tests/`)**:
+  - Added `test_is_winter_season` verifying November through February seasonal activation.
+  - Added `test_winter_100_percent_overnight_precharge` validating 100% target SoC during cheap overnight hours.
+  - Added `test_daytime_replan_capped_to_peak_protection` verifying the 55% SoC cap on daytime top-ups.
+  - Added `test_winter_full_charge_configuration` in `tests/test_config_options.py`.
+
+### Senior Developer Review
+- **Economic & Operational Optimization**: In UK winter, solar yield is minimal (< 4 kWh/day). Overnight pre-charging to 100% at 15.6p saves substantial operating cost compared to mid-day charging at 25.8p or peak import at 36p. Capping daytime re-plans to 55% peak protection prevents runaway daytime grid imports while guaranteeing 16:00–19:00 peak security and Axle VPP readiness.
+- **Verification**: Complete test suite passed 100% (179 tests). Zero regressions.
+
 ## [1.0.25.3] - 2026-11-17
 
 ### Added
