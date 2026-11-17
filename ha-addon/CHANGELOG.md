@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.25.5] - 2026-11-17
+
+### Fixed
+- **Strict Confirmation Gate for Octopus Power Up / Happy Hour Sessions (`octoplus.py`, `simulation.py`)**:
+  - Fixed critical defect where available promotional Happy Hour or regional Power Up campaigns (e.g. `EVENT_143_171126`) returned in the platform's general event catalogue were treated as free electricity even when the user's account had not joined or booked the session (`is_joined: False`).
+  - Enforced that only sessions confirmed in `account.joinedEvents` (`is_joined is True`) are marked `[FREE]`, preventing inadvertent grid imports at daytime rates (25.8p/kWh).
+  - Added unit test `test_is_power_up_slot_dt_guards_against_unconfirmed_single_hour_session` in `tests/test_helpers.py`.
+
+### Senior Developer Review
+- **Economic Safety Guard**: Prevents charging based on unbooked token sessions. If a user hasn't booked an Octopus Happy Hour with tokens, Octopus bills normal unit rates; this fix ensures GivTCP only charges for free sessions the user has actually joined.
+- **Verification**: Pytest test suite expanded to 180 tests, 100% passing.
+
 ## [1.0.25.4] - 2026-11-17
 
 ### Added

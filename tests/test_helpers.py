@@ -460,6 +460,20 @@ class TestOctoplusLiveGraphQL:
         # Should guard against unconfirmed multi-hour campaign window
         assert octoplus.is_power_up_slot_dt(slot_start, slot_end, live_sessions=multihour_session) is False
 
+    def test_is_power_up_slot_dt_guards_against_unconfirmed_single_hour_session(self):
+        import octoplus
+        now = datetime.now(timezone.utc)
+        single_hour_unjoined = [{
+            "session_type": "power_up",
+            "start": now + timedelta(hours=1),
+            "end": now + timedelta(hours=2),
+            "is_joined": False
+        }]
+        slot_start = now + timedelta(hours=1, minutes=15)
+        slot_end = now + timedelta(hours=1, minutes=45)
+        # Should guard against unjoined Happy Hour / Power Up session
+        assert octoplus.is_power_up_slot_dt(slot_start, slot_end, live_sessions=single_hour_unjoined) is False
+
     def test_is_power_up_slot_dt_accepts_joined_session(self):
         import octoplus
         now = datetime.now(timezone.utc)

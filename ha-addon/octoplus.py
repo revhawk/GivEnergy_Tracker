@@ -530,8 +530,12 @@ def is_power_up_slot_dt(slot_start, slot_end, live_sessions=None):
             s_end = s['end']
             duration_hours = (s_end - s_start).total_seconds() / 3600.0
 
-            # Guard against unconfirmed multi-hour promotional campaign windows:
-            # If duration > 2 hours and session is not confirmed as joined, do not treat whole block as free!
+            # Guard against unconfirmed sessions:
+            # If the user has not joined/booked the Happy Hour or Power Up session,
+            # Octopus will bill standard tariff rates (NOT free electricity).
+            if s.get('is_joined') is False:
+                continue
+
             if duration_hours > 2.0 and not s.get('is_joined'):
                 continue
 

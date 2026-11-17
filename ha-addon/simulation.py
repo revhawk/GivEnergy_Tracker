@@ -572,6 +572,12 @@ async def run_optimization():
                         f"({s_str} - {e_str}, {pts} OctoPoints/kWh). Enforcing zero grid import."
                     )
                 elif stype == 'power_up':
+                    if sess.get('is_joined') is False:
+                        logging.info(
+                            f"ℹ️ [OCTOPLUS] Available Power Up / Happy Hour event {sess.get('code')} "
+                            f"({s_str} - {e_str}) detected, but account is NOT booked/joined. Skipping."
+                        )
+                        continue
                     logging.info(
                         f"⚡ [OCTOPLUS] Detected Power Up session: {sess.get('code')} "
                         f"({s_str} - {e_str}, Free Electricity). Prioritizing 100% battery pre-charge."
