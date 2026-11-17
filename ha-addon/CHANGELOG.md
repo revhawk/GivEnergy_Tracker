@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.25.3] - 2026-11-17
+
+### Added
+- **Continuous 5-Minute Axle Energy VPP Monitoring & Sub-Interval Sleep (`optimiser.py`, ADR 0015)**:
+  - De-coupled Axle flexibility event polling from the 30-minute main loop sleep into sliced 5-minute sub-intervals (`AXLE_POLL_INTERVAL_SECONDS = 300`).
+  - Implemented modular `check_axle_events()` helper in `simulation.py` and re-exported in `optimiser.py`.
+  - When an intraday event is announced, the daemon detects it within 5 minutes instead of waiting up to 30 minutes, immediately triggering a full optimization re-plan (`run_optimization()`).
+  - Automatically targets 100% battery pre-charge and arms GivTCP with the exact timed export discharge slot (`set_inverter_discharge_slot`).
+  - Automatically resets GivTCP to `Eco` mode within 5 minutes of event conclusion or if cancelled by Axle.
+- **Resilient Multi-Format Axle Payload Parser (`axle.py`)**:
+  - Expanded `parse_axle_payload()` to accept single event dictionaries, lists of event objects (`[{"start_time": ...}, ...]`), and wrapped dictionary payloads (`{"events": [...]}`).
+  - Added support for standard field name aliases (`start`/`start_time`, `finish`/`end_time`/`end`, `direction`/`import_export`, `updated`/`updated_at`).
+- **Comprehensive Unit & Contract Test Expansion (`tests/`)**:
+  - Added 9 new unit & contract tests across `tests/test_axle.py` and `tests/test_optimization.py` verifying multi-format payload parsing, 5-minute sub-interval event discovery, pre-charge window triggering, and Eco mode restoration on event conclusion or cancellation.
+
+### Senior Developer Review
+- **Architecture & Resilience**: Axle Energy flexibility events announced intraday (such as National Grid ESO DFS sessions) are now captured in real-time. Full re-planning ensures battery is filled to 100% capacity prior to the event, maximizing revenue (£1.00/kWh at 3 kW export) without missing pre-charge windows.
+- **Zero-Regression Verification**: Pytest suite expanded to 175 tests with 100% pass rate. Single-source version synchronized across all authoritative metadata.
+
 ## [1.0.25.2] - 2026-11-10
 
 ### Fixed

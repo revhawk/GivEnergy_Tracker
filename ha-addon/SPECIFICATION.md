@@ -1,6 +1,6 @@
 # Technical Specification & Architecture — GivEnergy Tariff Optimiser
 
-**Version:** 1.0.25.2  
+**Version:** 1.0.25.3  
 **Target Hardware:** GivEnergy Inverters (Gen 1, Gen 2, Gen 3, All-in-One)  
 **Target Platform:** Home Assistant Add-on Container (Linux ARM64 / AMD64)  
 
@@ -28,7 +28,7 @@ graph TD
     end
 
     subgraph GivEnergy Tariff Optimiser Add-on
-        Version[version.py - v1.0.25.2]
+        Version[version.py - v1.0.25.3]
         Config[config.py - Settings & Options]
         Optimiser[optimiser.py - Daemon & Scheduling Loop]
         SimEngine[simulation.py - 24h Forward Physical Simulation]
@@ -403,6 +403,7 @@ Test results are saved in `test-results/contracts.xml` and output to standard lo
      - Displays scheduled event start/end times or confirms no events currently scheduled.
   3. **Add-on Configuration UI Options**: Add `enable_axle_dispatch: bool`, `axle_api_token: password`, and `axle_export_power_w: int` to `config.yaml` options and schema, allowing zero-YAML setup directly from Home Assistant's UI.
   4. **Simulation & Inverter Dispatch**: Integrate event detection into `simulation.py` and `givtcp.py`. When an export event is scheduled, prioritize pre-event battery charging to 100%, and automatically program GivTCP discharge slots (`/setDischargeSlot`, `/setBatteryMode` mode="Timed Export", `/setDischargeRate`, and `/enableDischargeSchedule`) during the event window. Automatically clear discharge slots and restore Eco mode when the event concludes.
+  5. **Continuous Monitor & Adaptive Re-Planning**: Hook Axle event detection into `run_light_monitor()` so the daemon polls Axle on every 30-minute tick. If a new or updated event is detected, or if the current time enters the 2-hour pre-charge window (`is_axle_precharge_window()`), immediately trigger an adaptive re-plan to top up the battery to 100% and arm GivTCP. Support single event payloads, event lists, and `{"events": [...]}` wrapper payloads with field alias resilience (`start`/`start_time`, `finish`/`end_time`, `direction`/`import_export`).
 - **Consequences:** Users can monetize their battery via Axle Energy VPP in Self-Dispatch mode with zero manual app toggling and zero conflict between cloud commands and GivTCP.
 
 ### ADR 0016: Cost-Based Plan Simulation & Search (`planner.py`)

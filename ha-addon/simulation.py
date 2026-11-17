@@ -32,6 +32,93 @@ def _op():
     return opt_mod if opt_mod else sys.modules[__name__]
 
 
+async def check_axle_events(realtime_soc=None):
+    """Poll Axle Energy API for new events, pre-charge windows, cancellations, or conclusions.
+    Returns True if an event change requires an immediate full re-plan.
+    """
+    opt = _op()
+    is_axle_fn = getattr(opt, 'is_axle_enabled', axle.is_axle_enabled)
+    if not is_axle_fn():
+        return False
+
+    load_state_fn = getattr(opt, 'load_state', state.load_state)
+    save_state_fn = getattr(opt, 'save_state', state.save_state)
+    fetch_axle_fn = getattr(opt, 'fetch_axle_event', axle.fetch_axle_event)
+    set_discharge_fn = getattr(opt, 'set_inverter_discharge_slot', givtcp.set_inverter_discharge_slot)
+    parse_iso_fn = getattr(opt, 'parse_utc_iso', tariffs.parse_utc_iso)
+
+    cur_state = load_state_fn()
+    now_utc = datetime.now(timezone.utc)
+    axle_event = fetch_axle_fn()
+
+    last_axle_end_str = cur_state.get('active_axle_event_end')
+    tracked_axle_start_str = cur_state.get('tracked_axle_event_start')
+
+    if axle_event and axle_event.get('start') and axle_event.get('end'):
+        a_start_iso = axle_event['start'].isoformat()
+        a_end_iso = axle_event['end'].isoformat()
+        a_start_str = axle_event['start'].astimezone().strftime('%m-%d %H:%M')
+        a_end_str = axle_event['end'].astimezone().strftime('%H:%M')
+        direction = axle_event.get('import_export', 'export')
+
+        # Case 1: Newly announced or updated Axle event within next 24h
+        if axle_event['end'] > now_utc and axle_event['start'] < now_utc + timedelta(hours=24):
+            if tracked_axle_start_str != a_start_iso or last_axle_end_str != a_end_iso:
+                logging.info(
+                    f"⚡ [AXLE MONITOR] New or updated Axle flexibility event detected: "
+                    f"{a_start_str} - {a_end_str} ({direction.upper()}). Triggering immediate re-planning!"
+                )
+                cur_state['tracked_axle_event_start'] = a_start_iso
+                cur_state['active_axle_event_end'] = a_end_iso
+                save_state_fn(cur_state)
+                return True
+
+            # Case 2: Entering pre-charge window (e.g. 2 hours before event)
+            is_precharge_fn = getattr(opt, 'is_axle_precharge_window', axle.is_axle_precharge_window)
+            if is_precharge_fn(axle_event, now_utc):
+                if cur_state.get('axle_precharge_triggered') != a_start_iso:
+                    soc = realtime_soc
+                    if soc is None:
+                        get_soc_fn = getattr(opt, 'get_inverter_soc', givtcp.get_inverter_soc)
+                        try:
+                            soc = await get_soc_fn()
+                        except Exception:
+                            soc = None
+                    if soc is None or soc < 98:
+                        logging.info(
+                            f"⚡ [AXLE MONITOR] Entering Axle pre-charge window (starts {a_start_str}). "
+                            f"Current SoC is {soc if soc is not None else '?'}%. Triggering re-planning for 100% pre-charge!"
+                        )
+                        cur_state['axle_precharge_triggered'] = a_start_iso
+                        save_state_fn(cur_state)
+                        return True
+
+    # Case 3: Cancelled Axle event while an active event end was tracked
+    if last_axle_end_str and not axle_event:
+        last_axle_end = parse_iso_fn(last_axle_end_str)
+        if now_utc < last_axle_end:
+            logging.info("Axle VPP Export Event cancelled by Axle — resetting inverter to Eco mode.")
+            await set_discharge_fn(None, None)
+            cur_state.pop('active_axle_event_end', None)
+            cur_state.pop('tracked_axle_event_start', None)
+            cur_state.pop('axle_precharge_triggered', None)
+            save_state_fn(cur_state)
+            return True
+
+    # Case 4: Concluded active event
+    if last_axle_end_str:
+        last_axle_end = parse_iso_fn(last_axle_end_str)
+        if now_utc >= last_axle_end:
+            logging.info("Axle VPP Export Event concluded — resetting inverter to Eco mode.")
+            await set_discharge_fn(None, None)
+            cur_state.pop('active_axle_event_end', None)
+            cur_state.pop('tracked_axle_event_start', None)
+            cur_state.pop('axle_precharge_triggered', None)
+            save_state_fn(cur_state)
+
+    return False
+
+
 async def run_light_monitor():
     """Light monitor tick: check battery SoC, record load telemetry, and test for plan drift."""
     logging.info("--- Light monitor tick ---")
@@ -115,16 +202,10 @@ async def run_light_monitor():
         else:
             logging.info(f"⏰ [{now_time_str}] Battery SoC: {realtime_soc}%  (no active plan slot found for drift comparison)")
 
-        # Check if an active Axle event has concluded and clear discharge slot
-        last_axle_end_str = cur_state.get('active_axle_event_end')
-        if last_axle_end_str:
-            last_axle_end = parse_iso_fn(last_axle_end_str)
-            if now_utc >= last_axle_end:
-                set_discharge_fn = getattr(opt, 'set_inverter_discharge_slot', givtcp.set_inverter_discharge_slot)
-                logging.info("Axle VPP Export Event concluded — resetting inverter to Eco mode.")
-                await set_discharge_fn(None, None)
-                cur_state.pop('active_axle_event_end', None)
-                save_state_fn(cur_state)
+        # Continuous Axle Energy VPP Monitoring (ADR 0015)
+        check_axle_fn = getattr(opt, 'check_axle_events', check_axle_events)
+        if await check_axle_fn(realtime_soc=realtime_soc):
+            return True
 
         return False
     except Exception as e:
@@ -870,6 +951,7 @@ async def run_optimization():
             await set_discharge_fn(a_start, a_end, discharge_target=reserve_floor, discharge_rate_w=rate_w)
             cur_state = load_state_fn()
             cur_state['active_axle_event_end'] = axle_event['end'].isoformat()
+            cur_state['tracked_axle_event_start'] = axle_event['start'].isoformat()
             save_state_fn(cur_state)
         else:
             await set_discharge_fn(None, None)
@@ -878,6 +960,8 @@ async def run_optimization():
         if cur_state.get('active_axle_event_end'):
             await set_discharge_fn(None, None)
             cur_state.pop('active_axle_event_end', None)
+            cur_state.pop('tracked_axle_event_start', None)
+            cur_state.pop('axle_precharge_triggered', None)
             save_state_fn(cur_state)
 
     # Calculate and persist planned SoC trajectory accounting for applied charge blocks
