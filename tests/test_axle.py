@@ -98,6 +98,58 @@ class TestAxleConnectionAndParsing:
         assert axle.parse_axle_payload({}) is None
         assert axle.parse_axle_payload({"start_time": None}) is None
         assert axle.parse_axle_payload({"start_time": "unavailable"}) is None
+        assert axle.parse_axle_payload([]) is None
+
+    def test_parse_axle_payload_list_format(self):
+        now = datetime.now(timezone.utc).replace(microsecond=0)
+        payload = [
+            # Past event
+            {
+                "start_time": (now - timedelta(hours=3)).isoformat(),
+                "end_time": (now - timedelta(hours=2)).isoformat(),
+                "import_export": "export",
+            },
+            # Upcoming event
+            {
+                "start_time": (now + timedelta(hours=2)).isoformat(),
+                "end_time": (now + timedelta(hours=3)).isoformat(),
+                "import_export": "export",
+            },
+        ]
+        event = axle.parse_axle_payload(payload)
+        assert event is not None
+        assert event["start"] == now + timedelta(hours=2)
+        assert event["end"] == now + timedelta(hours=3)
+
+    def test_parse_axle_payload_events_wrapper_dict(self):
+        now = datetime.now(timezone.utc).replace(microsecond=0)
+        payload = {
+            "events": [
+                {
+                    "start": (now + timedelta(hours=1)).isoformat(),
+                    "finish": (now + timedelta(hours=2)).isoformat(),
+                    "direction": "export",
+                }
+            ]
+        }
+        event = axle.parse_axle_payload(payload)
+        assert event is not None
+        assert event["import_export"] == "export"
+        assert event["start"] == now + timedelta(hours=1)
+        assert event["end"] == now + timedelta(hours=2)
+
+    def test_parse_axle_payload_alternative_field_names(self):
+        payload = {
+            "start": "2026-11-17T17:00:00Z",
+            "finish": "2026-11-17T18:00:00Z",
+            "direction": "export",
+            "updated": "2026-11-17T10:00:00Z"
+        }
+        event = axle.parse_axle_payload(payload)
+        assert event is not None
+        assert event["start"] == datetime(2026, 11, 17, 17, 0, tzinfo=timezone.utc)
+        assert event["end"] == datetime(2026, 11, 17, 18, 0, tzinfo=timezone.utc)
+        assert event["import_export"] == "export"
 
 
 class TestAxleTimingAndWindows:

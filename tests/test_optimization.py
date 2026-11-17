@@ -168,6 +168,189 @@ async def test_light_monitor_soc_drift_within_threshold_no_replan(mock_load_stat
 
 
 @pytest.mark.asyncio
+@patch('optimiser.save_state')
+@patch('optimiser.is_axle_enabled', return_value=True)
+@patch('optimiser.fetch_axle_event')
+@patch('optimiser.get_inverter_telemetry')
+@patch('optimiser.load_state')
+async def test_light_monitor_detects_new_axle_event_and_triggers_replan(
+    mock_load_state, mock_telemetry, mock_fetch_axle, mock_axle_enabled, mock_save_state
+):
+    now_utc = datetime.now(timezone.utc)
+    slot_start = now_utc - timedelta(minutes=10)
+    slot_end = now_utc + timedelta(minutes=20)
+
+    mock_telemetry.return_value = {"soc": 75, "load_power": 500.0}
+    mock_load_state.return_value = {
+        "planned_soc_schedule": [
+            {"start": slot_start.isoformat(), "end": slot_end.isoformat(), "soc": 75.0}
+        ]
+    }
+
+    # New upcoming Axle event in 4 hours
+    event_start = now_utc + timedelta(hours=4)
+    event_end = now_utc + timedelta(hours=5)
+    mock_fetch_axle.return_value = {
+        "start": event_start,
+        "end": event_end,
+        "import_export": "export"
+    }
+
+    replan_needed = await optimiser.run_light_monitor()
+    assert replan_needed is True
+    assert mock_save_state.called
+    saved_state = mock_save_state.call_args[0][0]
+    assert saved_state["tracked_axle_event_start"] == event_start.isoformat()
+    assert saved_state["active_axle_event_end"] == event_end.isoformat()
+
+
+@pytest.mark.asyncio
+@patch('optimiser.save_state')
+@patch('optimiser.is_axle_enabled', return_value=True)
+@patch('optimiser.fetch_axle_event')
+@patch('optimiser.get_inverter_telemetry')
+@patch('optimiser.load_state')
+async def test_light_monitor_entering_axle_precharge_window_triggers_replan(
+    mock_load_state, mock_telemetry, mock_fetch_axle, mock_axle_enabled, mock_save_state
+):
+    now_utc = datetime.now(timezone.utc)
+    slot_start = now_utc - timedelta(minutes=10)
+    slot_end = now_utc + timedelta(minutes=20)
+
+    # Event starts in 90 minutes (inside 2h precharge window)
+    event_start = now_utc + timedelta(minutes=90)
+    event_end = now_utc + timedelta(minutes=150)
+    mock_fetch_axle.return_value = {
+        "start": event_start,
+        "end": event_end,
+        "import_export": "export"
+    }
+
+    mock_telemetry.return_value = {"soc": 60, "load_power": 450.0}
+    mock_load_state.return_value = {
+        "planned_soc_schedule": [
+            {"start": slot_start.isoformat(), "end": slot_end.isoformat(), "soc": 60.0}
+        ],
+        "tracked_axle_event_start": event_start.isoformat(),
+        "active_axle_event_end": event_end.isoformat(),
+        # axle_precharge_triggered is NOT set yet
+    }
+
+    replan_needed = await optimiser.run_light_monitor()
+    assert replan_needed is True
+    assert mock_save_state.called
+    saved_state = mock_save_state.call_args[0][0]
+    assert saved_state["axle_precharge_triggered"] == event_start.isoformat()
+
+
+@pytest.mark.asyncio
+@patch('optimiser.save_state')
+@patch('optimiser.set_inverter_discharge_slot')
+@patch('optimiser.is_axle_enabled', return_value=True)
+@patch('optimiser.fetch_axle_event', return_value=None)
+@patch('optimiser.get_inverter_telemetry')
+@patch('optimiser.load_state')
+async def test_light_monitor_axle_event_concluded_resets_discharge_slot(
+    mock_load_state, mock_telemetry, mock_fetch_axle, mock_axle_enabled, mock_set_discharge, mock_save_state
+):
+    now_utc = datetime.now(timezone.utc)
+    slot_start = now_utc - timedelta(minutes=10)
+    slot_end = now_utc + timedelta(minutes=20)
+
+    mock_telemetry.return_value = {"soc": 30, "load_power": 400.0}
+    # Event finished 10 minutes ago
+    past_end = now_utc - timedelta(minutes=10)
+    past_start = now_utc - timedelta(minutes=70)
+    mock_load_state.return_value = {
+        "planned_soc_schedule": [
+            {"start": slot_start.isoformat(), "end": slot_end.isoformat(), "soc": 30.0}
+        ],
+        "active_axle_event_end": past_end.isoformat(),
+        "tracked_axle_event_start": past_start.isoformat(),
+        "axle_precharge_triggered": past_start.isoformat(),
+    }
+
+    replan_needed = await optimiser.run_light_monitor()
+    assert replan_needed is False
+    assert mock_set_discharge.called
+    assert mock_set_discharge.call_args[0] == (None, None)
+    assert mock_save_state.called
+    saved_state = mock_save_state.call_args[0][0]
+    assert "active_axle_event_end" not in saved_state
+    assert "tracked_axle_event_start" not in saved_state
+    assert "axle_precharge_triggered" not in saved_state
+
+
+@pytest.mark.asyncio
+@patch('optimiser.save_state')
+@patch('optimiser.set_inverter_discharge_slot')
+@patch('optimiser.is_axle_enabled', return_value=True)
+@patch('optimiser.fetch_axle_event', return_value=None)
+@patch('optimiser.get_inverter_telemetry')
+@patch('optimiser.load_state')
+async def test_light_monitor_cancelled_axle_event_resets_discharge_and_replans(
+    mock_load_state, mock_telemetry, mock_fetch_axle, mock_axle_enabled, mock_set_discharge, mock_save_state
+):
+    now_utc = datetime.now(timezone.utc)
+    slot_start = now_utc - timedelta(minutes=10)
+    slot_end = now_utc + timedelta(minutes=20)
+
+    mock_telemetry.return_value = {"soc": 70, "load_power": 400.0}
+    # Tracked event was scheduled for 2 hours in the future, but fetch_axle_event returned None (cancelled)
+    future_start = now_utc + timedelta(hours=2)
+    future_end = now_utc + timedelta(hours=3)
+    mock_load_state.return_value = {
+        "planned_soc_schedule": [
+            {"start": slot_start.isoformat(), "end": slot_end.isoformat(), "soc": 70.0}
+        ],
+        "active_axle_event_end": future_end.isoformat(),
+        "tracked_axle_event_start": future_start.isoformat(),
+    }
+
+    replan_needed = await optimiser.run_light_monitor()
+    assert replan_needed is True
+    assert mock_set_discharge.called
+    assert mock_set_discharge.call_args[0] == (None, None)
+    assert mock_save_state.called
+    saved_state = mock_save_state.call_args[0][0]
+    assert "active_axle_event_end" not in saved_state
+    assert "tracked_axle_event_start" not in saved_state
+
+
+@pytest.mark.asyncio
+@patch('optimiser.save_state')
+@patch('optimiser.is_axle_enabled', return_value=True)
+@patch('optimiser.fetch_axle_event')
+@patch('optimiser.load_state')
+async def test_check_axle_events_direct_detects_event_and_triggers_replan(
+    mock_load_state, mock_fetch_axle, mock_axle_enabled, mock_save_state
+):
+    now_utc = datetime.now(timezone.utc)
+    mock_load_state.return_value = {}
+    event_start = now_utc + timedelta(hours=3)
+    event_end = now_utc + timedelta(hours=4)
+    mock_fetch_axle.return_value = {
+        "start": event_start,
+        "end": event_end,
+        "import_export": "export"
+    }
+
+    result = await optimiser.check_axle_events()
+    assert result is True
+    assert mock_save_state.called
+    saved = mock_save_state.call_args[0][0]
+    assert saved["tracked_axle_event_start"] == event_start.isoformat()
+    assert saved["active_axle_event_end"] == event_end.isoformat()
+
+
+@pytest.mark.asyncio
+@patch('optimiser.is_axle_enabled', return_value=False)
+async def test_check_axle_events_when_disabled_returns_false(mock_axle_enabled):
+    result = await optimiser.check_axle_events()
+    assert result is False
+
+
+@pytest.mark.asyncio
 async def test_day_classification_contract_and_history_logging(tmp_path):
     from contracts import DayClassification, LLMPlannerRecommendation
     import state

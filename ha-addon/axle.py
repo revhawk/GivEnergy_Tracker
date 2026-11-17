@@ -84,22 +84,43 @@ def test_axle_connection(token=None):
 
 
 def parse_axle_payload(data):
-    """Normalize raw Axle JSON payload into standardized event dictionary."""
+    """Normalize raw Axle JSON payload into standardized event dictionary.
+    Supports single event dicts, HA sensor attribute dicts, lists of events,
+    and event wrapper dicts (e.g. {"events": [...]}).
+    """
+    if not data:
+        return None
+
+    # Handle list of events — pick the next upcoming or active event
+    if isinstance(data, list):
+        parsed_events = [parse_axle_payload(item) for item in data if isinstance(item, dict)]
+        valid_events = [e for e in parsed_events if e and e.get("end")]
+        now_utc = datetime.now(timezone.utc)
+        upcoming = [e for e in valid_events if e["end"] > now_utc]
+        if upcoming:
+            upcoming.sort(key=lambda e: e["start"])
+            return upcoming[0]
+        return valid_events[0] if valid_events else None
+
     if not isinstance(data, dict):
         return None
+
+    # Handle wrapper dict like {"events": [...]}
+    if "events" in data and isinstance(data["events"], list):
+        return parse_axle_payload(data["events"])
 
     # Handle nested attributes if fetched from Home Assistant REST sensor state
     if "attributes" in data and isinstance(data["attributes"], dict):
         attrs = data["attributes"]
-        start_raw = attrs.get("start_time") or data.get("state")
-        end_raw = attrs.get("end_time")
-        direction = attrs.get("import_export", "export")
-        updated_raw = attrs.get("updated_at")
+        start_raw = attrs.get("start_time") or attrs.get("start") or data.get("state")
+        end_raw = attrs.get("end_time") or attrs.get("end") or attrs.get("finish")
+        direction = attrs.get("import_export") or attrs.get("direction") or "export"
+        updated_raw = attrs.get("updated_at") or attrs.get("updated")
     else:
-        start_raw = data.get("start_time")
-        end_raw = data.get("end_time")
-        direction = data.get("import_export", "export")
-        updated_raw = data.get("updated_at")
+        start_raw = data.get("start_time") or data.get("start")
+        end_raw = data.get("end_time") or data.get("end") or data.get("finish")
+        direction = data.get("import_export") or data.get("direction") or "export"
+        updated_raw = data.get("updated_at") or data.get("updated")
 
     if not start_raw or str(start_raw).lower() in ("none", "null", "unavailable", "unknown", ""):
         return None
