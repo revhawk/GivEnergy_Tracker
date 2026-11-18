@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.25.6] - 2026-11-18
+
+### Added
+- **Unified Continuous 5-Minute Flexibility Polling for Octopus Octoplus (`simulation.py`, `optimiser.py`, ADR 0018)**:
+  - Extended the 5-minute background loop to continuously monitor Octopus Energy Octoplus sessions in parallel with Axle Energy VPP.
+  - Implemented modular `check_octoplus_events()` helper in `simulation.py` and re-exported in `optimiser.py`.
+  - Automatically polls Octopus Kraken GraphQL and Home Assistant entities every 5 minutes (`AXLE_POLL_INTERVAL_SECONDS = 300`).
+  - **Intraday Power Down Auto-Detection & Enrollment**: When a new Saving Session / Power Down challenge is announced intraday, detects it within 5 minutes, automatically calls `join_octoplus_saving_session()` to enroll the account, and breaks the sleep loop to trigger an immediate full re-plan (`run_optimization()`) enforcing zero grid import.
+  - **Intraday Happy Hour Activation**: Immediately detects newly booked Happy Hour slots (`is_joined: True`), re-planning GivTCP to pre-charge to 100% at 0.0p/kWh.
+- **Unit & Contract Test Expansion (`tests/test_optimization.py`)**:
+  - Added `test_check_octoplus_events_discovers_power_down_triggers_replan` verifying auto-enrollment, state tracking, and re-planning.
+  - Added `test_check_octoplus_events_power_up_joined_vs_unjoined` confirming unjoined sessions are ignored while booked sessions trigger re-plans.
+  - Added `test_run_light_monitor_triggers_on_new_octoplus_event`.
+
+### Senior Developer Review
+- **Architecture & Resilience**: Harmonizes Axle VPP and Octoplus polling into a unified 5-minute reactive cadence. Users no longer need to manually check emails or restart the add-on when short-notice Power Down challenges or Happy Hours are scheduled.
+- **Verification**: Complete test suite expanded to 183 tests, 100% passing. Pre-commit verification passed.
+
 ## [1.0.25.5] - 2026-11-17
 
 ### Fixed

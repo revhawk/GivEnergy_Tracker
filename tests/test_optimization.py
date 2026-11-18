@@ -961,6 +961,103 @@ def test_daytime_replan_capped_to_peak_protection():
     assert opt1['strategy'] == "scheduled"
 
 
+@pytest.mark.asyncio
+async def test_check_octoplus_events_discovers_power_down_triggers_replan():
+    """Verify that check_octoplus_events discovers a newly announced Power Down session
+    and returns True to trigger an immediate full re-plan.
+    """
+    from simulation import check_octoplus_events
+    now = datetime.now(timezone.utc)
+    mock_sessions = [
+        {
+            "session_type": "power_down",
+            "code": "EVENT_DFS_TEST_1",
+            "event_id": "dfs_1",
+            "start": now + timedelta(hours=2),
+            "end": now + timedelta(hours=3),
+            "is_joined": True,
+            "reward_points": 100
+        }
+    ]
+    mock_state = {}
+
+    with patch('optimiser.clear_octoplus_cache'), \
+         patch('optimiser.fetch_live_octoplus_sessions', return_value=mock_sessions), \
+         patch('optimiser.load_state', side_effect=lambda: mock_state), \
+         patch('optimiser.save_state', side_effect=lambda s: mock_state.update(s)):
+
+        result = await check_octoplus_events()
+        assert result is True
+        assert 'tracked_power_down_events' in mock_state
+        assert len(mock_state['tracked_power_down_events']) == 1
+
+        # Second call with the same session should not re-trigger re-plan
+        result_second = await check_octoplus_events()
+        assert result_second is False
+
+
+@pytest.mark.asyncio
+async def test_check_octoplus_events_power_up_joined_vs_unjoined():
+    """Verify that check_octoplus_events ignores unjoined Happy Hour events,
+    but triggers a re-plan when a joined Happy Hour is confirmed.
+    """
+    from simulation import check_octoplus_events
+    now = datetime.now(timezone.utc)
+    unjoined_session = [
+        {
+            "session_type": "power_up",
+            "code": "HAPPY_HOUR_1",
+            "event_id": "hh_1",
+            "start": now + timedelta(hours=1),
+            "end": now + timedelta(hours=2),
+            "is_joined": False
+        }
+    ]
+    mock_state = {}
+
+    with patch('optimiser.clear_octoplus_cache'), \
+         patch('optimiser.fetch_live_octoplus_sessions', return_value=unjoined_session), \
+         patch('optimiser.load_state', side_effect=lambda: mock_state), \
+         patch('optimiser.save_state', side_effect=lambda s: mock_state.update(s)):
+
+        # Unjoined -> Should NOT trigger re-plan
+        assert await check_octoplus_events() is False
+
+    # Now simulate user booked the slot -> is_joined = True
+    joined_session = [
+        {
+            "session_type": "power_up",
+            "code": "HAPPY_HOUR_1",
+            "event_id": "hh_1",
+            "start": now + timedelta(hours=1),
+            "end": now + timedelta(hours=2),
+            "is_joined": True
+        }
+    ]
+    with patch('optimiser.clear_octoplus_cache'), \
+         patch('optimiser.fetch_live_octoplus_sessions', return_value=joined_session), \
+         patch('optimiser.load_state', side_effect=lambda: mock_state), \
+         patch('optimiser.save_state', side_effect=lambda s: mock_state.update(s)):
+
+        # Joined -> Should trigger re-plan for 100% pre-charge!
+        assert await check_octoplus_events() is True
+        assert 'tracked_power_up_events' in mock_state
+        assert len(mock_state['tracked_power_up_events']) == 1
+
+
+@pytest.mark.asyncio
+async def test_run_light_monitor_triggers_on_new_octoplus_event():
+    """Verify that run_light_monitor detects a new Octoplus session and returns True for re-planning."""
+    from simulation import run_light_monitor
+    with patch('optimiser.get_inverter_telemetry', return_value={"soc": 80, "load_power": 500, "pv_power": 200}), \
+         patch('optimiser.load_state', return_value={"planned_soc_schedule": []}), \
+         patch('optimiser.check_axle_events', return_value=False), \
+         patch('optimiser.check_octoplus_events', return_value=True):
+        assert await run_light_monitor() is True
+
+
+
+
 
 
 

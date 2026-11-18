@@ -1,6 +1,6 @@
 # Technical Specification & Architecture — GivEnergy Tariff Optimiser
 
-**Version:** 1.0.25.5  
+**Version:** 1.0.25.6  
 **Target Hardware:** GivEnergy Inverters (Gen 1, Gen 2, Gen 3, All-in-One)  
 **Target Platform:** Home Assistant Add-on Container (Linux ARM64 / AMD64)  
 
@@ -469,6 +469,24 @@ The `tariffs.py` module integrates directly with Octopus Energy REST APIs to ret
 4. **Daytime Re-Planning Safety Cap (`DAYTIME_TOPUP_MAX_TARGET_SOC = 55%`)**:
    - Re-planning runs between 07:00 and 16:00 are strictly capped at 55% target SoC (`Peak-Protection Daytime Top-Up`).
    - The engine never commands charging to 100% at expensive daytime shoulder rates (25.8p/kWh). Top-ups are limited strictly to what is required to protect the 16:00–19:00 peak from dropping below the 10% battery floor.
+
+---
+
+## 7. Unified 5-Minute Flexibility Monitoring for Axle & Octoplus (ADR 0018)
+
+### 7.1 Architecture & Design
+1. **Intraday Announcement Latency**:
+   - Both National Grid ESO Demand Flexibility Service (DFS / Octopus Power Down) and Axle Energy VPP flexibility sessions are broadcast intraday with only 1–3 hours of advance notice.
+   - Waiting for scheduled 30-minute ticks or the daily 17:00 planning run causes missed pre-charge windows or missed enrollment gates.
+2. **Unified 5-Minute Sliced Polling**:
+   - The 30-minute daemon sleep interval is partitioned into 5-minute sub-intervals (`AXLE_POLL_INTERVAL_SECONDS = 300`).
+   - Every 5 minutes, the engine executes parallel flexibility monitors:
+     - `check_axle_events()`: Detects newly scheduled, cancelled, or concluding Axle VPP export events.
+     - `check_octoplus_events()`: Queries Octopus Kraken GraphQL and Home Assistant entities for newly announced Power Down sessions and confirmed Power Up / Happy Hour bookings.
+3. **Automated Zero-Friction Enrollment & Dispatch**:
+   - For unjoined Power Down sessions, `check_octoplus_events()` automatically invokes `join_octoplus_saving_session()`, enrolling the account via GraphQL mutation (`joinSavingSessionsEvent`) or Home Assistant service (`octopus_energy.join_octoplus_saving_session_event`).
+   - Slices sleep early and triggers `run_optimization()` to immediately command GivTCP to enforce zero grid import (Power Down) or timed export (Axle).
+
 
 
 

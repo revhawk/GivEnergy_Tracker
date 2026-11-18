@@ -79,6 +79,7 @@ from simulation import (
     run_optimization,
     run_light_monitor,
     check_axle_events,
+    check_octoplus_events,
 )
 
 # Re-export appliance telemetry & washing machine dashboard operations
@@ -363,7 +364,7 @@ async def main():
         sub_interval_sec = int(os.environ.get('AXLE_POLL_INTERVAL_SECONDS', getattr(config, 'AXLE_POLL_INTERVAL_SECONDS', 300) if config else 300))
         elapsed_sec = 0
 
-        poll_desc = f" (monitoring Axle VPP every {sub_interval_sec // 60}m)" if is_axle_enabled() else ""
+        poll_desc = f" (monitoring Axle & Octoplus every {sub_interval_sec // 60}m)"
         logging.info(f"Sleeping for {interval} minutes{poll_desc}...")
 
         while elapsed_sec < total_sleep_sec:
@@ -371,11 +372,20 @@ async def main():
             await asyncio.sleep(slice_sec)
             elapsed_sec += slice_sec
 
-            # Fast intraday check for Axle Energy flexibility events
-            if is_axle_enabled() and elapsed_sec < total_sleep_sec:
+            # Fast intraday check for flexibility events (Axle Energy VPP & Octopus Octoplus)
+            if elapsed_sec < total_sleep_sec:
                 try:
-                    if await check_axle_events():
-                        logging.info("===== RE-PLANNING RUN (triggered by Axle Energy VPP event) =====")
+                    replan_needed = False
+                    replan_source = ""
+                    if is_axle_enabled() and await check_axle_events():
+                        replan_needed = True
+                        replan_source = "Axle Energy VPP event"
+                    elif await check_octoplus_events():
+                        replan_needed = True
+                        replan_source = "Octopus Octoplus event"
+
+                    if replan_needed:
+                        logging.info(f"===== RE-PLANNING RUN (triggered by {replan_source}) =====")
                         _last_plan.clear()
                         await run_optimization()
                         if _last_plan:
@@ -386,8 +396,8 @@ async def main():
                             save_state(state)
                         # Re-sync loop: break sleep early so new plan is active immediately
                         break
-                except Exception as _e_axle:
-                    logging.warning(f"Axle intraday monitor error: {_e_axle}")
+                except Exception as _e_flex:
+                    logging.warning(f"Flexibility intraday monitor error: {_e_flex}")
 
 if __name__ == "__main__":
     asyncio.run(main())

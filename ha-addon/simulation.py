@@ -120,6 +120,72 @@ async def check_axle_events(realtime_soc=None):
     return False
 
 
+async def check_octoplus_events():
+    """Poll Octopus Energy Octoplus for new Power Down (Saving Sessions) or confirmed Power Up events.
+    Automatically enrolls in unjoined Power Down sessions via Kraken GraphQL or Home Assistant.
+    Returns True if a new or updated session requires an immediate full re-plan.
+    """
+    opt = _op()
+    fetch_octo_fn = getattr(opt, 'fetch_live_octoplus_sessions', octoplus.fetch_live_octoplus_sessions)
+    clear_cache_fn = getattr(opt, 'clear_octoplus_cache', octoplus.clear_octoplus_cache)
+    load_state_fn = getattr(opt, 'load_state', state.load_state)
+    save_state_fn = getattr(opt, 'save_state', state.save_state)
+
+    cur_state = load_state_fn()
+    now_utc = datetime.now(timezone.utc)
+
+    # Force a fresh fetch from Octopus GraphQL / HA entities
+    clear_cache_fn()
+    try:
+        sessions = fetch_octo_fn()
+    except Exception as e:
+        logging.warning(f"Octoplus fast monitor fetch failed: {e}")
+        return False
+
+    if not sessions:
+        return False
+
+    tracked_power_down = list(cur_state.get('tracked_power_down_events', []))
+    tracked_power_up = list(cur_state.get('tracked_power_up_events', []))
+    new_event_detected = False
+
+    for s in sessions:
+        if s.get('start') and s.get('end') and s['end'] > now_utc and s['start'] < now_utc + timedelta(hours=24):
+            stype = s.get('session_type')
+            code = str(s.get('code') or s.get('event_id') or '')
+            s_start_iso = s['start'].isoformat()
+            s_str = s['start'].astimezone().strftime('%m-%d %H:%M')
+            e_str = s['end'].astimezone().strftime('%H:%M')
+            event_key = f"{stype}_{code}_{s_start_iso}"
+
+            if stype == 'power_down':
+                if event_key not in tracked_power_down:
+                    logging.info(
+                        f"⚡ [OCTOPLUS FAST MONITOR] New Power Down session detected: {code} "
+                        f"({s_str} - {e_str})! Triggering immediate re-planning to enforce zero grid import!"
+                    )
+                    tracked_power_down.append(event_key)
+                    new_event_detected = True
+
+            elif stype == 'power_up':
+                # Only trigger re-plan if confirmed joined!
+                if s.get('is_joined') is True and event_key not in tracked_power_up:
+                    logging.info(
+                        f"⚡ [OCTOPLUS FAST MONITOR] Confirmed Power Up session detected: {code} "
+                        f"({s_str} - {e_str})! Triggering immediate re-planning to schedule 100% pre-charge at 0.0p/kWh!"
+                    )
+                    tracked_power_up.append(event_key)
+                    new_event_detected = True
+
+    if new_event_detected:
+        cur_state['tracked_power_down_events'] = tracked_power_down
+        cur_state['tracked_power_up_events'] = tracked_power_up
+        save_state_fn(cur_state)
+        return True
+
+    return False
+
+
 async def run_light_monitor():
     """Light monitor tick: check battery SoC, record load telemetry, and test for plan drift."""
     logging.info("--- Light monitor tick ---")
@@ -203,9 +269,12 @@ async def run_light_monitor():
         else:
             logging.info(f"⏰ [{now_time_str}] Battery SoC: {realtime_soc}%  (no active plan slot found for drift comparison)")
 
-        # Continuous Axle Energy VPP Monitoring (ADR 0015)
+        # Continuous Flexibility Monitoring (Axle VPP & Octopus Octoplus, ADR 0015 & ADR 0018)
         check_axle_fn = getattr(opt, 'check_axle_events', check_axle_events)
+        check_octo_fn = getattr(opt, 'check_octoplus_events', check_octoplus_events)
         if await check_axle_fn(realtime_soc=realtime_soc):
+            return True
+        if await check_octo_fn():
             return True
 
         return False
