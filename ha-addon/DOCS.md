@@ -55,19 +55,23 @@ Open the **Configuration** tab of the add-on to customize your settings:
 Once installed, the add-on runs quietly in the background without spamming your network or inverter:
 
 ```mermaid
-gantt
-    title Daily Optimiser Schedule
-    dateFormat  HH:mm
-    axisFormat %H:%M
+flowchart LR
+    subgraph Market["Octopus Market Rates"]
+        Rates["16:00 - 16:30<br/>Tomorrow's Rates Published"]
+    end
 
-    section Octopus Tariff
-    Tomorrow's Rates Published (16:00-16:30) :milestone, m1, 16:30, 0min
+    subgraph Addon["Add-on Autonomous Lifecycle"]
+        Plan["17:00<br/><b>Daily Planning Run</b><br/>Calculates plan & programs inverter"]
+        Monitor["Every 5 - 30 Mins<br/><b>Flexibility & SoC Monitor</b><br/>Continuous Axle & Octoplus checks"]
+        Audit["23:00<br/><b>Daily Savings Audit</b><br/>ChatGPT daily savings report"]
+        Charge["02:00 - 05:00<br/><b>Overnight Execution</b><br/>Battery pre-charges at off-peak rates"]
+    end
 
-    section Add-on Tasks
-    Daily Planning Run (Calculates plan & programs inverter) :active, p1, 17:00, 30min
-    Light Status Checks (Periodic battery SoC checks) :m2, 17:30, 5h
-    Daily Financial Savings Audit (ChatGPT Audit Report) :crit, a1, 23:00, 30min
-    Inverter Executes Scheduled Overnight Charging :done, c1, 02:00, 3h
+    Rates --> Plan
+    Plan --> Monitor
+    Monitor --> Audit
+    Audit --> Charge
+    Charge -.-> Plan
 ```
 
 ### The 3 Routine Modes:

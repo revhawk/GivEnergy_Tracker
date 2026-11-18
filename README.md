@@ -161,20 +161,32 @@ graph TD
 ### ⏰ Daily Execution Timeline
 
 ```mermaid
-gantt
-    title Daily Optimiser Execution Timeline
-    dateFormat  HH:mm
-    axisFormat %H:%M
+flowchart LR
+    subgraph Market["Octopus Market Rates"]
+        Rates["16:00 - 16:30<br/>Tomorrow's Rates Published"]
+    end
 
-    section Octopus Tariff
-    Tomorrow's Rates Published (16:00-16:30) :milestone, m1, 16:30, 0min
+    subgraph Daemon["Daemon Autonomous Lifecycle"]
+        Plan["17:00<br/><b>Daily Planning Run</b><br/>Fetch rates, solar forecast & program inverter"]
+        Monitor["Every 5 - 30 Mins<br/><b>Flexibility & SoC Monitor</b><br/>Continuous Axle & Octoplus checks"]
+        Audit["23:00<br/><b>End-of-Day Audit</b><br/>ChatGPT daily savings report"]
+        Charge["02:00 - 05:00<br/><b>Overnight Execution</b><br/>Battery pre-charges at cheap off-peak rate"]
+    end
 
-    section Daemon Tasks
-    Daily Planning Run (Fetch rates, solar & program inverter) :active, p1, 17:00, 30min
-    Light Monitor Checks (Periodically verify battery SoC) :m2, 17:30, 5h
-    End-of-Day Audit (ChatGPT Financial Savings Report) :crit, a1, 23:00, 30min
-    Inverter Executes Scheduled Overnight Charging :done, c1, 02:00, 3h
+    Rates --> Plan
+    Plan --> Monitor
+    Monitor --> Audit
+    Audit --> Charge
+    Charge -.-> Plan
 ```
+
+| Time | Component | Action |
+| :--- | :--- | :--- |
+| **16:00 – 16:30** | Octopus Energy API | Tomorrow's half-hourly rates published. |
+| **17:00** | Daily Planning Run | Ingests rates, solar ensemble & load profile; calculates optimal plan; programs GivTCP registers. |
+| **Every 5–30m** | Continuous Flexibility Monitor | Checks Axle VPP sessions, Octoplus Power Down/Up challenges, and battery SoC drift. |
+| **23:00** | End-of-Day Audit | ChatGPT analyzes daily solar performance, battery utilization, and net financial savings. |
+| **02:00 – 05:00** | Overnight Execution | GivEnergy battery charges at low off-peak rates (15.6p/kWh on Flux) for winter peak protection. |
 
 ---
 
