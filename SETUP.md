@@ -11,7 +11,7 @@ Before installing the add-on, make sure you have:
 1. **Home Assistant OS or Supervised**: Running on Raspberry Pi, Home Assistant Green/Yellow, ODROID, or x86/x64 server.
 2. **GivEnergy Inverter & Battery**: Gen 1, Gen 2, Gen 3, All-in-One, or AC Coupled inverter.
 3. **GivTCP Add-on (v2 or v3)**: Installed and running in Home Assistant, providing local REST endpoints (`http://<GIVTCP_HOST>:6345`).
-4. **Octopus Energy Account**: Subscribed to dynamic tariffs (e.g., **Octopus Agile** for import and **Octopus Outgoing** for export).
+4. **Octopus Energy Account**: Subscribed to **Octopus Agile** or **Octopus Flux** import tariffs and **Octopus Outgoing** or **Flux Export** (automatically discovered via your Octopus API key & Account ID).
 5. **(Recommended) Samba Share Add-on**: For logging state and daily statistics to `/share/nas_logs` accessible from your PC or NAS.
 6. **(Optional) OpenAI API Key**: If you want ChatGPT AI Co-Pilot plan scoring and weather commentary (`gpt-4o-mini`).
 
@@ -48,7 +48,7 @@ Because `config.py` contains private local network IP addresses and Octopus cred
 2. **Option B (Addon persistent data directory)**:
    Place your completed `config.py` at `/data/config.py`.
 
-Use the provided [`ha-addon/config.py.example`](file:///home/reg/Coding/GivEnergy_Tracker/ha-addon/config.py.example) as your template. Fill in:
+Use the provided [`ha-addon/config.py.example`](ha-addon/config.py.example) as your template. Fill in:
 - `GIVTCP_URL`: URL to your GivTCP instance (e.g. `http://homeassistant.local:6345`).
 - `OCTOPUS_API_KEY` & `OCTOPUS_ACCOUNT_ID`.
 - `ELEC_IMPORT_MPAN` & `AGILE_TARIFF_CODE`.

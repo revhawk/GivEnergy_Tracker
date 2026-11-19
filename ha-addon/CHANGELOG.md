@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.25.9] - 2026-11-19
+
+### Changed
+- **Octopus Agile & Flux Tariff Documentation Sync (`README.md`, `SETUP.md`, `ha-addon/DOCS.md`)**:
+  - Updated prerequisites, overview banners, and feature bullets across `README.md`, `SETUP.md`, and `ha-addon/DOCS.md` to accurately document full support for both **Octopus Agile** and **Octopus Flux** (import & export, auto-discovered via Octopus Account API).
+  - Converted remaining local `file:///` template link in `SETUP.md` to a GitHub-compatible relative path.
+
+### Senior Developer Review
+- **Documentation Accuracy**: Aligns public prerequisites and Home Assistant in-app documentation with the multi-tariff auto-discovery architecture (`tariffs.py`).
+- **Verification**: Full pre-commit verification gate (`scripts/verify_commit.py`) and all 183 pytest tests passed 100%.
+
 ## [1.0.25.8] - 2026-11-19
 
 ### Changed

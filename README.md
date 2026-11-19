@@ -1,8 +1,8 @@
 # ⚡ GivEnergy Tariff Optimiser
 
-A Home Assistant add-on that automatically schedules your GivEnergy battery to charge during the cheapest Octopus Agile half-hour slots, taking into account your solar forecast and current battery state of charge.
+A Home Assistant add-on that automatically schedules your GivEnergy battery to charge during the cheapest **Octopus Agile** or **Octopus Flux** half-hour slots, taking into account your solar forecast, flexibility events (Axle VPP & Octoplus), and current battery state of charge.
 
-> **Designed for:** Octopus Agile tariff customers with GivEnergy inverters and solar panels running Home Assistant.
+> **Designed for:** **Octopus Agile** and **Octopus Flux** tariff customers (import & export, auto-discovered via Octopus Account API) with GivEnergy inverters and solar panels running Home Assistant.
 
 ---
 
@@ -22,8 +22,8 @@ A Home Assistant add-on that automatically schedules your GivEnergy battery to c
 
 - 🔋 **Reads live battery SoC** via GivTCP REST API v2/v3 (falls back to direct Modbus TCP)
 - ☀️ **Dual parallel solar forecasting** — Forecast.Solar API primary + [Open-Meteo Solar API](https://open-meteo.com) shadow provider with real-time accuracy logging
-- ⚡ **Octopus Agile rate fetching** — pulls all upcoming 30-minute pricing slots
-- 💱 **Live Octopus export rate** — fetches Outgoing Variable rate so arbitrage self-adjusts
+- ⚡ **Octopus Agile & Flux rate fetching** — auto-discovers your active import & export tariffs via the Octopus Account API and pulls all upcoming 30-minute pricing slots
+- 💱 **Live & Time-of-Use Octopus export rates** — supports Outgoing Fixed/Variable and time-of-use Flux Export so arbitrage self-adjusts slot-by-slot
 - 📊 **24-hour simulation & dynamic load profiling** — models battery/solar/load with half-hour telemetry history & hourly baseline profiles
 - 🛡️ **Octopus Octoplus Power Down protection** — enforces 0.0 kWh grid import during Power Down sessions and pre-charges battery at cheaper earlier rates
 - 🎯 **Arbitrage-aware & Octoplus optimiser** — charges from grid whenever import < export rate (after ~90% round-trip efficiency), or during free Octoplus sessions
@@ -255,7 +255,7 @@ The add-on currently features software simulation and fail-safe logic for heatin
 | Home Assistant | 2024.1+ with Supervisor |
 | GivEnergy Inverter | Any model supported by GivTCP |
 | GivTCP Add-on | Installed & running in Home Assistant |
-| Octopus Energy | Agile tariff (import) with API key + Outgoing Variable (export) |
+| Octopus Energy | **Octopus Agile** or **Octopus Flux** (import) + **Outgoing Fixed/Variable** or **Flux Export** (auto-discovered via API key) |
 | Solar Panels | With known kWp, tilt (declination), and azimuth |
 | Network Share (Optional) | For persistent log files (NAS, Samba, etc.) |
 

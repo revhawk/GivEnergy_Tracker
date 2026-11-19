@@ -1,6 +1,6 @@
 # GivEnergy Tariff Optimiser — Add-on User Guide
 
-Welcome to the **GivEnergy Tariff Optimiser**! This Home Assistant add-on automates your GivEnergy battery storage, solar PV panels, and hot water heating around your dynamic **Octopus Energy** electricity tariffs (such as Octopus Agile and Outgoing Export).
+Welcome to the **GivEnergy Tariff Optimiser**! This Home Assistant add-on automates your GivEnergy battery storage, solar PV panels, and hot water heating around your dynamic **Octopus Energy** electricity tariffs (**Octopus Agile** or **Octopus Flux** import, and **Outgoing** or **Flux Export**, with automatic account tariff discovery).
 
 ---
 
