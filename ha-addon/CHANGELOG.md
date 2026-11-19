@@ -7,54 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [1.0.25.10] - 2026-11-19
+## [1.0.25.7] - 2026-11-19
 
 ### Changed
-- **Updated "How the Optimiser Works" & Versioning Guide (`README.md`)**:
-  - Rewrote the `🧠 How the Optimiser Works` section to document all 4 active execution modes: Daily Planner (17:00), 5-Minute Continuous Flexibility Poll (Axle VPP & Octoplus auto-join, ADR 0018), 30-Minute Light Status & SoC Drift Monitor (> 15% re-plan with 55% daytime peak-protection cap), and End-of-Day Audit (23:00).
-  - Documented the 4-strategy Multi-Candidate Generator (`planner.py` Cost-Optimised Search ADR 0016 & Winter 100% Overnight Pre-Charge ADR 0017), dual solar ensemble, dynamic load profiler, and Agile/Flux auto-discovery.
-  - Updated the `📦 Versioning` checklist to point to `ha-addon/version.py` (single source of truth) and `scripts/verify_commit.py`.
-
-### Senior Developer Review
-- **Full README Accuracy**: Eliminates legacy descriptions (old 3-mode / static `BASE_LOAD_W` / no-replan light monitor) so public and production documentation accurately reflects the current architecture.
-- **Verification**: Full pre-commit verification gate (`scripts/verify_commit.py`) and all 183 pytest tests passed 100%.
-
-## [1.0.25.9] - 2026-11-19
-
-### Changed
-- **Octopus Agile & Flux Tariff Documentation Sync (`README.md`, `SETUP.md`, `ha-addon/DOCS.md`)**:
-  - Updated prerequisites, overview banners, and feature bullets across `README.md`, `SETUP.md`, and `ha-addon/DOCS.md` to accurately document full support for both **Octopus Agile** and **Octopus Flux** (import & export, auto-discovered via Octopus Account API).
-  - Converted remaining local `file:///` template link in `SETUP.md` to a GitHub-compatible relative path.
-
-### Senior Developer Review
-- **Documentation Accuracy**: Aligns public prerequisites and Home Assistant in-app documentation with the multi-tariff auto-discovery architecture (`tariffs.py`).
-- **Verification**: Full pre-commit verification gate (`scripts/verify_commit.py`) and all 183 pytest tests passed 100%.
-
-## [1.0.25.8] - 2026-11-19
-
-### Changed
-- **Architecture Flow Diagrams & Dual-Cadence Lifecycle Docs (`README.md`, `ha-addon/DOCS.md`)**:
-  - Updated **Daily Data Flow Architecture** and **Daily Execution Timeline** diagrams to explicitly depict the **5-minute Continuous Flexibility Poll** (Axle VPP & Octoplus Power Down auto-join / Happy Hour detection, ADR 0018) alongside the **30-minute Light Monitor Tick** (live SoC drift > 15% re-planning with 55% daytime cap).
-  - Updated the Multi-Candidate Generator diagram box to reflect the current 4-strategy architecture (`planner.py` Cost-Optimised Search & ADR 0017 Winter 100% Overnight Pre-Charge) and added `planner.py` to the Modular Domain Architecture diagram.
-  - Replaced hardcoded stale version numbers (`1.0.24.8`) in `README.md` with dynamic references to `version.py` (`__version__`) and fixed local `file:///` links to GitHub-compatible relative paths.
+- **Production Documentation & Mermaid Diagram Standardization (`README.md`, `SETUP.md`, `ha-addon/DOCS.md`, `ha-addon/SPECIFICATION.md`, `ha-addon/ARCHITECTURE.md`, `ha-addon/ARBITRAGE_AND_WEATHER.md`)**:
+  - Replaced unsupported Mermaid `gantt` charts (time-only `HH:mm` format) in `README.md` and `ha-addon/DOCS.md` with GitHub- and Home Assistant-compatible `flowchart LR` lifecycle diagrams and structured schedule tables.
+  - Standardized all 12 Mermaid diagrams across the documentation suite with double-quoted node/subgraph labels (`["..."]`, `{"..."}`), HTML line breaks (`<br/>`), and escaped comparison operators (`< 0p`) to eliminate rendering errors.
+  - Updated **Daily Data Flow Architecture**, **Daily Execution Timeline**, and **`🧠 How the Optimiser Works`** to document all 4 active execution modes: Daily Planner (17:00), **5-Minute Continuous Flexibility Poll** (Axle VPP & Octoplus auto-join, ADR 0018), **30-Minute Light Status & SoC Drift Monitor** (> 15% re-plan with 55% daytime peak-protection cap), and End-of-Day Audit (23:00).
+  - Updated the Multi-Candidate Generator diagram and day-classification flowcharts to reflect the 4-strategy architecture (`planner.py` Cost-Optimised Search ADR 0016 & Winter 100% Overnight Pre-Charge ADR 0017), and added `planner.py` to the Modular Domain Architecture diagram.
+  - Updated prerequisites, overview banners, and feature bullets across `README.md`, `SETUP.md`, and `ha-addon/DOCS.md` to reflect full support for both **Octopus Agile** and **Octopus Flux** (import & export, auto-discovered via Octopus Account API).
+  - Replaced hardcoded stale version strings in `README.md` with `version.py` (`__version__`) references, updated the `📦 Versioning` checklist, and converted local `file:///` links to GitHub-compatible relative paths.
 - **Automated Stale Version Guard (`scripts/verify_commit.py`)**:
   - Added automated scanning across all non-changelog Markdown files to fail pre-commit verification if any stale hardcoded `1.0.x.x` version string disagrees with `ha-addon/version.py`.
 
 ### Senior Developer Review
-- **Zero Version Drift**: Eliminates hardcoded version drift in prose and enforces automated markdown version-drift detection in the pre-commit gate.
-- **Documentation Accuracy**: Architecture diagrams and HA in-app `DOCS.md` now accurately match the live 5-minute flexibility and 30-minute SoC drift runtime loops.
-- **Verification**: Full pre-commit verification gate (`scripts/verify_commit.py`) and all 183 pytest tests passed 100%.
-
-## [1.0.25.7] - 2026-11-19
-
-### Changed
-- **Production Documentation & Mermaid Diagram Standardization (`README.md`, `ha-addon/DOCS.md`, `ha-addon/SPECIFICATION.md`, `ha-addon/ARCHITECTURE.md`, `ha-addon/ARBITRAGE_AND_WEATHER.md`)**:
-  - Replaced unsupported Mermaid `gantt` charts (time-only `HH:mm` format) in `README.md` and `ha-addon/DOCS.md` with GitHub- and Home Assistant-compatible `flowchart LR` lifecycle diagrams and structured schedule tables.
-  - Standardized all 12 Mermaid diagrams across the documentation suite with double-quoted node/subgraph labels (`["..."]`, `{"..."}`), HTML line breaks (`<br/>`), and escaped comparison operators (`< 0p`) to eliminate rendering errors.
-  - Updated day-classification flowcharts to reflect the Winter 100% Overnight Pre-Charge Policy (ADR 0017) and synchronized specification version references.
-
-### Senior Developer Review
-- **Documentation Hygiene & Production Parity**: Bumping to `1.0.25.7` ensures the Home Assistant Add-on Documentation tab (`DOCS.md`) and production metadata remain strictly version-controlled and synchronized with the GitHub repository.
+- **Documentation Hygiene & Production Parity**: Consolidates all documentation, diagram, and pre-commit version-guard updates into a single clean `1.0.25.7` release so Home Assistant updates cleanly from `1.0.25.6` → `1.0.25.7`.
 - **Verification**: Full pre-commit verification gate (`scripts/verify_commit.py`) and all 183 pytest tests passed 100%.
 
 ## [1.0.25.6] - 2026-11-18
