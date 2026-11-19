@@ -125,5 +125,5 @@ The add-on saves persistent state, daily stats, and 90 days of midnight-rotated 
 
 - [User Guide & Daily Operation](file:///home/reg/Coding/GivEnergy_Tracker/ha-addon/DOCS.md) — How the optimiser selects candidate strategies and manages daily charging.
 - [Weather-Adaptive Solar & Arbitrage](file:///home/reg/Coding/GivEnergy_Tracker/ha-addon/ARBITRAGE_AND_WEATHER.md) — Technical details on solar thresholds and export arbitrage.
-- [Architecture & Living Specification](file:///home/reg/Coding/GivEnergy_Tracker/ha-addon/SPECIFICATION.md) — Living ADRs, contracts, and developer specifications.
+- [Architecture & Technical Specification](ha-addon/SPECIFICATION.md) — Component contracts and developer specifications.
 

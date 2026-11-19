@@ -13,8 +13,8 @@ A Home Assistant add-on that automatically schedules your GivEnergy battery to c
 | 🛠️ [**Setup & Installation Guide**](SETUP.md) | Step-by-step setup, configuration options, prerequisites, and first-run checklist | New Installations & Setup |
 | 📘 [**End-User Guide & Operations**](ha-addon/DOCS.md) | How charging works, candidate strategies, daily savings, washing machine dashboard | Daily Home Users |
 | ☀️ [**Solar & Weather Strategy**](ha-addon/ARBITRAGE_AND_WEATHER.md) | Weather-adaptive day classification, autumn headroom, and export arbitrage | Solar & Energy Enthusiasts |
-| 📐 [**Architecture & Living Specification**](ha-addon/SPECIFICATION.md) | Living ADRs, Pydantic contracts, OpenAPI 3.1.0 spec, and contract test suite | Developers & Integrators |
-| 📜 [**Changelog & Releases**](ha-addon/CHANGELOG.md) | Version history, senior developer reviews, and ADR summaries | Release Tracking |
+| 📐 [**Architecture & Technical Specification**](ha-addon/SPECIFICATION.md) | Component architecture, Pydantic contracts, OpenAPI 3.1.0 spec, and contract test suite | Developers & Integrators |
+| 📜 [**Changelog & Releases**](ha-addon/CHANGELOG.md) | Version history and senior developer reviews | Release Tracking |
 
 ---
 
@@ -29,9 +29,9 @@ A Home Assistant add-on that automatically schedules your GivEnergy battery to c
 - 🎯 **Arbitrage-aware & Octoplus optimiser** — charges from grid whenever import < export rate (after ~90% round-trip efficiency), or during free Octoplus sessions
 - 🧠 **Smart cheapest slot search** — evaluates both contiguous and non-contiguous cheapest slot combinations across the day
 - 🤖 **Smart ChatGPT plan validator** — evaluates pre-charge economics vs peak import rates avoided; produces plain-English daily audit reports
-- ⚡ **5-Minute Continuous Flexibility Polling (ADR 0018)** — polls **Axle Energy VPP** and **Octopus Octoplus** every 5 minutes to auto-enroll Power Down sessions, detect confirmed Happy Hours, and react immediately to intraday dispatch events
+- ⚡ **5-Minute Continuous Flexibility Polling** — polls **Axle Energy VPP** and **Octopus Octoplus** every 5 minutes to auto-enroll Power Down sessions, detect confirmed Happy Hours, and arm Axle `Timed Export` just-in-time (within 10 minutes of dispatch) so `Eco` mode covers peak & Power Down
 - 🔄 **30-Minute Dynamic SoC Drift Re-Planning** — periodic 30-minute light monitor tick checks live SoC against planned schedule, triggering immediate re-planning if drift > `15.0%` (capped at `55%` daytime peak-protection SoC)
-- ❄️ **Winter 100% Overnight Pre-Charge Policy (ADR 0017)** — automatically fills the battery to `100%` during cheap overnight windows (Nov–Feb) to eliminate daytime peak imports and arm Axle VPP exports
+- ❄️ **Winter 100% Overnight Pre-Charge Policy** — automatically fills the battery to `100%` during cheap overnight windows (Nov–Feb) to eliminate daytime peak imports and arm Axle VPP exports
 - 🧩 **Flattened Modular Architecture** — clean separation into `givtcp.py`, `tariffs.py`, `solar.py`, `solar_openmeteo.py`, `planner.py`, `octoplus.py`, `axle.py`, `rewards.py`, `profiler.py`, and `llm.py`
 - 📋 **Technical Specification & Contract Testing** — formal [`SPECIFICATION.md`](ha-addon/SPECIFICATION.md) and API contract test suite (`tests/test_contracts.py`)
 - 🏷️ **Single-Source Versioning** — `version.py` (`__version__`) synced automatically with `config.yaml`, `openapi.json`, and `SPECIFICATION.md` (enforced by `scripts/verify_commit.py`) to ensure zero version drift
@@ -53,7 +53,7 @@ GivEnergy_Tracker/
 │   ├── config.py                  ← Real credentials & settings
 │   ├── optimiser.py               ← Main daemon orchestrator & scheduling loop
 │   ├── simulation.py              ← 24-hour deterministic physical energy balance simulation
-│   ├── planner.py                 ← Cost-based plan simulator and target-SoC search (ADR 0016)
+│   ├── planner.py                 ← Cost-based plan simulator and target-SoC search
 │   ├── givtcp.py                  ← GivTCP REST API v2/v3 & Modbus TCP integration
 │   ├── tariffs.py                 ← Octopus Agile & Outgoing export rates fetcher & account auto-discovery
 │   ├── solar.py                   ← Forecast.Solar API client & parallel ensemble manager
@@ -176,7 +176,7 @@ flowchart LR
 
     subgraph Daemon["Daemon Autonomous Lifecycle"]
         Plan["17:00<br/><b>Daily Planning Run</b><br/>Fetch rates, solar forecast & program inverter"]
-        Flex["Every 5 Mins<br/><b>Flexibility Poll (ADR 0018)</b><br/>Axle VPP & Octoplus auto-join"]
+        Flex["Every 5 Mins<br/><b>Flexibility Poll</b><br/>Axle VPP & Octoplus auto-join"]
         Drift["Every 30 Mins<br/><b>Light Monitor Tick</b><br/>SoC drift > 15% re-plan (55% daytime cap)"]
         Audit["23:00<br/><b>End-of-Day Audit</b><br/>ChatGPT daily savings report"]
         Charge["02:00 - 05:00<br/><b>Overnight Execution</b><br/>100% winter pre-charge at off-peak rate"]
@@ -195,7 +195,7 @@ flowchart LR
 | :--- | :--- | :--- |
 | **16:00 – 16:30** | Octopus Energy API | Tomorrow's half-hourly rates published. |
 | **17:00** | Daily Planning Run | Ingests rates, solar ensemble & load profile; evaluates 4 candidate strategies; programs GivTCP registers. |
-| **Every 5 Mins** | Continuous Flexibility Poll (ADR 0018) | Polls Axle Energy VPP & Octopus Octoplus; auto-enrolls Power Down events, detects booked Happy Hours, and triggers immediate re-plans. |
+| **Every 5 Mins** | Continuous Flexibility Poll | Polls Axle Energy VPP & Octopus Octoplus; auto-enrolls Power Down events, detects booked Happy Hours, and arms Axle Timed Export 10m before dispatch. |
 | **Every 30 Mins** | Light Monitor Tick | Checks live battery SoC vs. planned schedule; triggers daytime re-plan (capped at 55% SoC) if drift exceeds 15%. |
 | **23:00** | End-of-Day Audit | ChatGPT analyzes daily solar performance, battery utilization, and net financial savings. |
 | **02:00 – 05:00** | Overnight Execution | GivEnergy battery charges at low off-peak rates (15.6p/kWh on Flux; 100% target in Nov–Feb winter months). |
@@ -414,14 +414,14 @@ The daemon runs continuously in the background using **four coordinated executio
 3. **Overlay Flexibility Events (`axle.py`, `octoplus.py`)** — checks active **Axle Energy VPP** dispatch windows, **Octoplus Power Down** Saving Sessions (enforcing 0.0 kWh grid import), and confirmed (`is_joined: True`) **Power Up / Happy Hour** bookings.
 4. **Read Live Telemetry (`givtcp.py`)** — reads battery SoC, PV generation, and home load via GivTCP REST API v2/v3 (Modbus TCP fallback).
 5. **Simulate 24h & Generate 4 Candidate Strategies (`simulation.py`, `planner.py`)** — models Solar → Dynamic Load Profile (`profiler.py`) → Battery → iBoost → Grid Export/Import, then evaluates 4 candidate plans under blended normal/pessimistic solar assumptions:
-   - **Option 1 — Flexibility / Winter 100% / Headroom**: Pre-charges to 100% for Axle VPP exports or during Nov–Feb winter months (`ADR 0017`), or preserves solar headroom in spring/summer.
+   - **Option 1 — Flexibility / Winter 100% / Headroom**: Pre-charges to 100% for Axle VPP exports or during Nov–Feb winter months, or preserves solar headroom in spring/summer.
    - **Option 2 — Midday Dip / Peak-Protection Top-Up**: Covers evening peak demand while capping daytime re-plans at `55%` SoC (`DAYTIME_TOPUP_MAX_TARGET_SOC`) to avoid over-buying daytime rates.
    - **Option 3 — Pure Solar Self-Consumption**: Zero grid draw when solar surplus covers battery deficit.
-   - **Option 4 — Cost-Optimised Search (`planner.py`, `ADR 0016`)**: Pure side-effect-free search across contiguous and non-contiguous slots to minimize net 24h cost.
+   - **Option 4 — Cost-Optimised Search (`planner.py`)**: Pure side-effect-free search across contiguous and non-contiguous slots to minimize net 24h cost.
 6. **AI Strategist Selection (`llm.py`)** — if OpenAI is configured, ChatGPT scores the candidate plans, evaluates weather risk, and selects the optimal strategy (with negative-rate override and fail-open deterministic fallback).
-7. **Program Inverter & Persist State (`givtcp.py`, `state.py`)** — writes charge slots (or Timed Export slots for Axle VPP) to GivTCP and saves the planned SoC trajectory to `/share/nas_logs/givenergy_state.json`.
+7. **Program Inverter & Persist State (`givtcp.py`, `state.py`)** — writes charge slots to GivTCP in `Eco` mode (deferring Axle `Timed Export` until 10 minutes before dispatch so battery covers peak and Power Down windows) and saves the planned SoC trajectory to `/share/nas_logs/givenergy_state.json`.
 
-### 2. Continuous Flexibility Poll (every 5 minutes, `ADR 0018`)
+### 2. Continuous Flexibility Poll (every 5 minutes)
 
 The 30-minute sleep interval is sliced into 5-minute ticks (`AXLE_POLL_INTERVAL_SECONDS = 300`). Every 5 minutes, the daemon polls both **Axle Energy VPP** (`check_axle_events`) and **Octopus Octoplus** (`check_octoplus_events`):
 - Automatically enrolls your account in newly announced intraday **Octoplus Power Down** sessions via Kraken GraphQL / Home Assistant service.

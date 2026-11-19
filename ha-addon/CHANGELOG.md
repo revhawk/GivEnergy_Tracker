@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.25.8] - 2026-11-19
+
+### Fixed
+- **Just-In-Time Axle `Timed Export` Arming (`simulation.py`)**:
+  - Fixed an issue where programming an upcoming Axle Energy VPP export slot hours in advance immediately switched GivEnergy inverters into `Timed Export` mode, which holds the battery at 100% and blocks normal house discharge during 36p evening peak and earlier Octopus Power Down sessions.
+  - Added `AXLE_EXPORT_ARM_LEAD_MINUTES = 10`: `run_optimization()` now keeps the inverter in `Eco` mode whenever an Axle export event is more than 10 minutes away, and the 5-minute `check_axle_events()` poll loop automatically arms `Timed Export` within 10 minutes of event start (`T - 10m`) and restores `Eco` mode immediately upon conclusion or cancellation.
+- **Unit Test Expansion (`tests/test_optimization.py`)**:
+  - Updated `test_run_energy_optimization_programs_axle_discharge_slot` for the 10-minute arming lead window.
+  - Added `test_run_energy_optimization_defers_axle_timed_export_when_far_away` and `test_check_axle_events_arms_timed_export_within_lead_window`.
+
+### Changed
+- **Internal ADR Separation**: Moved all internal ADR numbers and decision records strictly to the local workstation `DEVELOPMENT.md` and removed internal ADR references from public documentation (`README.md`, `SETUP.md`, `ha-addon/DOCS.md`, `ha-addon/SPECIFICATION.md`).
+
+### Senior Developer Review
+- **Peak & Power Down Protection**: Guarantees GivEnergy stays in `Eco` mode through afternoon/evening peak and Octopus Power Down challenges, while still arming `Timed Export` reliably 5–10 minutes before Axle VPP dispatch begins.
+- **Verification**: Full pre-commit verification gate (`scripts/verify_commit.py`) and all 185 pytest tests passed 100%.
+
 ## [1.0.25.7] - 2026-11-19
 
 ### Changed

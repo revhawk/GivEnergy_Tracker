@@ -865,8 +865,9 @@ async def test_run_energy_optimization_programs_axle_discharge_slot(
     mock_set_slots.return_value = True
     mock_set_discharge.return_value = True
 
-    event_start = now + timedelta(hours=2)
-    event_end = now + timedelta(hours=3)
+    # Event starting within 10-minute arming lead window should arm Timed Export immediately
+    event_start = now + timedelta(minutes=5)
+    event_end = now + timedelta(hours=1, minutes=5)
     mock_axle.return_value = {
         "start": event_start,
         "end": event_end,
@@ -879,6 +880,92 @@ async def test_run_energy_optimization_programs_axle_discharge_slot(
     d_start, d_end = mock_set_discharge.call_args[0][:2]
     assert d_start == event_start.astimezone()
     assert d_end == event_end.astimezone()
+
+
+@pytest.mark.asyncio
+@patch('axle.is_axle_enabled', return_value=True)
+@patch('optimiser.save_daily_stats')
+@patch('optimiser.save_state')
+@patch('optimiser.load_state')
+@patch('optimiser.set_inverter_discharge_slot')
+@patch('optimiser.set_inverter_charge_slots')
+@patch('optimiser.chatgpt_select_candidate')
+@patch('optimiser.fetch_export_rate')
+@patch('optimiser.fetch_parallel_solar_forecasts')
+@patch('optimiser.fetch_agile_rates')
+@patch('optimiser.get_inverter_telemetry')
+@patch('optimiser.fetch_axle_event')
+async def test_run_energy_optimization_defers_axle_timed_export_when_far_away(
+    mock_axle, mock_telemetry, mock_rates, mock_solar, mock_export, mock_select,
+    mock_set_slots, mock_set_discharge, mock_load_state, mock_save_state, mock_save_daily_stats,
+    mock_axle_enabled
+):
+    """Verify Timed Export is deferred (>10m away) so inverter stays in Eco mode for peak & Power Down."""
+    mock_load_state.return_value = {}
+    now = datetime.now(timezone.utc)
+    slots = [
+        {'start': now + timedelta(minutes=30 * (i + 1)), 'end': now + timedelta(minutes=30 * (i + 2)), 'price': 20.0}
+        for i in range(12)
+    ]
+
+    mock_telemetry.return_value = {"soc": 90.0, "pv_power": 500.0, "load_power": 400.0}
+    mock_rates.return_value = slots
+    mock_solar.return_value = ([], {})
+    mock_export.return_value = 12.0
+    mock_select.return_value = (True, 1, 9, "Option 1 axle flexibility", "clear")
+    mock_set_slots.return_value = True
+    mock_set_discharge.return_value = True
+
+    event_start = now + timedelta(hours=3)
+    event_end = now + timedelta(hours=4)
+    mock_axle.return_value = {
+        "start": event_start,
+        "end": event_end,
+        "import_export": "export"
+    }
+
+    await optimiser.run_optimization()
+
+    # Must clear/keep Eco mode (None, None) instead of arming Timed Export 3 hours early
+    mock_set_discharge.assert_called_with(None, None)
+    saved_state = mock_save_state.call_args[0][0]
+    assert saved_state["tracked_axle_event_start"] == event_start.isoformat()
+    assert "axle_export_armed" not in saved_state
+
+
+@pytest.mark.asyncio
+@patch('optimiser.is_axle_enabled', return_value=True)
+@patch('optimiser.set_inverter_discharge_slot')
+@patch('optimiser.save_state')
+@patch('optimiser.load_state')
+@patch('optimiser.fetch_axle_event')
+async def test_check_axle_events_arms_timed_export_within_lead_window(
+    mock_axle, mock_load_state, mock_save_state, mock_set_discharge, mock_axle_enabled
+):
+    """Verify the 5-minute Axle poll arms Timed Export automatically at T-10m."""
+    now = datetime.now(timezone.utc)
+    event_start = now + timedelta(minutes=5)
+    event_end = now + timedelta(hours=1, minutes=5)
+    mock_axle.return_value = {
+        "start": event_start,
+        "end": event_end,
+        "import_export": "export",
+    }
+    mock_load_state.return_value = {
+        "tracked_axle_event_start": event_start.isoformat(),
+        "active_axle_event_end": event_end.isoformat(),
+        "axle_precharge_triggered": event_start.isoformat(),
+    }
+    mock_set_discharge.return_value = True
+
+    await optimiser.check_axle_events(realtime_soc=100)
+
+    assert mock_set_discharge.called
+    d_start, d_end = mock_set_discharge.call_args[0][:2]
+    assert d_start == event_start.astimezone()
+    assert d_end == event_end.astimezone()
+    saved_state = mock_save_state.call_args[0][0]
+    assert saved_state["axle_export_armed"] == event_start.isoformat()
 
 
 def test_is_winter_season():

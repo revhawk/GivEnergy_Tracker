@@ -17,6 +17,8 @@ except ImportError:
     config = None
 
 import state
+
+AXLE_EXPORT_ARM_LEAD_MINUTES = 10  # Arm Timed Export only within 10m of Axle start so Eco mode covers peak & Power Down
 import tariffs
 import solar
 import profiler
@@ -94,6 +96,27 @@ async def check_axle_events(realtime_soc=None):
                         save_state_fn(cur_state)
                         return True
 
+            # Case 2b: Entering Just-In-Time export arming window (within 10 mins of Axle start)
+            if direction == 'export':
+                arm_at = axle_event['start'] - timedelta(minutes=AXLE_EXPORT_ARM_LEAD_MINUTES)
+                if arm_at <= now_utc < axle_event['end']:
+                    if cur_state.get('axle_export_armed') != a_start_iso:
+                        a_start_local = axle_event['start'].astimezone()
+                        a_end_local = axle_event['end'].astimezone()
+                        rate_w = getattr(config, 'AXLE_EXPORT_POWER_W', 3000) if config else 3000
+                        reserve_floor = int(getattr(config, 'BATTERY_RESERVE_PERCENT', 10) if config else 10)
+                        logging.info(
+                            f"⚡ [AXLE MONITOR] Entering export arming window ({a_start_str} - {a_end_str}) — "
+                            f"arming Timed Export mode now!"
+                        )
+                        await set_discharge_fn(
+                            a_start_local, a_end_local,
+                            discharge_target=reserve_floor,
+                            discharge_rate_w=rate_w,
+                        )
+                        cur_state['axle_export_armed'] = a_start_iso
+                        save_state_fn(cur_state)
+
     # Case 3: Cancelled Axle event while an active event end was tracked
     if last_axle_end_str and not axle_event:
         last_axle_end = parse_iso_fn(last_axle_end_str)
@@ -103,6 +126,7 @@ async def check_axle_events(realtime_soc=None):
             cur_state.pop('active_axle_event_end', None)
             cur_state.pop('tracked_axle_event_start', None)
             cur_state.pop('axle_precharge_triggered', None)
+            cur_state.pop('axle_export_armed', None)
             save_state_fn(cur_state)
             return True
 
@@ -115,6 +139,7 @@ async def check_axle_events(realtime_soc=None):
             cur_state.pop('active_axle_event_end', None)
             cur_state.pop('tracked_axle_event_start', None)
             cur_state.pop('axle_precharge_triggered', None)
+            cur_state.pop('axle_export_armed', None)
             save_state_fn(cur_state)
 
     return False
@@ -1053,15 +1078,26 @@ async def run_optimization():
         action = "no_charge"
         await set_slots_fn(None, None)
 
-    # 7b. Coordinate Axle Self-Dispatch VPP Discharge Slot
+    # 7b. Coordinate Axle Self-Dispatch VPP Discharge Slot (Just-In-Time Arming)
     if axle_event and axle_event.get('start') and axle_event.get('end') and axle_event.get('import_export') == 'export':
         if axle_event['end'] > now_utc and axle_event['start'] < now_utc + timedelta(hours=24):
             a_start = axle_event['start'].astimezone()
             a_end = axle_event['end'].astimezone()
-            rate_w = getattr(config, 'AXLE_EXPORT_POWER_W', 3000) if config else 3000
-            reserve_floor = int(getattr(config, 'BATTERY_RESERVE_PERCENT', 10) if config else 10)
-            await set_discharge_fn(a_start, a_end, discharge_target=reserve_floor, discharge_rate_w=rate_w)
+            arm_at = axle_event['start'] - timedelta(minutes=AXLE_EXPORT_ARM_LEAD_MINUTES)
             cur_state = load_state_fn()
+            if now_utc >= arm_at:
+                rate_w = getattr(config, 'AXLE_EXPORT_POWER_W', 3000) if config else 3000
+                reserve_floor = int(getattr(config, 'BATTERY_RESERVE_PERCENT', 10) if config else 10)
+                await set_discharge_fn(a_start, a_end, discharge_target=reserve_floor, discharge_rate_w=rate_w)
+                cur_state['axle_export_armed'] = axle_event['start'].isoformat()
+            else:
+                arm_local_str = arm_at.astimezone().strftime('%H:%M')
+                logging.info(
+                    f"⏳ [AXLE VPP] Export event {a_start.strftime('%H:%M')}-{a_end.strftime('%H:%M')} is >{AXLE_EXPORT_ARM_LEAD_MINUTES}m away — "
+                    f"keeping inverter in Eco mode (Timed Export will auto-arm at {arm_local_str})."
+                )
+                await set_discharge_fn(None, None)
+                cur_state.pop('axle_export_armed', None)
             cur_state['active_axle_event_end'] = axle_event['end'].isoformat()
             cur_state['tracked_axle_event_start'] = axle_event['start'].isoformat()
             save_state_fn(cur_state)
@@ -1069,11 +1105,12 @@ async def run_optimization():
             await set_discharge_fn(None, None)
     else:
         cur_state = load_state_fn()
-        if cur_state.get('active_axle_event_end'):
+        if cur_state.get('active_axle_event_end') or cur_state.get('axle_export_armed'):
             await set_discharge_fn(None, None)
             cur_state.pop('active_axle_event_end', None)
             cur_state.pop('tracked_axle_event_start', None)
             cur_state.pop('axle_precharge_triggered', None)
+            cur_state.pop('axle_export_armed', None)
             save_state_fn(cur_state)
 
     # Calculate and persist planned SoC trajectory accounting for applied charge blocks

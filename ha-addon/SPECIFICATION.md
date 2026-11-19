@@ -1,6 +1,6 @@
 # Technical Specification & Architecture — GivEnergy Tariff Optimiser
 
-**Version:** 1.0.25.7  
+**Version:** 1.0.25.8  
 **Target Hardware:** GivEnergy Inverters (Gen 1, Gen 2, Gen 3, All-in-One)  
 **Target Platform:** Home Assistant Add-on Container (Linux ARM64 / AMD64)  
 
@@ -28,7 +28,7 @@ graph TD
     end
 
     subgraph GivEnergy Tariff Optimiser Add-on
-        Version["version.py - v1.0.25.7"]
+        Version["version.py - v1.0.25.8"]
         Config["config.py - Settings & Options"]
         Optimiser["optimiser.py - Daemon & Scheduling Loop"]
         SimEngine["simulation.py - 24h Forward Physical Simulation"]
@@ -129,7 +129,7 @@ sequenceDiagram
 
 ### 4.1 Single-Source Versioning Contract (`version.py`)
 - **Module:** `version.py`
-- **Variable:** `__version__ = "1.0.25.7"`
+- **Variable:** `__version__ = "1.0.25.8"`
 - **Contract:** MUST match `version:` field in `ha-addon/config.yaml`. Validated during daemon initialization.
 
 ### 4.2 GivTCP REST v2/v3 Contract (`givtcp.py`)
@@ -247,7 +247,7 @@ Contract tests in `tests/test_contracts.py` explicitly record compliance with AP
 
 | Contract Test | Component Verified | Payload / Schema Contract Checked |
 | :--- | :--- | :--- |
-| `test_version_py_matches_config_yaml` | `version.py` | Validates `__version__ == "1.0.25.7"` matches `ha-addon/config.yaml` `version:` |
+| `test_version_py_matches_config_yaml` | `version.py` | Validates `__version__ == "1.0.25.8"` matches `ha-addon/config.yaml` `version:` |
 | `test_set_charge_slot_payload_contract` | `givtcp.py` | Validates GivTCP `/setChargeSlot` and `/setBatteryMode` JSON key names & formats |
 | `test_agile_tariff_schema_contract` | `tariffs.py` | Validates Octopus Agile API `results` list schema (`valid_from`, `valid_to`, `value_inc_vat`) |
 | `test_forecast_solar_schema_contract` | `solar.py` | Validates Forecast.Solar API `result.watt_hours_period` dictionary structure |
@@ -266,165 +266,11 @@ Test results are saved in `test-results/contracts.xml` and output to standard lo
 
 ---
 
-## 8. Local Architectural Decision Records (ADRs)
-
-### ADR 0001: Single-Source Versioning Architecture
-- **Status:** Accepted
-- **Context:** Version numbers previously diverged across `version.py`, `config.yaml`, `SPECIFICATION.md`, and `openapi.json`.
-- **Decision:** Establish `version.py` as the single authoritative source of truth. Validate version sync on startup.
-- **Consequences:** Eliminates silent version drift; container startup fails gracefully if metadata files disagree.
-
----
-
-### ADR 0002: GivTCP REST API Priority with Modbus Direct Fallback
-- **Status:** Accepted
-- **Context:** Local GivTCP REST API provides rich telemetry but socket timeouts or GivTCP crashes can prevent slot programming.
-- **Decision:** Issue GivTCP REST calls with 0.2s inter-request delay and 3-attempt retry loop. Fall back to `givenergy-modbus` TCP socket connection if REST API fails.
-- **Consequences:** Guaranteed inverter write execution even during transient GivTCP restarts.
-
----
-
-### ADR 0003: Smart LLM Veto Engine with Negative Rate Override
-- **Status:** Accepted
-- **Context:** Deterministic mathematical planner generates optimal charge windows, but edge-case rate anomalies require intelligent sanity checking.
-- **Decision:** Pass candidate charge schedules to OpenAI ChatGPT (`gpt-4o-mini`). If proposed average price is negative ($< 0.0\text{p/kWh}$), automatically override LLM vetoes because negative rates pay the consumer to charge.
-- **Consequences:** Prevents hallucinated LLM rejections of free/negative electricity windows.
-
----
-
-### ADR 0004: Octoplus Session Naming Standard (Power Down / Power Up)
-- **Status:** Accepted
-- **Context:** HomeAssistant-OctopusEnergy integration renamed `saving_sessions` to `power_down_sessions` and `free_electricity` to `power_up_sessions` under ADR 0004. Upstream campaign windows (e.g. 11:00–15:00) often broadcast multi-hour blocks where customers only book single 1-hour slots.
-- **Decision:** Support both new ADR 0004 entity names (`sensor.octopus_energy_power_down_sessions`) and legacy fallbacks. Match `account.joinedEvents` exact timestamps (`startAt`, `endAt`) for booked slots, exclude unconfirmed multi-hour broadcast windows (> 2h), and preserve underlying API tariff rates in `s['tariff_price']` without mutating raw rates to 0.0p in simulation tables.
-- **Consequences:** Instant compatibility across all Home Assistant installations, protection against premature unconfirmed daytime charging, and full price transparency in simulation logs.
-
----
-
-### ADR 0005: Pydantic v2 Type-Safe Data Contracts (`contracts.py`)
-- **Status:** Accepted
-- **Context:** Raw JSON dictionaries exchanged with GivTCP, Octopus API, and OpenAI can silently fail if schema keys drift.
-- **Decision:** Introduce Pydantic v2 data models (`InverterTelemetry`, `OctopusRateSlot`, `GivTCPWriteSlot`, `LLMVetoDecision`, `HiveHotWaterState`) with `json_schema_extra` examples and strict boundary validation.
-- **Consequences:** Type-safe runtime parsing, auto-generated OpenAPI 3.1.0 specification (`openapi.json`), zero deprecation warnings.
-
----
-
-### ADR 0006: Decentralized State & Daily Telemetry Persistence (`state.py`)
-- **Status:** Accepted
-- **Context:** In-memory state loss across container restarts disrupted rolling load averages, planned SoC drift checks, and daily savings audits.
-- **Decision:** Encapsulate state IO into `state.py`, persisting state to `/share/nas_logs/givenergy_state.json` and daily metrics to `/share/nas_logs/givenergy_daily_stats.json`.
-- **Consequences:** 100% state persistence across add-on reboots, NAS Samba access for logging, rolling 14-day load profile history.
-
----
-
-### ADR 0007: 24-Hour Battery Simulation & Arbitrage Engine (`simulation.py`)
-- **Status:** Accepted
-- **Context:** Monolithic `optimiser.py` combined simulation math, state IO, tariff parsing, and loop orchestration in a single 985-line file.
-- **Decision:** Decouple physical energy priority balance (Solar $\rightarrow$ Load $\rightarrow$ Battery $\rightarrow$ iBoost $\rightarrow$ Export) into `simulation.py`.
-- **Consequences:** Pure, testable simulation math isolated from daemon scheduling and HTTP I/O.
-
----
-
-### ADR 0008: Octoplus Session Parsing & Event Entity Mapping (`octoplus.py`)
-- **Status:** Accepted
-- **Context:** Octoplus session parsing and entity resolution functions were buried inside daemon loop logic.
-- **Decision:** Extract Octoplus parsing, event detection, and entity name mapping into dedicated `octoplus.py` domain module.
-- **Consequences:** Reusable Octoplus event evaluation across optimization passes, light monitor checks, and manual automation triggers.
-
----
-
-### ADR 0009: Configurable Verbose Debug Logging Toggle (`debug_logging`)
-- **Status:** Accepted
-- **Context:** Verbose HTTP transport libraries (`httpcore2`, `httpx2`, `urllib3`) flooded Home Assistant container logs with raw request header traces.
-- **Decision:** Introduce a `debug_logging: false` configuration option in `config.yaml` / `/data/options.json`. When `false` (default), force all third-party transport loggers to `WARNING` level.
-- **Consequences:** Clean, readable standard logs with 0 noise, while preserving full `DEBUG` level tracing when explicitly enabled.
-
----
-
-### ADR 0010: Decoupled Hive Hot Water Gas Control & Morning Shower Guarantee (`hive.py`)
-- **Status:** Accepted
-- **Context:** Dual heating setups (electric pre-charge / iBoost immersion + gas boiler backup via Hive) require automated gas suppression during cheap electric hours without risking cold morning showers.
-- **Decision:** Decouple Hive interaction into standalone `hive.py`. Automatically pause gas (`"off"`) when electric pre-charging or high solar occurs, while evaluating a 6:00 AM fail-safe check ($\ge 45^\circ\text{C}$ threshold) to guarantee a hot shower.
-- **Consequences:** Maximizes gas cost savings, enforces morning shower temperature safety, and provides zero-lockin fallback (defaults to `"schedule"` if Supervisor token or temp sensor is unavailable).
-
----
-
-### ADR 0011: Appliance Telemetry & Washing Machine Usage Dashboard (`appliance.py`)
-- **Status:** Accepted
-- **Context:** Weekday laundry running creates significant daytime electricity demand. Monitoring smart plug power sensors (`sensor.washing_machine_power`) enables accurate cycle energy tracking and optimal Agile wash window recommendations.
-- **Decision:** Encapsulate appliance telemetry, wash cycle state detection (`"idle"`, `"washing"`, `"spinning"`, `"heating"`), cycle cost calculation in pence, and Washing Machine Dashboard rendering into dedicated `appliance.py`.
-- **Consequences:** Provides real-time visibility into laundry costs, recommends the top 3 cheapest contiguous Agile wash windows, and feeds weekday laundry consumption into 24-hour load forecasting.
-
----
-
-### ADR 0012: Early Afternoon Pre-Charge Evaluation for Evening Oven Cooking Peak
-- **Status:** Accepted
-- **Context:** Dinner preparation (16:00–18:00) involves heavy electric oven/hob usage. Evaluating peak battery survival at 16:00 is too late because cooking has already started and rates have jumped to 41.0p–50.9p/kWh.
-- **Decision:** Evaluate 16:00–20:00 cooking & evening peak demand early during afternoon planning passes (13:00–14:30). If battery SoC + expected solar is insufficient to cover oven cooking load, pre-charge the battery during cheap 25.9p Agile slots (e.g. 14:30).
-- **Consequences:** Guarantees full battery pre-charge at 25.9p before 16:00, completely avoiding 41.0p and 50.9p peak rates during dinner cooking.
-
----
-
-### ADR 0013: Candidate Strategy Selection (Option B) & Autumn Defensive Headroom
-- **Status:** Accepted
-- **Context:** In autumn and transitional seasons, weather rapidly fluctuates between sunny breaks and heavy overcast. Previously, `simulation.py` evaluated grid deficit against unadjusted solar forecasts, causing `total_import_kwh <= 0.2` to silently cancel pre-charging (`set_slots_fn(None, None)`). The battery collapsed to 4% by late morning, leaving the home vulnerable to 35p–50p/kWh peak rates when afternoon solar underperformed. Furthermore, when the LLM vetoed a single proposed plan, the system had no structured alternative candidate options to evaluate.
-- **Decision:**
-  1. **Candidate Plan Generation (`build_plan_candidates`)**: Build 3 structured candidate plans in `simulation.py`:
-     - Option 1 (Defensive / Autumn Headroom): Pre-charges to a 55% target SoC during cheap slots, guaranteeing evening peak protection while leaving 40%–50% headroom for unexpected sunny surges.
-     - Option 2 (Overcast / Max Pre-Charge): Pre-charges to a 90%–95% target SoC during the cheapest windows when solar forecast is near zero or highly unreliable.
-     - Option 3 (Pure Solar / Solar Only): No grid pre-charge (`None, None`), relying entirely on existing battery reserve and projected solar generation.
-  2. **Option B LLM Selection (`chatgpt_select_candidate`)**: Provide the LLM with day classification, solar spread uncertainty, and candidate window economics so the LLM acts as an active decision maker selecting the best candidate rather than merely an advisory binary veto.
-  3. **Parallel Ensemble Conservative Scaling (`solar.py`)**: Concurrently fetch Forecast.Solar and Open-Meteo. On uncertain or autumn days ($< 15\text{ kWh}$ or spread $> 2\text{ kWh}$), scale the operative forecast down to $\min(\text{primary}, \text{secondary})$ to eliminate over-optimistic solar assumptions.
-  4. **NAS Telemetry & Strategy Logging (`state.py`)**: Record all candidate options, the selected candidate ID, LLM reasoning, and score into `/share/nas_logs/givenergy_state.json`, rolling daily stats, and the daily midnight historical archive `/share/nas_logs/history/daily_stats_YYYY-MM-DD.json`.
-- **Consequences:** Overcast days never strand the battery at 4% entering the evening peak; medium solar days capture cheap morning rates while preserving headroom for solar surges; full auditable decision trails are saved to NAS for performance reviews.
-
----
-
-### ADR 0014: Automated Octoplus Power Down & Power Up GraphQL Polling (`octoplus.py`)
-- **Status:** Accepted
-- **Context:** Previously, Power Down (Saving Session) windows had to be hardcoded in `config.py` (`POWER_DOWN_WINDOWS`) or scraped from email notifications. Power Up (Free Electricity / Weekend Happy Hour) events were not tracked dynamically, missing valuable zero-cost charging and hot water immersion opportunities when the grid ran on green surplus.
-- **Decision:**
-  1. **Kraken GraphQL Client (`octoplus.py`)**: Integrate direct authentication (`obtainKrakenToken` mutation) and session polling (`savingSessions` query) via Octopus Energy's backend GraphQL API (`https://api.backend.octopus.energy/v1/graphql/`).
-  2. **Automated Event Normalization**: Parse both `TURN_DOWN` (Power Down / Saving Sessions) and `TURN_UP` / `WEEKEND_HAPPY_HOUR` (Power Up / Free Electricity) sessions, extracting start/end UTC times, OctoPoints reward per kWh, event IDs, and account enrollment status.
-  3. **Zero-Friction Ingestion in Simulation (`simulation.py`)**:
-     - During `TURN_UP` / `WEEKEND_HAPPY_HOUR` slots, automatically re-price grid import to **0.0p/kWh**, enabling deterministic 100% battery pre-charging and appliance / hot water diversion at zero cost.
-     - During `TURN_DOWN` slots, automatically enforce zero grid import (0.0 kWh), preserving stored battery energy for household load and maximizing OctoPoints credits.
-  4. **Multi-Tiered Caching & Safe Fallback**: Cache Kraken JWT tokens for 1 hour and session query results for 15 minutes. Fall back transparently to static `config.POWER_DOWN_WINDOWS` if network connectivity is temporarily unavailable.
-- **Consequences:** 100% automated detection and dispatch for all Octopus Octoplus flexibility events without requiring manual YAML configuration or email monitoring.
-
----
-
-### ADR 0015: Axle Energy Self-Dispatch Virtual Power Plant (VPP) Integration (`axle.py`)
-- **Status:** Accepted
-- **Context:** In Axle Energy's Self-Dispatch mode, Axle observes inverter telemetry passively and announces flexibility events via REST API (`https://api.axle.energy/vpp/home-assistant/event`) and Home Assistant entities without issuing direct inverter control commands. Participating requires local automation to detect event windows, pre-charge the battery to 100%, and force export to the grid during the event window.
-- **Decision:**
-  1. **Decoupled Axle Module (`axle.py`)**: Implement token discovery (config, environment, add-on options), Bearer token cleaning, direct Axle REST API client, and Home Assistant Supervisor entity fallback (`sensor.axle_event`).
-  2. **Startup Connectivity Healthcheck**: On add-on startup, probe the Axle API and log verification status:
-     - `✓ Axle Energy API connected successfully — Self-Dispatch VPP ENABLED (Export limit: 3000W).`
-     - Displays scheduled event start/end times or confirms no events currently scheduled.
-  3. **Add-on Configuration UI Options**: Add `enable_axle_dispatch: bool`, `axle_api_token: password`, and `axle_export_power_w: int` to `config.yaml` options and schema, allowing zero-YAML setup directly from Home Assistant's UI.
-  4. **Simulation & Inverter Dispatch**: Integrate event detection into `simulation.py` and `givtcp.py`. When an export event is scheduled, prioritize pre-event battery charging to 100%, and automatically program GivTCP discharge slots (`/setDischargeSlot`, `/setBatteryMode` mode="Timed Export", `/setDischargeRate`, and `/enableDischargeSchedule`) during the event window. Automatically clear discharge slots and restore Eco mode when the event concludes.
-  5. **Continuous Monitor & Adaptive Re-Planning**: Hook Axle event detection into `run_light_monitor()` so the daemon polls Axle on every 30-minute tick. If a new or updated event is detected, or if the current time enters the 2-hour pre-charge window (`is_axle_precharge_window()`), immediately trigger an adaptive re-plan to top up the battery to 100% and arm GivTCP. Support single event payloads, event lists, and `{"events": [...]}` wrapper payloads with field alias resilience (`start`/`start_time`, `finish`/`end_time`, `direction`/`import_export`).
-- **Consequences:** Users can monetize their battery via Axle Energy VPP in Self-Dispatch mode with zero manual app toggling and zero conflict between cloud commands and GivTCP.
-
-### ADR 0016: Cost-Based Plan Simulation & Search (`planner.py`)
-- **Status:** Accepted
-- **Context:** Candidates from ADR 0013 were costed as `kWh × avg price` and never simulated, so solar spill, battery losses and leftover energy were ignored and the LLM compared estimates. Fixed targets (55/95%) and windows were hand-tuned. Concepts (not code) inspired by public Predbat documentation, whose licence is personal-use only.
-- **Decision:**
-  1. New side-effect-free `planner.simulate_plan()` — per-slot model with round-trip efficiency (`BATTERY_ROUND_TRIP_EFFICIENCY`, default 0.92, split evenly charge/discharge), grid covering load during Timed Charge slots, iBoost, Axle forced export, reserve from `BATTERY_RESERVE_PERCENT`. Output contract: `contracts.PlanResult`.
-  2. Score = import cost − export revenue − value of usable end energy (valued at the mean of the cheapest quarter of import prices), blended 70/30 between central and pessimistic solar (`PESSIMISTIC_SOLAR_FACTOR` 0.6, `PESSIMISTIC_SOLAR_WEIGHT` 0.3).
-  3. Every rule-based candidate is simulated and annotated (`sim_cost_p`, `sim_cost_pessimistic_p`, `sim_score_p`, `sim_min_soc`).
-  4. `search_best_plan()` grid-searches target SoC (5% steps) × cheapest-N eligible (non-Power-Down) slots; offered as an extra `cost_optimised` candidate only if ≥ `PLAN_SEARCH_MIN_IMPROVEMENT_P` (2p) cheaper than the best rule candidate.
-  5. The LLM remains the selector but sees simulated costs; a `[SHADOW]` log line and `sim_gap_to_cheapest_p` record how far its choice is from the cheapest plan, to evaluate its value over time.
-  6. The persisted `planned_soc_schedule` is produced by the same simulator.
-- **Consequences:** Plans are compared on a like-for-like cost basis; hard-coded rules remain as safe, explainable candidates. The base (no-charge) simulation used for day classification is unchanged in this release. Planned SoC during charge slots is now higher (grid covers load), which may slightly change drift-trigger behaviour.
-
----
-
-## 4. Gamification & Rewards Component Architecture (`rewards.py`)
+## 8. Gamification & Rewards Component Architecture (`rewards.py`)
 
 The `rewards.py` module encapsulates Octopus Energy's loyalty gamification features, separating rewards automation from core physics simulation and tariff dispatching.
 
-### 4.1 Capabilities & Design
+### 8.1 Capabilities & Design
 1. **Automated Wheel of Fortune Spinning (`spin_wheel_of_fortune`, `auto_spin_available_wheels`)**:
    - **Multi-Tier Execution**: Directly queries the Octopus Kraken GraphQL backend mutation (`spinWheelOfFortune`) when account credentials are available, falling back to the Home Assistant Supervisor service `octopus_energy.spin_wheel_of_fortune`.
    - **Zero-Friction Scheduling**: Reads remaining spin counts from `sensor.octopus_energy_wheel_of_fortune_spins_*` during add-on startup and scheduled planning ticks. If spins are available ($> 0$), executes spins and publishes a Home Assistant persistent notification with winnings.
@@ -437,11 +283,11 @@ The `rewards.py` module encapsulates Octopus Energy's loyalty gamification featu
 
 ---
 
-## 5. Automated Tariff Discovery & Time-of-Use Export Integration (`tariffs.py`)
+## 9. Automated Tariff Discovery & Time-of-Use Export Integration (`tariffs.py`)
 
 The `tariffs.py` module integrates directly with Octopus Energy REST APIs to retrieve half-hourly import pricing, dynamic export rates, and live customer agreements.
 
-### 5.1 Automated Account Tariff Discovery (`discover_account_tariffs`)
+### 9.1 Automated Account Tariff Discovery (`discover_account_tariffs`)
 1. **Dynamic Agreement Detection**:
    - Directly queries the Octopus Account API (`/v1/accounts/<account_number>/`) using the customer's API credentials.
    - Automatically detects active import and export meter points (MPANs), agreement dates, and authoritative tariff codes without manual configuration.
@@ -455,9 +301,9 @@ The `tariffs.py` module integrates directly with Octopus Energy REST APIs to ret
 
 ---
 
-## 6. Winter Full Overnight Pre-Charge & Peak-Protection Daytime Cap Architecture (ADR 0017)
+## 10. Winter Full Overnight Pre-Charge & Peak-Protection Daytime Cap Architecture
 
-### 6.1 Motivation & Economic Model
+### 10.1 Motivation & Economic Model
 1. **Seasonal Solar Deficits**:
    - In UK winter months (November through February), solar generation typically drops below 2–6 kWh/day, insufficient to carry the household through evening hours.
    - Preserving 45% battery headroom for solar during winter risks running the battery down into deep discharge before the 16:00–19:00 peak, causing expensive daytime shoulder grid imports (25.8p/kWh on Flux) and peak grid imports (36.0p/kWh).
@@ -472,9 +318,9 @@ The `tariffs.py` module integrates directly with Octopus Energy REST APIs to ret
 
 ---
 
-## 7. Unified 5-Minute Flexibility Monitoring for Axle & Octoplus (ADR 0018)
+## 11. Unified 5-Minute Flexibility Monitoring & Just-In-Time Export Arming
 
-### 7.1 Architecture & Design
+### 11.1 Architecture & Design
 1. **Intraday Announcement Latency**:
    - Both National Grid ESO Demand Flexibility Service (DFS / Octopus Power Down) and Axle Energy VPP flexibility sessions are broadcast intraday with only 1–3 hours of advance notice.
    - Waiting for scheduled 30-minute ticks or the daily 17:00 planning run causes missed pre-charge windows or missed enrollment gates.
@@ -485,10 +331,8 @@ The `tariffs.py` module integrates directly with Octopus Energy REST APIs to ret
      - `check_octoplus_events()`: Queries Octopus Kraken GraphQL and Home Assistant entities for newly announced Power Down sessions and confirmed Power Up / Happy Hour bookings.
 3. **Automated Zero-Friction Enrollment & Dispatch**:
    - For unjoined Power Down sessions, `check_octoplus_events()` automatically invokes `join_octoplus_saving_session()`, enrolling the account via GraphQL mutation (`joinSavingSessionsEvent`) or Home Assistant service (`octopus_energy.join_octoplus_saving_session_event`).
-   - Slices sleep early and triggers `run_optimization()` to immediately command GivTCP to enforce zero grid import (Power Down) or timed export (Axle).
-
-
-
-
-
-
+   - Slices sleep early and triggers `run_optimization()` to enforce zero grid import (Power Down) or pre-charge for Axle.
+4. **Just-In-Time Axle `Timed Export` Arming (`AXLE_EXPORT_ARM_LEAD_MINUTES = 10`)**:
+   - GivEnergy inverters in `Timed Export` mode hold the battery and block normal house discharge outside the discharge window.
+   - To ensure the battery covers evening peak (16:00–19:00) and any earlier Octopus Power Down sessions, `run_optimization()` keeps the inverter in `Eco` mode when an Axle export event is more than 10 minutes away.
+   - The 5-minute `check_axle_events()` loop automatically arms `Timed Export` within 10 minutes of event start (`T - 10m`) and immediately restores `Eco` mode upon conclusion or cancellation.
