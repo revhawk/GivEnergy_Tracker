@@ -11,13 +11,13 @@ The codebase in `ha-addon/` is organized into five functional layers:
 
 ```mermaid
 flowchart TD
-    subgraph Layer1 [1. Contracts & Configuration]
+    subgraph Layer1["1. Contracts & Configuration"]
         contracts["contracts.py (Pydantic v2 Models)"]
         config["config.py / config.yaml (Options)"]
         version["version.py (Single Source of Truth)"]
     end
 
-    subgraph Layer2 [2. Cloud Integrations]
+    subgraph Layer2["2. Cloud Integrations"]
         tariffs["tariffs.py (Agile & Flux Tariffs, Auto-Discovery)"]
         octoplus["octoplus.py (Kraken GraphQL, Saving Sessions)"]
         rewards["rewards.py (Wheel of Fortune, Scratchcards)"]
@@ -26,19 +26,19 @@ flowchart TD
         llm["llm.py (OpenAI ChatGPT Veto & Reports)"]
     end
 
-    subgraph Layer3 [3. Pure Math & Simulation]
+    subgraph Layer3["3. Pure Math & Simulation"]
         profiler["profiler.py (Dynamic Load Profiles)"]
         planner["planner.py (Cost-Minimising Search & Simulation)"]
         simulation["simulation.py (24h Energy Balance Engine)"]
         appliance["appliance.py (Smart Appliance Telemetry)"]
     end
 
-    subgraph Layer4 [4. Hardware Controllers]
+    subgraph Layer4["4. Hardware Controllers"]
         givtcp["givtcp.py (Inverter REST API v2/v3 & Modbus)"]
         hive["hive.py (Hive Water Heating Controller)"]
     end
 
-    subgraph Layer5 [5. Runtime & Daemon Lifecycle]
+    subgraph Layer5["5. Runtime & Daemon Lifecycle"]
         optimiser["optimiser.py (Daemon Orchestrator & Loop)"]
         state["state.py (JSON State & Telemetry History)"]
         run_sh["run.sh (Container Entrypoint & Env Export)"]

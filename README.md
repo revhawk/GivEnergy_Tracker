@@ -85,24 +85,24 @@ flowchart TD
     subgraph Inputs ["Input Telemetry & Data Sources"]
         T1["Octopus Agile Rates (48 slots)"]
         T2["Octopus Outgoing Export Rate"]
-        T3["Parallel Solar Forecasts\n(Forecast.Solar + Open-Meteo)"]
+        T3["Parallel Solar Forecasts<br/>(Forecast.Solar + Open-Meteo)"]
         T4["GivTCP Live Battery SoC & Capacity"]
         T5["Historical Load Profile & Persisted State"]
     end
 
     subgraph Simulation ["simulation.py (Deterministic Physics Engine)"]
-        ENG["24-Hour Energy Balance Simulation\nSolar → Load → Battery → iBoost → Export"]
-        GEN["Multi-Candidate Generator\n• Option 1: Defensive Autumn Headroom (55% SoC)\n• Option 2: Overcast Full Pre-Charge (95% SoC)\n• Option 3: Pure Solar Self-Consumption"]
+        ENG["24-Hour Energy Balance Simulation<br/>Solar → Load → Battery → iBoost → Export"]
+        GEN["Multi-Candidate Generator<br/>• Option 1: Defensive Autumn Headroom (55% SoC)<br/>• Option 2: Overcast Full Pre-Charge (95% SoC)<br/>• Option 3: Pure Solar Self-Consumption"]
         ENG --> GEN
     end
 
     subgraph LLMCoPilot ["llm.py (AI Energy Strategist)"]
-        AI["ChatGPT (gpt-4o-mini)\nEvaluates Solar Spread, Day Classification & Economics"]
+        AI["ChatGPT (gpt-4o-mini)<br/>Evaluates Solar Spread, Day Classification & Economics"]
     end
 
     subgraph HardwareExecution ["Execution & Inverter Hardware"]
-        GIV["GivTCP REST API v2/v3\nPrograms Inverter Registers & Charge Slots"]
-        NAS["NAS Share (/share/nas_logs)\nPersists State, Telemetry & Daily Audits"]
+        GIV["GivTCP REST API v2/v3<br/>Programs Inverter Registers & Charge Slots"]
+        NAS["NAS Share (/share/nas_logs)<br/>Persists State, Telemetry & Daily Audits"]
     end
 
     T1 & T2 & T3 & T4 & T5 --> ENG
@@ -118,11 +118,11 @@ flowchart TD
 
 ```mermaid
 graph TD
-    subgraph Core Orchestration
+    subgraph Core ["Core Orchestration"]
         OPTIMISER["optimiser.py (Daemon Orchestrator)"]
     end
 
-    subgraph Domain Modules
+    subgraph Domain ["Domain Modules"]
         CONTRACTS["contracts.py (Pydantic v2 Models)"]
         STATE["state.py (State & Daily Stats)"]
         SIMULATION["simulation.py (24h Simulation Engine)"]
@@ -134,7 +134,7 @@ graph TD
         HIVE["hive.py (Hive Hot Water Controller)"]
     end
 
-    subgraph External Services & Integrations
+    subgraph External ["External Services & Integrations"]
         GIVTCP["givtcp.py (GivTCP REST & Inverter Communication)"]
         TARIFFS["tariffs.py (Octopus Agile & Outgoing API)"]
         SOLAR["solar.py (Forecast.Solar & Open-Meteo Ensemble)"]
@@ -196,18 +196,18 @@ For full technical details, see the dedicated [Weather-Adaptive Solar Strategy &
 
 ```mermaid
 flowchart TD
-    A[Daily Planning Run at 17:00] --> B[Calculate Net Solar Surplus\nForecast Solar − House Load]
+    A["Daily Planning Run at 17:00"] --> B["Calculate Net Solar Surplus<br/>(Forecast Solar − House Load)"]
     
-    B --> C{Agile Rates Negative < 0p?}
-    C -->|YES| D[⚡ NEGATIVE_RATE_OPPORTUNITY\nImport Grid Power (Grid pays you!)]
+    B --> C{"Agile Rates Negative (< 0p)?"}
+    C -->|YES| D["⚡ NEGATIVE_RATE_OPPORTUNITY<br/>Import Grid Power (Grid pays you!)"]
     
-    C -->|NO| E{Net Solar Surplus vs Battery Space?}
+    C -->|NO| E{"Winter Months (Nov–Feb)<br/>or Net Solar Surplus?"}
     
-    E -->|Surplus ≥ Battery Deficit| F[☀️ HIGH_SOLAR_SELF_CONSUMPTION\n0 W Grid Draw\nFree solar PV fills battery]
+    E -->|"Winter Season (Nov–Feb)<br/>or Surplus < 40% of Deficit"| H["🌧️ LOW_SOLAR_GRID_PRECHARGE<br/>100% Overnight Pre-Charge<br/>(Protects evening peak & arms Axle export)"]
     
-    E -->|Surplus 40% to 99% of Deficit| G[⛅ MEDIUM_SOLAR_PARTIAL_PRECHARGE\nPartial Pre-Charge for Peak Hours\nLeaves 30%-50% headroom for solar surges]
+    E -->|"Surplus ≥ Battery Deficit<br/>(Non-Winter)"| F["☀️ HIGH_SOLAR_SELF_CONSUMPTION<br/>0 W Grid Draw<br/>Free solar PV fills battery"]
     
-    E -->|Surplus < 40% of Deficit| H[🌧️ LOW_SOLAR_GRID_PRECHARGE\nFull Grid Pre-Charge\nGuarantees 100% SoC before 16:00 peak]
+    E -->|"Surplus 40% to 99% of Deficit<br/>(Non-Winter)"| G["⛅ MEDIUM_SOLAR_PARTIAL_PRECHARGE<br/>Partial Pre-Charge for Peak Hours<br/>Leaves 30%–50% headroom for solar surges"]
 ```
 
 ---

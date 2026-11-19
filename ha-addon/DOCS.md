@@ -90,18 +90,18 @@ The add-on uses a **4-Tier Day Classifier** to dynamically adapt to daily UK wea
 
 ```mermaid
 flowchart TD
-    A[Daily Planning Run at 17:00] --> B[Calculate Net Solar Surplus\nForecast Solar − House Load]
+    A["Daily Planning Run at 17:00"] --> B["Calculate Net Solar Surplus<br/>(Forecast Solar − House Load)"]
     
-    B --> C{Agile Rates Negative < 0p?}
-    C -->|YES| D[⚡ NEGATIVE_RATE_OPPORTUNITY\nImport Grid Power (Grid pays you!)]
+    B --> C{"Agile Rates Negative (< 0p)?"}
+    C -->|YES| D["⚡ NEGATIVE_RATE_OPPORTUNITY<br/>Import Grid Power (Grid pays you!)"]
     
-    C -->|NO| E{Net Solar Surplus vs Battery Space?}
+    C -->|NO| E{"Winter Months (Nov–Feb)<br/>or Net Solar Surplus?"}
     
-    E -->|Surplus ≥ Battery Deficit| F[☀️ HIGH_SOLAR_SELF_CONSUMPTION\n0 W Grid Draw\nFree solar PV fills battery]
+    E -->|"Winter Season (Nov–Feb)<br/>or Surplus < 40% of Deficit"| H["🌧️ LOW_SOLAR_GRID_PRECHARGE<br/>100% Overnight Pre-Charge<br/>(Protects evening peak & arms Axle export)"]
     
-    E -->|Surplus 40% to 99% of Deficit| G[⛅ MEDIUM_SOLAR_PARTIAL_PRECHARGE\nPartial Pre-Charge for Peak Hours\nLeaves 30%-50% headroom for solar surges]
+    E -->|"Surplus ≥ Battery Deficit<br/>(Non-Winter)"| F["☀️ HIGH_SOLAR_SELF_CONSUMPTION<br/>0 W Grid Draw<br/>Free solar PV fills battery"]
     
-    E -->|Surplus < 40% of Deficit| H[🌧️ LOW_SOLAR_GRID_PRECHARGE\nFull Grid Pre-Charge\nGuarantees 100% SoC before 16:00 peak]
+    E -->|"Surplus 40% to 99% of Deficit<br/>(Non-Winter)"| G["⛅ MEDIUM_SOLAR_PARTIAL_PRECHARGE<br/>Partial Pre-Charge for Peak Hours<br/>Leaves 30%–50% headroom for solar surges"]
 ```
 
 ### How The Add-on Saves You Money:

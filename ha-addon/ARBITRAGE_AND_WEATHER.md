@@ -10,26 +10,26 @@ UK weather changes day-by-day. Instead of relying on static calendar months (whi
 
 ```mermaid
 flowchart TD
-    A[Daily Planning Run at 17:00] --> B[Calculate Tomorrow's Net Solar Surplus\nForecast Solar − House Load]
+    A["Daily Planning Run at 17:00"] --> B["Calculate Tomorrow's Net Solar Surplus<br/>Forecast Solar − House Load"]
     
-    B --> C{Agile Rates Negative < 0p?}
-    C -->|YES| D[⚡ NEGATIVE_RATE_OPPORTUNITY\nImport Grid Power (Grid pays you!)]
+    B --> C{"Agile Rates Negative (< 0p)?"}
+    C -->|YES| D["⚡ NEGATIVE_RATE_OPPORTUNITY<br/>Import Grid Power (Grid pays you!)"]
     
-    C -->|NO| E{Net Solar Surplus vs Battery Space?}
+    C -->|NO| E{"Winter Months (Nov–Feb)<br/>or Net Solar Surplus?"}
     
-    E -->|Surplus ≥ Battery Deficit| F[☀️ HIGH_SOLAR_SELF_CONSUMPTION\n0 W Grid Draw\nLet free solar PV fill battery to 100%]
+    E -->|"Winter Season (Nov–Feb)<br/>or Surplus < 40% of Deficit"| H["🌧️ LOW_SOLAR_GRID_PRECHARGE<br/>Full 100% Grid Pre-Charge<br/>Guarantees 100% SoC before 16:00 peak"]
     
-    E -->|Surplus 40% to 99% of Deficit| G[⛅ MEDIUM_SOLAR_PARTIAL_PRECHARGE\nPartial Pre-Charge for Peak Hours\nLeaves 30%-50% headroom for solar surges]
+    E -->|"Surplus ≥ Battery Deficit<br/>(Non-Winter)"| F["☀️ HIGH_SOLAR_SELF_CONSUMPTION<br/>0 W Grid Draw<br/>Let free solar PV fill battery to 100%"]
     
-    E -->|Surplus < 40% of Deficit| H[🌧️ LOW_SOLAR_GRID_PRECHARGE\nFull Grid Pre-Charge\nGuarantees 100% SoC before 16:00 peak]
+    E -->|"Surplus 40% to 99% of Deficit<br/>(Non-Winter)"| G["⛅ MEDIUM_SOLAR_PARTIAL_PRECHARGE<br/>Partial Pre-Charge for Peak Hours<br/>Leaves 30%–50% headroom for solar surges"]
     
-    F --> I[Send Plan & Day Classification to ChatGPT AI]
+    F --> I["Send Plan & Day Classification to ChatGPT AI"]
     G --> I
     H --> I
     D --> I
     
-    I --> J[ChatGPT Scores 1-10 & Evaluates Weather Risk]
-    J --> K[Program Inverter Slots & Archive History to NAS]
+    I --> J["ChatGPT Scores 1–10 & Evaluates Weather Risk"]
+    J --> K["Program Inverter Slots & Archive History to NAS"]
 ```
 
 ---

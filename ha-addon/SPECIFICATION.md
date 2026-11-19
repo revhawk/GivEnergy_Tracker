@@ -19,39 +19,39 @@ The system models a 24-hour forward physical simulation of home energy balance (
 ```mermaid
 graph TD
     subgraph External Services
-        Agile[Octopus Agile API]
-        Outgoing[Octopus Outgoing Export API]
-        FSolar[Forecast.Solar API]
-        OMeteo[Open-Meteo Solar API]
-        OpenAI[OpenAI ChatGPT API]
-        Axle_Cloud[Axle Energy VPP Cloud]
+        Agile["Octopus Agile API"]
+        Outgoing["Octopus Outgoing Export API"]
+        FSolar["Forecast.Solar API"]
+        OMeteo["Open-Meteo Solar API"]
+        OpenAI["OpenAI ChatGPT API"]
+        Axle_Cloud["Axle Energy VPP Cloud"]
     end
 
     subgraph GivEnergy Tariff Optimiser Add-on
-        Version[version.py - v1.0.25.3]
-        Config[config.py - Settings & Options]
-        Optimiser[optimiser.py - Daemon & Scheduling Loop]
-        SimEngine[simulation.py - 24h Forward Physical Simulation]
-        Tariff_Mod[tariffs.py - Agile & Outgoing Fetcher]
-        Solar_Mod[solar.py - Dual Ensemble Solar Manager]
-        Meteo_Mod[solar_openmeteo.py - Shadow Solar]
-        Profiler_Mod[profiler.py - Load & Session Profiler]
-        GivTCP_Mod[givtcp.py - GivTCP REST v2/v3 & Modbus]
-        Octoplus_Mod[octoplus.py - Octoplus Flexibility Sessions]
-        Axle_Mod[axle.py - Axle Self-Dispatch VPP]
-        Rewards_Mod[rewards.py - Wheel of Fortune & Scratchcard]
-        Appliance_Mod[appliance.py - Washing Machine Telemetry]
-        State_Mod[state.py - NAS Persistence & Daily Audits]
-        LLM_Mod[llm.py - ChatGPT Veto & Candidate Selection]
-        Hive_Mod[hive.py - Decoupled Hive Controller]
+        Version["version.py - v1.0.25.6"]
+        Config["config.py - Settings & Options"]
+        Optimiser["optimiser.py - Daemon & Scheduling Loop"]
+        SimEngine["simulation.py - 24h Forward Physical Simulation"]
+        Tariff_Mod["tariffs.py - Agile & Outgoing Fetcher"]
+        Solar_Mod["solar.py - Dual Ensemble Solar Manager"]
+        Meteo_Mod["solar_openmeteo.py - Shadow Solar"]
+        Profiler_Mod["profiler.py - Load & Session Profiler"]
+        GivTCP_Mod["givtcp.py - GivTCP REST v2/v3 & Modbus"]
+        Octoplus_Mod["octoplus.py - Octoplus Flexibility Sessions"]
+        Axle_Mod["axle.py - Axle Self-Dispatch VPP"]
+        Rewards_Mod["rewards.py - Wheel of Fortune & Scratchcard"]
+        Appliance_Mod["appliance.py - Washing Machine Telemetry"]
+        State_Mod["state.py - NAS Persistence & Daily Audits"]
+        LLM_Mod["llm.py - ChatGPT Veto & Candidate Selection"]
+        Hive_Mod["hive.py - Decoupled Hive Controller"]
     end
 
     subgraph Local Network & Home Assistant
-        GivTCP[GivTCP Service :6345]
-        Inverter[GivEnergy Inverter]
-        HA_API[Home Assistant Core REST API]
-        NAS_Share[NAS Storage /share/nas_logs]
-        Hive[Hive Hot Water Controller]
+        GivTCP["GivTCP Service :6345"]
+        Inverter["GivEnergy Inverter"]
+        HA_API["Home Assistant Core REST API"]
+        NAS_Share["NAS Storage /share/nas_logs"]
+        Hive["Hive Hot Water Controller"]
     end
 
     Agile --> Tariff_Mod
@@ -129,7 +129,7 @@ sequenceDiagram
 
 ### 4.1 Single-Source Versioning Contract (`version.py`)
 - **Module:** `version.py`
-- **Variable:** `__version__ = "1.0.24.3"`
+- **Variable:** `__version__ = "1.0.25.6"`
 - **Contract:** MUST match `version:` field in `ha-addon/config.yaml`. Validated during daemon initialization.
 
 ### 4.2 GivTCP REST v2/v3 Contract (`givtcp.py`)
@@ -228,9 +228,9 @@ This specification serves as the **authoritative contract** for the codebase. Fu
 
 ```mermaid
 graph LR
-    A[1. Update SPECIFICATION.md] --> B[2. Add/Update Contract Tests in test_contracts.py]
-    B --> C[3. Implement Code in ha-addon/]
-    C --> D[4. Verify Suite pytest]
+    A["1. Update SPECIFICATION.md"] --> B["2. Add/Update Contract Tests in test_contracts.py"]
+    B --> C["3. Implement Code in ha-addon/"]
+    C --> D["4. Verify Suite pytest"]
 ```
 
 ### Steps for Adding New Features:
@@ -247,7 +247,7 @@ Contract tests in `tests/test_contracts.py` explicitly record compliance with AP
 
 | Contract Test | Component Verified | Payload / Schema Contract Checked |
 | :--- | :--- | :--- |
-| `test_version_py_matches_config_yaml` | `version.py` | Validates `__version__ == "1.0.24.3"` matches `ha-addon/config.yaml` `version:` |
+| `test_version_py_matches_config_yaml` | `version.py` | Validates `__version__ == "1.0.25.6"` matches `ha-addon/config.yaml` `version:` |
 | `test_set_charge_slot_payload_contract` | `givtcp.py` | Validates GivTCP `/setChargeSlot` and `/setBatteryMode` JSON key names & formats |
 | `test_agile_tariff_schema_contract` | `tariffs.py` | Validates Octopus Agile API `results` list schema (`valid_from`, `valid_to`, `value_inc_vat`) |
 | `test_forecast_solar_schema_contract` | `solar.py` | Validates Forecast.Solar API `result.watt_hours_period` dictionary structure |
