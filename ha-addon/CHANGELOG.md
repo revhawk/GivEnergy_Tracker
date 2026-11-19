@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.25.7] - 2026-11-19
+
+### Changed
+- **Production Documentation & Mermaid Diagram Standardization (`README.md`, `ha-addon/DOCS.md`, `ha-addon/SPECIFICATION.md`, `ha-addon/ARCHITECTURE.md`, `ha-addon/ARBITRAGE_AND_WEATHER.md`)**:
+  - Replaced unsupported Mermaid `gantt` charts (time-only `HH:mm` format) in `README.md` and `ha-addon/DOCS.md` with GitHub- and Home Assistant-compatible `flowchart LR` lifecycle diagrams and structured schedule tables.
+  - Standardized all 12 Mermaid diagrams across the documentation suite with double-quoted node/subgraph labels (`["..."]`, `{"..."}`), HTML line breaks (`<br/>`), and escaped comparison operators (`< 0p`) to eliminate rendering errors.
+  - Updated day-classification flowcharts to reflect the Winter 100% Overnight Pre-Charge Policy (ADR 0017) and synchronized specification version references.
+
+### Senior Developer Review
+- **Documentation Hygiene & Production Parity**: Bumping to `1.0.25.7` ensures the Home Assistant Add-on Documentation tab (`DOCS.md`) and production metadata remain strictly version-controlled and synchronized with the GitHub repository.
+- **Verification**: Full pre-commit verification gate (`scripts/verify_commit.py`) and all 183 pytest tests passed 100%.
+
 ## [1.0.25.6] - 2026-11-18
 
 ### Added
