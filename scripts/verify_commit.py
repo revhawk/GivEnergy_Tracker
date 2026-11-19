@@ -102,6 +102,26 @@ def check_version_sync() -> bool:
         else:
             log_pass(f"ha-addon/SPECIFICATION.md matches {auth_ver}")
 
+    # 6. Scan non-changelog Markdown docs for stale hardcoded 1.0.x.x version strings
+    stale_hits = []
+    ver_pattern = re.compile(r"\b1\.0\.\d+\.\d+\b")
+    for md_path in sorted(ROOT.rglob("*.md")):
+        if any(part in {".git", ".venv", ".scratch_venv"} for part in md_path.parts):
+            continue
+        if md_path.name in {"CHANGELOG.md", "PRE_COMMIT_CHECKLIST.md"}:
+            continue
+        rel_md = md_path.relative_to(ROOT)
+        for line_no, line in enumerate(md_path.read_text(encoding="utf-8", errors="ignore").splitlines(), 1):
+            for found_ver in ver_pattern.findall(line):
+                if found_ver != auth_ver:
+                    stale_hits.append(f"{rel_md}:{line_no} has stale version '{found_ver}' (expected '{auth_ver}')")
+    if stale_hits:
+        for hit in stale_hits:
+            log_fail(f"Stale version in docs: {hit}")
+        ok = False
+    else:
+        log_pass(f"No stale 1.0.x.x version strings found across non-changelog Markdown docs.")
+
     return ok
 
 

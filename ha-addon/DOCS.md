@@ -62,29 +62,33 @@ flowchart LR
 
     subgraph Addon["Add-on Autonomous Lifecycle"]
         Plan["17:00<br/><b>Daily Planning Run</b><br/>Calculates plan & programs inverter"]
-        Monitor["Every 5 - 30 Mins<br/><b>Flexibility & SoC Monitor</b><br/>Continuous Axle & Octoplus checks"]
+        Flex["Every 5 Mins<br/><b>Flexibility Poll (ADR 0018)</b><br/>Axle VPP & Octoplus auto-join"]
+        Drift["Every 30 Mins<br/><b>Light Monitor Tick</b><br/>SoC drift > 15% re-plan (55% cap)"]
         Audit["23:00<br/><b>Daily Savings Audit</b><br/>ChatGPT daily savings report"]
-        Charge["02:00 - 05:00<br/><b>Overnight Execution</b><br/>Battery pre-charges at off-peak rates"]
+        Charge["02:00 - 05:00<br/><b>Overnight Execution</b><br/>100% winter pre-charge at off-peak rates"]
     end
 
     Rates --> Plan
-    Plan --> Monitor
-    Monitor --> Audit
+    Plan --> Flex
+    Flex --> Drift
+    Drift -.->|Early Re-Plan| Plan
+    Drift --> Audit
     Audit --> Charge
     Charge -.-> Plan
 ```
 
-### The 3 Routine Modes:
+### The 4 Routine Modes:
 
-1. **Daily Planner (Fires at 17:00)**: Fetches tomorrow's 48 Octopus Agile rates and solar forecasts, simulates 24 hours of home energy demand, programs optimal charge slots into your inverter via GivTCP, and pauses Hive gas boiler when appropriate.
-2. **Light Status Checks (Every 30 mins)**: Reads current battery percentage quietly without modifying inverter settings or making unnecessary internet calls.
-3. **Daily Savings Audit (Fires at 23:00)**: Calculates your estimated savings for the day and logs a clear summary report.
+1. **Daily Planner (Fires at 17:00)**: Fetches tomorrow's 48 Octopus import/export rates and solar forecasts, simulates 24 hours of home energy demand across 4 candidate strategies, programs optimal charge slots into your inverter via GivTCP, and pauses Hive gas boiler when appropriate.
+2. **Continuous Flexibility Monitor (Every 5 mins)**: Polls **Axle Energy VPP** and **Octopus Octoplus** every 5 minutes (`ADR 0018`). Automatically enrolls in newly announced Power Down sessions, detects confirmed Happy Hour bookings, and breaks the sleep loop immediately to re-plan your inverter.
+3. **Light Status & Drift Monitor (Every 30 mins)**: Reads live battery SoC against the planned schedule. If SoC drifts by more than `15%`, triggers a daytime re-plan capped at `55%` target SoC to protect the evening peak without over-buying expensive daytime power.
+4. **Daily Savings Audit (Fires at 23:00)**: Calculates your estimated savings for the day and logs a clear ChatGPT summary report.
 
 ---
 
 ## 🌤️ Weather-Adaptive Solar Strategy & Export Arbitrage
 
-For full architectural details, see the dedicated [Weather-Adaptive Solar & Arbitrage Guide](file:///home/reg/Coding/GivEnergy_Tracker/ha-addon/ARBITRAGE_AND_WEATHER.md) subpage.
+For full architectural details, see the dedicated [Weather-Adaptive Solar & Arbitrage Guide](ARBITRAGE_AND_WEATHER.md) subpage.
 
 The add-on uses a **4-Tier Day Classifier** to dynamically adapt to daily UK weather without static calendar months:
 

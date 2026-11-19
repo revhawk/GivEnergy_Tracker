@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.25.8] - 2026-11-19
+
+### Changed
+- **Architecture Flow Diagrams & Dual-Cadence Lifecycle Docs (`README.md`, `ha-addon/DOCS.md`)**:
+  - Updated **Daily Data Flow Architecture** and **Daily Execution Timeline** diagrams to explicitly depict the **5-minute Continuous Flexibility Poll** (Axle VPP & Octoplus Power Down auto-join / Happy Hour detection, ADR 0018) alongside the **30-minute Light Monitor Tick** (live SoC drift > 15% re-planning with 55% daytime cap).
+  - Updated the Multi-Candidate Generator diagram box to reflect the current 4-strategy architecture (`planner.py` Cost-Optimised Search & ADR 0017 Winter 100% Overnight Pre-Charge) and added `planner.py` to the Modular Domain Architecture diagram.
+  - Replaced hardcoded stale version numbers (`1.0.24.8`) in `README.md` with dynamic references to `version.py` (`__version__`) and fixed local `file:///` links to GitHub-compatible relative paths.
+- **Automated Stale Version Guard (`scripts/verify_commit.py`)**:
+  - Added automated scanning across all non-changelog Markdown files to fail pre-commit verification if any stale hardcoded `1.0.x.x` version string disagrees with `ha-addon/version.py`.
+
+### Senior Developer Review
+- **Zero Version Drift**: Eliminates hardcoded version drift in prose and enforces automated markdown version-drift detection in the pre-commit gate.
+- **Documentation Accuracy**: Architecture diagrams and HA in-app `DOCS.md` now accurately match the live 5-minute flexibility and 30-minute SoC drift runtime loops.
+- **Verification**: Full pre-commit verification gate (`scripts/verify_commit.py`) and all 183 pytest tests passed 100%.
+
 ## [1.0.25.7] - 2026-11-19
 
 ### Changed
