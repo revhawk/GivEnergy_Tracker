@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.25.10] - 2026-11-19
+
+### Changed
+- **Updated "How the Optimiser Works" & Versioning Guide (`README.md`)**:
+  - Rewrote the `🧠 How the Optimiser Works` section to document all 4 active execution modes: Daily Planner (17:00), 5-Minute Continuous Flexibility Poll (Axle VPP & Octoplus auto-join, ADR 0018), 30-Minute Light Status & SoC Drift Monitor (> 15% re-plan with 55% daytime peak-protection cap), and End-of-Day Audit (23:00).
+  - Documented the 4-strategy Multi-Candidate Generator (`planner.py` Cost-Optimised Search ADR 0016 & Winter 100% Overnight Pre-Charge ADR 0017), dual solar ensemble, dynamic load profiler, and Agile/Flux auto-discovery.
+  - Updated the `📦 Versioning` checklist to point to `ha-addon/version.py` (single source of truth) and `scripts/verify_commit.py`.
+
+### Senior Developer Review
+- **Full README Accuracy**: Eliminates legacy descriptions (old 3-mode / static `BASE_LOAD_W` / no-replan light monitor) so public and production documentation accurately reflects the current architecture.
+- **Verification**: Full pre-commit verification gate (`scripts/verify_commit.py`) and all 183 pytest tests passed 100%.
+
 ## [1.0.25.9] - 2026-11-19
 
 ### Changed

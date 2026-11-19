@@ -405,38 +405,45 @@ OPENAI_API_KEY = ""   # Leave blank to disable ChatGPT scoring/veto/audit
 
 ## 🧠 How the Optimiser Works
 
-The daemon runs on a `interval_minutes` cycle (default 30 min) but does full planning **only once per day**. Each tick picks one of three modes:
+The daemon runs continuously in the background using **four coordinated execution modes** across a dual-cadence loop (**5-minute flexibility polling** sliced inside the **30-minute monitor interval**):
 
-### Daily planner (once/day at `daily_plan_hour`, default 17:00)
+### 1. Daily Planner (once/day at `daily_plan_hour`, default 17:00)
 
-1. **Fetch Agile import rates** — public Octopus product endpoint, all upcoming half-hour slots
-2. **Fetch Outgoing Variable export rate** — cached 6h; used for arbitrage decisions
-3. **Fetch solar forecast** — Forecast.Solar hourly kWh estimate
-4. **Read battery SoC** — GivTCP REST (Modbus fallback)
-5. **Simulate 24h** without any grid charge, using `BASE_LOAD_W` as continuous load
-6. **Decide action:**
-   - **Deficit charge** if predicted import > 0.2 kWh — cheapest contiguous window
-   - **Arbitrage charge** if any slot is below `(export_rate − ARBITRAGE_MARGIN_P)` — profitable even when solar could cover, because imported cheap energy displaces solar that then exports at 12p
-   - **Negative-rate override** — always fill battery when grid pays you
-   - **No charge** otherwise, clear slots
-7. **LLM veto** (if OpenAI configured) — ChatGPT reviews the plan and returns `{approve, score 1-10, reason}` in JSON. Vetoes clear the slots as a fallback. Fails-open on error/timeout.
-8. **Write to inverter** — via GivTCP `setChargeEnable` / `setChargeTarget` / `setChargeSlot1` / `setChargeSlot2` (window splits across midnight if needed)
-9. **Persist snapshot** — writes the day's plan to `/share/nas_logs/givenergy_state.json` for the audit
+1. **Auto-Discover & Fetch Tariffs (`tariffs.py`)** — queries your Octopus Account API to auto-detect active **Agile** or **Flux** import and **Outgoing / Flux** export tariffs, pulling all upcoming 48 half-hour slots.
+2. **Fetch Dual Solar Forecasts (`solar.py`)** — retrieves **Forecast.Solar** (primary) and **Open-Meteo** (shadow) in parallel, logging forecast spread for weather-risk awareness.
+3. **Overlay Flexibility Events (`axle.py`, `octoplus.py`)** — checks active **Axle Energy VPP** dispatch windows, **Octoplus Power Down** Saving Sessions (enforcing 0.0 kWh grid import), and confirmed (`is_joined: True`) **Power Up / Happy Hour** bookings.
+4. **Read Live Telemetry (`givtcp.py`)** — reads battery SoC, PV generation, and home load via GivTCP REST API v2/v3 (Modbus TCP fallback).
+5. **Simulate 24h & Generate 4 Candidate Strategies (`simulation.py`, `planner.py`)** — models Solar → Dynamic Load Profile (`profiler.py`) → Battery → iBoost → Grid Export/Import, then evaluates 4 candidate plans under blended normal/pessimistic solar assumptions:
+   - **Option 1 — Flexibility / Winter 100% / Headroom**: Pre-charges to 100% for Axle VPP exports or during Nov–Feb winter months (`ADR 0017`), or preserves solar headroom in spring/summer.
+   - **Option 2 — Midday Dip / Peak-Protection Top-Up**: Covers evening peak demand while capping daytime re-plans at `55%` SoC (`DAYTIME_TOPUP_MAX_TARGET_SOC`) to avoid over-buying daytime rates.
+   - **Option 3 — Pure Solar Self-Consumption**: Zero grid draw when solar surplus covers battery deficit.
+   - **Option 4 — Cost-Optimised Search (`planner.py`, `ADR 0016`)**: Pure side-effect-free search across contiguous and non-contiguous slots to minimize net 24h cost.
+6. **AI Strategist Selection (`llm.py`)** — if OpenAI is configured, ChatGPT scores the candidate plans, evaluates weather risk, and selects the optimal strategy (with negative-rate override and fail-open deterministic fallback).
+7. **Program Inverter & Persist State (`givtcp.py`, `state.py`)** — writes charge slots (or Timed Export slots for Axle VPP) to GivTCP and saves the planned SoC trajectory to `/share/nas_logs/givenergy_state.json`.
 
-### Light monitor (every other tick, ~46×/day)
+### 2. Continuous Flexibility Poll (every 5 minutes, `ADR 0018`)
 
-Just reads SoC from GivTCP and logs it. No LLM, no re-planning, no inverter writes.
+The 30-minute sleep interval is sliced into 5-minute ticks (`AXLE_POLL_INTERVAL_SECONDS = 300`). Every 5 minutes, the daemon polls both **Axle Energy VPP** (`check_axle_events`) and **Octopus Octoplus** (`check_octoplus_events`):
+- Automatically enrolls your account in newly announced intraday **Octoplus Power Down** sessions via Kraken GraphQL / Home Assistant service.
+- Detects newly booked **Happy Hour / Power Up** slots (`is_joined: True`) and short-notice **Axle VPP** export events.
+- Breaks the sleep loop early to trigger an immediate re-plan (`run_optimization()`) so the inverter reacts within minutes.
 
-### End-of-day audit (once/day at `daily_audit_hour`, default 23:00)
+### 3. Light Status & Drift Monitor (every 30 minutes)
 
-Loads the plan snapshot + daily stats, then sends the day's context to ChatGPT for an English-language verdict and algorithm-tuning suggestions. Logged to file.
+Reads live battery SoC from GivTCP and compares it against the scheduled simulation trajectory:
+- If everything is on track, logs status quietly with zero inverter writes or unnecessary API calls.
+- If live SoC drifts by more than `15.0%` (`SOC_DRIFT_THRESHOLD_PCT`), triggers an immediate re-plan (daytime top-ups between 07:00 and 16:00 are strictly capped at `55%` target SoC to protect the 16:00–19:00 peak without over-buying daytime shoulder rates).
 
-### Cost / arbitrage model
+### 4. End-of-Day Audit (once/day at `daily_audit_hour`, default 23:00)
 
-- **Import cost** = `charge_kwh × avg_slot_price`
-- **Export income** = live-fetched Outgoing Variable rate (currently 12p flat)
-- **Round-trip battery efficiency** ≈ 90%, giving a break-even at `~10.8p`
-- **Arbitrage margin** (`ARBITRAGE_MARGIN_P`, default 0.5p) keeps the tracker from chasing marginal opportunities
+Loads the day's plan snapshot and actual telemetry stats, then sends the context to ChatGPT for a plain-English financial savings verdict and tuning insights, archiving the result to `/share/nas_logs/history/daily_stats_YYYY-MM-DD.json`.
+
+### Cost & Arbitrage Model
+
+- **Import cost** = `charge_kwh × avg_slot_price` (supports dynamic Agile rates and 3-tier Flux rates)
+- **Export income** = live slot-by-slot Outgoing Fixed/Variable or time-of-use Flux Export rate
+- **Round-trip battery efficiency** ≈ `90%`, with **arbitrage margin** (`ARBITRAGE_MARGIN_P`, default `0.5p`) preventing marginal trades
+- **Negative-rate override** — unconditionally fills battery whenever import rate `< 0.0p/kWh` (grid pays you to charge)
 
 ---
 
@@ -463,10 +470,12 @@ This project follows [Semantic Versioning](https://semver.org/):
 | `0.x.0` | Beta builds — new features |
 | `1.0.0+` | Stable production releases |
 
-When releasing a new version, increment the version string in the following files:
+When releasing a new version, synchronize the version string across the authoritative files (verified automatically by `python scripts/verify_commit.py`):
+- **`ha-addon/version.py`**: `__version__ = "x.y.z"` (single source of truth, validated at runtime on startup)
 - **`ha-addon/config.yaml`**: `version: "x.y.z"` (read by Home Assistant store to prompt updates)
-- **`ha-addon/optimiser.py`**: `__version__ = "x.y.z"` (checked at runtime on startup)
-- **`ha-addon/CHANGELOG.md`**: `## [x.y.z] - YYYY-MM-DD` and updated link definitions at bottom
+- **`openapi.json`**: `"version": "x.y.z"` (OpenAPI 3.1.0 schema version)
+- **`ha-addon/SPECIFICATION.md`**: `**Version:** x.y.z` (technical specification header & contracts)
+- **`ha-addon/CHANGELOG.md`**: `## [x.y.z] - YYYY-MM-DD` (release notes & Senior Developer Review summary)
 
 When the version number in `ha-addon/config.yaml` is bumped, Home Assistant will show an **Update** badge on the add-on card — no reinstall required.
 
