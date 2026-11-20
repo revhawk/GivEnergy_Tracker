@@ -123,6 +123,8 @@ from givtcp import (
     read_inverter_charge_slots,
     get_inverter_telemetry,
     get_inverter_soc,
+    get_inverter_capabilities,
+    get_effective_export_rate_w,
     set_inverter_charge_slots,
     set_inverter_discharge_slot,
     HAS_MODBUS,
@@ -238,6 +240,25 @@ async def main():
     logging.info("========================================")
     logging.info(f"  GivEnergy Tariff Optimiser v{__version__}")
     logging.info("========================================")
+
+    # Auto-detect GivEnergy inverter hardware specs from GivTCP (/getCache)
+    inv_caps = get_inverter_capabilities(use_cache=False)
+    if inv_caps:
+        inv_type = inv_caps.get("inverter_type", "Unknown")
+        hw_bat_rate = inv_caps.get("max_battery_rate_w")
+        hw_inv_rate = inv_caps.get("max_inverter_rate_w")
+        hw_cap_kwh = inv_caps.get("battery_capacity_kwh")
+        logging.info(
+            f"✓ [GIVTCP AUTO-DETECT] Inverter: {inv_type} | "
+            f"Max Battery Rate: {hw_bat_rate or '?'}W | "
+            f"Max AC Rate: {hw_inv_rate or '?'}W | "
+            f"Capacity: {hw_cap_kwh or '?'} kWh"
+        )
+        if hw_bat_rate and hw_bat_rate > 0:
+            config.MAX_BATTERY_CHARGE_RATE = hw_bat_rate
+        if hw_cap_kwh and hw_cap_kwh > 0:
+            config.BATTERY_CAPACITY_KWH = hw_cap_kwh
+
     logging.info("--- Effective config (config.py) ---")
     logging.info(f"  BASE_LOAD_W            = {getattr(config, 'BASE_LOAD_W', 400)} W")
     logging.info(f"  BATTERY_CAPACITY_KWH   = {getattr(config, 'BATTERY_CAPACITY_KWH', 9.5)} kWh")
@@ -261,7 +282,7 @@ async def main():
         tok = get_axle_token()
         success, msg, event_data = test_axle_connection(tok)
         if success:
-            export_w = int(os.environ.get('AXLE_EXPORT_POWER_W', getattr(config, 'AXLE_EXPORT_POWER_W', 3000) if config else 3000))
+            export_w = get_effective_export_rate_w()
             logging.info(f"✓ Axle Energy API connected successfully — Self-Dispatch VPP ENABLED (Export limit: {export_w}W).")
             if event_data and event_data.get('start_time'):
                 logging.info(f"  Axle: Scheduled event: {event_data.get('start_time')} to {event_data.get('end_time')} ({event_data.get('import_export', 'export')})")

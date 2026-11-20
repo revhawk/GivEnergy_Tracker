@@ -1,4 +1,5 @@
 """GivTCP REST API & Modbus integration module."""
+import os
 import time
 import logging
 import asyncio
@@ -6,6 +7,8 @@ import requests
 from datetime import datetime, timedelta
 
 import config
+
+_INVERTER_CAPABILITIES_CACHE = None
 
 # GivEnergy Modbus imports (for direct Modbus fallback if GivTCP fails).
 try:
@@ -439,22 +442,131 @@ async def set_inverter_charge_slots(slots_or_start, end_time=None, charge_target
         return False
 
 
+def get_inverter_capabilities(use_cache=True):
+    """Query GivTCP /getCache to auto-detect inverter hardware specifications.
+
+    Returns dict with optional keys:
+      - inverter_type (str, e.g. 'Hybrid_gen3')
+      - max_battery_rate_w (int, e.g. 3600)
+      - max_inverter_rate_w (int, e.g. 5000)
+      - battery_capacity_kwh (float, e.g. 9.52)
+    Returns {} safely if GivTCP is unreachable or keys are absent.
+    """
+    global _INVERTER_CAPABILITIES_CACHE
+    if use_cache and _INVERTER_CAPABILITIES_CACHE is not None:
+        return dict(_INVERTER_CAPABILITIES_CACHE)
+
+    givtcp_url = getattr(config, 'GIVTCP_URL', None) if config else None
+    if not givtcp_url:
+        return {}
+
+    url = f"{givtcp_url.rstrip('/')}/getCache"
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+
+        def _first_val(keys):
+            for k in keys:
+                v = find_key_recursive(data, k)
+                if v is not None:
+                    return v
+            return None
+
+        caps = {}
+        inv_type = _first_val(["Invertor_Type", "Inverter_Type", "model"])
+        if inv_type is not None:
+            caps["inverter_type"] = str(inv_type)
+
+        max_bat = _first_val(["Invertor_Max_Bat_Rate", "Inverter_Max_Bat_Rate"])
+        if max_bat is not None:
+            try:
+                val = int(float(max_bat))
+                if val > 0:
+                    caps["max_battery_rate_w"] = val
+            except (TypeError, ValueError):
+                pass
+
+        max_inv = _first_val(["Invertor_Max_Inv_Rate", "Inverter_Max_Inv_Rate", "inverter_max_power"])
+        if max_inv is not None:
+            try:
+                val = int(float(max_inv))
+                if val > 0:
+                    caps["max_inverter_rate_w"] = val
+            except (TypeError, ValueError):
+                pass
+
+        bat_cap = _first_val(["Battery_Capacity_kWh"])
+        if bat_cap is not None:
+            try:
+                val = float(bat_cap)
+                if val > 0:
+                    caps["battery_capacity_kwh"] = round(val, 2)
+            except (TypeError, ValueError):
+                pass
+
+        if caps:
+            _INVERTER_CAPABILITIES_CACHE = dict(caps)
+        return caps
+    except Exception as e:
+        logging.debug(f"GivTCP: Could not auto-detect inverter capabilities ({e}).")
+        return {}
+
+
+def get_effective_export_rate_w(override_w=None):
+    """Resolve effective battery discharge rate (W) for Axle VPP export.
+
+    Automatically uses GivTCP's hardware Invertor_Max_Bat_Rate (e.g. 3600W on Hybrid Gen3)
+    when AXLE_EXPORT_POWER_W is 0 (Auto), unset, or at the legacy 3000W default.
+    Explicit custom overrides are respected and safely clamped to hardware max.
+    """
+    caps = get_inverter_capabilities()
+    hw_max = caps.get("max_battery_rate_w")
+
+    if override_w is not None and int(override_w) > 0:
+        req = int(override_w)
+        return min(req, hw_max) if hw_max else req
+
+    env_val = os.environ.get("AXLE_EXPORT_POWER_W", "").strip()
+    configured = None
+    if env_val:
+        try:
+            configured = int(float(env_val))
+        except (TypeError, ValueError):
+            configured = None
+    if configured is None and config is not None:
+        raw_cfg = getattr(config, "AXLE_EXPORT_POWER_W", 0)
+        try:
+            configured = int(float(raw_cfg)) if raw_cfg is not None else 0
+        except (TypeError, ValueError):
+            configured = 0
+
+    if not configured or configured <= 0:
+        return hw_max if hw_max else 3000
+
+    # Auto-upgrade legacy 3000W default when hardware reports a higher max battery rate
+    if configured == 3000 and hw_max and hw_max > 3000:
+        return hw_max
+
+    return min(configured, hw_max) if hw_max else configured
+
+
 async def set_inverter_discharge_slot(start_time=None, end_time=None, discharge_target=10, discharge_rate_w=None):
     """Write or clear discharge slot on Inverter via GivTCP REST API for Axle VPP export events.
     
     When an Axle export window is active/upcoming:
       - Sets discharge slot 1 (start to finish)
       - Sets discharge target % (default 10% reserve floor)
-      - Sets discharge power rate (default 3,000 W)
+      - Sets discharge power rate (auto-detected from GivTCP Invertor_Max_Bat_Rate, fallback 3,000 W)
       - Enables discharge schedule and sets battery mode to 'Timed Export'
       
     When clearing (start_time is None):
       - Clears discharge slot 1 (00:00 - 00:00)
-      - Disables discharge schedule and restores battery mode to 'Eco'
+      - Disables discharge schedule, restores full hardware discharge rate (if detected), and restores 'Eco' mode
     """
     givtcp_url = getattr(config, 'GIVTCP_URL', None)
     givtcp_timeout = float(getattr(config, 'GIVTCP_TIMEOUT', 25.0) if config else 25.0)
-    rate_w = discharge_rate_w or getattr(config, 'AXLE_EXPORT_POWER_W', 3000) if config else 3000
+    rate_w = get_effective_export_rate_w(discharge_rate_w)
 
     if not givtcp_url:
         logging.warning("GivTCP: GIVTCP_URL not configured. Cannot set discharge slot.")
@@ -519,11 +631,15 @@ async def set_inverter_discharge_slot(start_time=None, end_time=None, discharge_
                     )
                 except Exception:
                     pass
-            for _path, _payload in [
+            restore_cmds = [
                 ("/setDischargeSlot1",       {"start": "00:00", "finish": "00:00"}),
                 ("/enableDischargeSchedule", {"state": "disable"}),
                 ("/setBatteryMode",          {"mode": "Eco"}),
-            ]:
+            ]
+            hw_max = get_inverter_capabilities().get("max_battery_rate_w")
+            if hw_max:
+                restore_cmds.append(("/setDischargeRate", {"dischargeRate": int(hw_max)}))
+            for _path, _payload in restore_cmds:
                 try:
                     time.sleep(0.1)
                     requests.post(f"{base_url}{_path}", json=_payload, timeout=givtcp_timeout)

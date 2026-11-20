@@ -227,3 +227,75 @@ class TestSetInverterDischargeSlotGivTCP:
         sched_call = next(c for c in responses.calls if c.request.url.endswith("/enableDischargeSchedule"))
         assert _body(sched_call) == {"state": "disable"}
 
+
+class TestInverterCapabilitiesAutoDetect:
+    """Tests for GivTCP hardware capability auto-detection (Invertor_Max_Bat_Rate, Battery_Capacity_kWh)."""
+
+    def setup_method(self):
+        import givtcp
+        givtcp._INVERTER_CAPABILITIES_CACHE = None
+
+    @responses.activate
+    def test_get_inverter_capabilities_parses_hybrid_gen3_specs(self):
+        import givtcp
+        responses.add(
+            responses.GET,
+            f"{GIVTCP_URL}/getCache",
+            json={
+                "FD2325G765": {
+                    "Invertor_Type": "Hybrid_gen3",
+                    "Invertor_Max_Bat_Rate": 3600,
+                    "Invertor_Max_Inv_Rate": 5000,
+                    "Battery_Capacity_kWh": 9.5232,
+                }
+            },
+        )
+        caps = givtcp.get_inverter_capabilities(use_cache=False)
+        assert caps == {
+            "inverter_type": "Hybrid_gen3",
+            "max_battery_rate_w": 3600,
+            "max_inverter_rate_w": 5000,
+            "battery_capacity_kwh": 9.52,
+        }
+
+    @responses.activate
+    def test_get_effective_export_rate_auto_detects_and_clamps(self, monkeypatch):
+        import givtcp
+        responses.add(
+            responses.GET,
+            f"{GIVTCP_URL}/getCache",
+            json={"Inverter": {"Invertor_Max_Bat_Rate": 3600}},
+        )
+        # Auto mode (0) -> uses hardware 3600W
+        monkeypatch.setenv("AXLE_EXPORT_POWER_W", "0")
+        assert givtcp.get_effective_export_rate_w() == 3600
+
+        # Legacy default (3000) -> auto-upgrades to hardware 3600W
+        monkeypatch.setenv("AXLE_EXPORT_POWER_W", "3000")
+        assert givtcp.get_effective_export_rate_w() == 3600
+
+        # Explicit lower custom cap -> respected
+        monkeypatch.setenv("AXLE_EXPORT_POWER_W", "2200")
+        assert givtcp.get_effective_export_rate_w() == 2200
+
+        # Over-limit cap -> safely clamped to hardware max (3600W)
+        monkeypatch.setenv("AXLE_EXPORT_POWER_W", "5000")
+        assert givtcp.get_effective_export_rate_w() == 3600
+
+    @pytest.mark.asyncio
+    @responses.activate
+    async def test_clear_discharge_slot_restores_hardware_max_discharge_rate(self):
+        import givtcp
+        responses.add(
+            responses.GET,
+            f"{GIVTCP_URL}/getCache",
+            json={"Inverter": {"Invertor_Max_Bat_Rate": 3600}},
+        )
+        for path in ("/setDischargeSlot", "/setDischargeSlot1", "/enableDischargeSchedule", "/setBatteryMode", "/setDischargeRate"):
+            responses.add(responses.POST, f"{GIVTCP_URL}{path}", json={"result": "ok"})
+
+        ok = await optimiser.set_inverter_discharge_slot(None, None)
+        assert ok is True
+        rate_call = next(c for c in responses.calls if c.request.url.endswith("/setDischargeRate"))
+        assert _body(rate_call) == {"dischargeRate": 3600}
+

@@ -31,7 +31,7 @@ configuration:
     description: "Bearer authentication token from Axle Energy developer portal for Home Assistant VPP integration."
   axle_export_power_w:
     name: "Axle Export Power Limit (Watts)"
-    description: "Target battery discharge rate in Watts during Axle flexibility events (range: 1000W - 6000W). Default: 3000W."
+    description: "Target battery discharge rate in Watts during Axle flexibility events. Set to 0 (default) to auto-detect your inverter's hardware max battery rate from GivTCP (e.g. 3600W on Hybrid Gen 3)."
   auto_join_saving_sessions:
     name: "Auto-Join Octoplus Saving Sessions"
     description: "Automatically enrol into Octopus Saving Sessions / Power Down flexibility events via Octopus GraphQL API."

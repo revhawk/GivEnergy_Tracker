@@ -103,7 +103,7 @@ async def check_axle_events(realtime_soc=None):
                     if cur_state.get('axle_export_armed') != a_start_iso:
                         a_start_local = axle_event['start'].astimezone()
                         a_end_local = axle_event['end'].astimezone()
-                        rate_w = getattr(config, 'AXLE_EXPORT_POWER_W', 3000) if config else 3000
+                        rate_w = givtcp.get_effective_export_rate_w()
                         reserve_floor = int(getattr(config, 'BATTERY_RESERVE_PERCENT', 10) if config else 10)
                         logging.info(
                             f"⚡ [AXLE MONITOR] Entering export arming window ({a_start_str} - {a_end_str}) — "
@@ -1086,7 +1086,7 @@ async def run_optimization():
             arm_at = axle_event['start'] - timedelta(minutes=AXLE_EXPORT_ARM_LEAD_MINUTES)
             cur_state = load_state_fn()
             if now_utc >= arm_at:
-                rate_w = getattr(config, 'AXLE_EXPORT_POWER_W', 3000) if config else 3000
+                rate_w = givtcp.get_effective_export_rate_w()
                 reserve_floor = int(getattr(config, 'BATTERY_RESERVE_PERCENT', 10) if config else 10)
                 await set_discharge_fn(a_start, a_end, discharge_target=reserve_floor, discharge_rate_w=rate_w)
                 cur_state['axle_export_armed'] = axle_event['start'].isoformat()

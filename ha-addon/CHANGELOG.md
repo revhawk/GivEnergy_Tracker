@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.25.9] - 2026-11-19
+
+### Added
+- **GivTCP Inverter Hardware Capability Auto-Detection (`givtcp.py`, `optimiser.py`, `simulation.py`)**:
+  - Added `get_inverter_capabilities()` and `get_effective_export_rate_w()` to query GivTCP `/getCache` on startup and automatically detect `Invertor_Type`, `Invertor_Max_Bat_Rate` (e.g. `3600W` on Hybrid Gen 3), `Invertor_Max_Inv_Rate`, and `Battery_Capacity_kWh`.
+  - Updated `axle_export_power_w` default to `0` (Auto-detect from GivTCP, schema `0..10000W`) and auto-upgraded legacy `3000W` defaults to the detected hardware max battery rate, safely clamping any explicit custom override to hardware limits.
+  - Restores full hardware discharge rate (`/setDischargeRate`) automatically when clearing Axle `Timed Export` back to `Eco` mode.
+  - Updated startup `MAX_BATTERY_CHARGE_RATE` and `BATTERY_CAPACITY_KWH` from live GivTCP hardware capabilities so 24-hour simulation and charge slot sizing match actual inverter specs.
+- **Unit Test Expansion (`tests/test_write_slots.py`)**:
+  - Added `TestInverterCapabilitiesAutoDetect` covering GivTCP hardware spec parsing, auto-detection & clamping logic, and discharge rate restoration on `Eco` reset.
+
+### Senior Developer Review
+- **Higher Axle Export Yield**: Unlocks the full `3,600 W` discharge rate on Hybrid Gen 3 inverters (+20% / +0.6 kWh per 1-hour Axle event) with zero manual configuration required.
+- **Verification**: Full pre-commit verification gate (`scripts/verify_commit.py`) and all 188 pytest tests passed 100%.
+
 ## [1.0.25.8] - 2026-11-19
 
 ### Fixed
