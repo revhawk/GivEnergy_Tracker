@@ -1014,8 +1014,8 @@ def test_winter_100_percent_overnight_precharge():
 
 
 def test_daytime_replan_capped_to_peak_protection():
-    """Verify that daytime re-planning (e.g. 10:00) caps top-up at 55% to protect
-    the 16:00-19:00 peak, rather than charging to 100% at expensive daytime rates.
+    """Verify that daytime re-planning (e.g. 10:00) allows top-up up to 100%
+    to cover large evening deficits & Power Down sessions.
     """
     from simulation import build_plan_candidates
     # Daytime slots from 10:00 to 16:00
@@ -1037,15 +1037,51 @@ def test_daytime_replan_capped_to_peak_protection():
         total_solar_kwh=1.0,
         solar_comparison={},
         export_rate=12.0,
-        total_import_kwh=6.0  # Large deficit
+        total_import_kwh=8.5  # Large deficit requiring full 100% top-up
     )
 
     opt1 = candidates[0]
     assert opt1['id'] == 1
-    # Target SoC must be capped at 55% peak protection, NOT 100%!
-    assert opt1['target_soc'] == 55
+    # Target SoC can reach 100% when deficit warrants full peak/Power Down protection
+    assert opt1['target_soc'] == 100
     assert "Peak-Protection Daytime Top-Up" in opt1['name']
     assert opt1['strategy'] == "scheduled"
+
+
+@pytest.mark.asyncio
+@patch('optimiser.is_axle_enabled', return_value=True)
+@patch('optimiser.trigger_force_export')
+@patch('optimiser.set_inverter_discharge_slot')
+@patch('optimiser.save_state')
+@patch('optimiser.load_state')
+@patch('optimiser.fetch_axle_event')
+async def test_check_axle_events_triggers_force_export_when_event_live(
+    mock_axle, mock_load_state, mock_save_state, mock_set_discharge, mock_force_export, mock_axle_enabled
+):
+    """Verify check_axle_events triggers /forceExport when the Axle export event is live."""
+    now = datetime.now(timezone.utc)
+    event_start = now - timedelta(minutes=2)
+    event_end = now + timedelta(minutes=58)
+    mock_axle.return_value = {
+        "start": event_start,
+        "end": event_end,
+        "import_export": "export",
+    }
+    mock_load_state.return_value = {
+        "tracked_axle_event_start": event_start.isoformat(),
+        "active_axle_event_end": event_end.isoformat(),
+        "axle_precharge_triggered": event_start.isoformat(),
+        "axle_export_armed": event_start.isoformat(),
+    }
+    mock_force_export.return_value = True
+
+    await optimiser.check_axle_events(realtime_soc=100)
+
+    assert mock_force_export.called
+    dur_mins = mock_force_export.call_args[0][0]
+    assert 55 <= dur_mins <= 60
+    saved_state = mock_save_state.call_args[0][0]
+    assert saved_state["axle_force_export_triggered"] == event_start.isoformat()
 
 
 @pytest.mark.asyncio

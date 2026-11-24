@@ -48,6 +48,7 @@ async def check_axle_events(realtime_soc=None):
     save_state_fn = getattr(opt, 'save_state', state.save_state)
     fetch_axle_fn = getattr(opt, 'fetch_axle_event', axle.fetch_axle_event)
     set_discharge_fn = getattr(opt, 'set_inverter_discharge_slot', givtcp.set_inverter_discharge_slot)
+    force_export_fn = getattr(opt, 'trigger_force_export', givtcp.trigger_force_export)
     parse_iso_fn = getattr(opt, 'parse_utc_iso', tariffs.parse_utc_iso)
 
     cur_state = load_state_fn()
@@ -100,10 +101,10 @@ async def check_axle_events(realtime_soc=None):
             if direction == 'export':
                 arm_at = axle_event['start'] - timedelta(minutes=AXLE_EXPORT_ARM_LEAD_MINUTES)
                 if arm_at <= now_utc < axle_event['end']:
+                    rate_w = givtcp.get_effective_export_rate_w()
                     if cur_state.get('axle_export_armed') != a_start_iso:
                         a_start_local = axle_event['start'].astimezone()
                         a_end_local = axle_event['end'].astimezone()
-                        rate_w = givtcp.get_effective_export_rate_w()
                         reserve_floor = int(getattr(config, 'BATTERY_RESERVE_PERCENT', 10) if config else 10)
                         logging.info(
                             f"⚡ [AXLE MONITOR] Entering export arming window ({a_start_str} - {a_end_str}) — "
@@ -117,6 +118,17 @@ async def check_axle_events(realtime_soc=None):
                         cur_state['axle_export_armed'] = a_start_iso
                         save_state_fn(cur_state)
 
+                    # Case 2c: Axle export event is LIVE — trigger GivTCP /forceExport to guarantee full-rate grid export
+                    if now_utc >= axle_event['start'] and cur_state.get('axle_force_export_triggered') != a_start_iso:
+                        rem_mins = max(1, int((axle_event['end'] - now_utc).total_seconds() // 60))
+                        logging.info(
+                            f"⚡ [AXLE MONITOR] Export event is LIVE ({a_start_str} - {a_end_str}) — "
+                            f"triggering Force Export for {rem_mins}m at {rate_w}W!"
+                        )
+                        await force_export_fn(rem_mins, discharge_rate_w=rate_w)
+                        cur_state['axle_force_export_triggered'] = a_start_iso
+                        save_state_fn(cur_state)
+
     # Case 3: Cancelled Axle event while an active event end was tracked
     if last_axle_end_str and not axle_event:
         last_axle_end = parse_iso_fn(last_axle_end_str)
@@ -127,6 +139,7 @@ async def check_axle_events(realtime_soc=None):
             cur_state.pop('tracked_axle_event_start', None)
             cur_state.pop('axle_precharge_triggered', None)
             cur_state.pop('axle_export_armed', None)
+            cur_state.pop('axle_force_export_triggered', None)
             save_state_fn(cur_state)
             return True
 
@@ -140,6 +153,7 @@ async def check_axle_events(realtime_soc=None):
             cur_state.pop('tracked_axle_event_start', None)
             cur_state.pop('axle_precharge_triggered', None)
             cur_state.pop('axle_export_armed', None)
+            cur_state.pop('axle_force_export_triggered', None)
             save_state_fn(cur_state)
 
     return False
@@ -460,10 +474,9 @@ def build_plan_candidates(day_classification, current_soc, battery_capacity,
         opt1_slots_raw = pre_peak_slots
         opt1_strategy = "scheduled"
         if 7 <= now_dt.hour < 16:
-            # Daytime re-plan: ONLY top up what is strictly needed to bridge the 16:00-19:00 peak!
-            # Never charge to 100% at expensive daytime shoulder rates (25.8p).
+            # Daytime re-plan: top up to cover peak & any Power Down / Axle events (default cap lifted to 100%)
             opt1_name = "Peak-Protection Daytime Top-Up"
-            peak_target_cap = int(getattr(config, 'DAYTIME_TOPUP_MAX_TARGET_SOC', 55) if config else 55)
+            peak_target_cap = int(getattr(config, 'DAYTIME_TOPUP_MAX_TARGET_SOC', 100) if config else 100)
             target_soc_opt1 = min(peak_target_cap, max(int(current_soc), int(current_soc + (total_import_kwh / battery_capacity) * 100)))
             kwh_opt1 = max(0.0, (target_soc_opt1 - current_soc) / 100.0 * battery_capacity)
         elif is_winter and day_classification == "LOW_SOLAR_GRID_PRECHARGE":
@@ -629,6 +642,7 @@ async def run_optimization():
     record_plan_fn = getattr(opt, '_record_plan', state._record_plan)
     set_slots_fn = getattr(opt, 'set_inverter_charge_slots', givtcp.set_inverter_charge_slots)
     set_discharge_fn = getattr(opt, 'set_inverter_discharge_slot', givtcp.set_inverter_discharge_slot)
+    force_export_fn = getattr(opt, 'trigger_force_export', givtcp.trigger_force_export)
     load_state_fn = getattr(opt, 'load_state', state.load_state)
     save_state_fn = getattr(opt, 'save_state', state.save_state)
 
@@ -1090,6 +1104,10 @@ async def run_optimization():
                 reserve_floor = int(getattr(config, 'BATTERY_RESERVE_PERCENT', 10) if config else 10)
                 await set_discharge_fn(a_start, a_end, discharge_target=reserve_floor, discharge_rate_w=rate_w)
                 cur_state['axle_export_armed'] = axle_event['start'].isoformat()
+                if now_utc >= axle_event['start'] and cur_state.get('axle_force_export_triggered') != axle_event['start'].isoformat():
+                    rem_mins = max(1, int((axle_event['end'] - now_utc).total_seconds() // 60))
+                    await force_export_fn(rem_mins, discharge_rate_w=rate_w)
+                    cur_state['axle_force_export_triggered'] = axle_event['start'].isoformat()
             else:
                 arm_local_str = arm_at.astimezone().strftime('%H:%M')
                 logging.info(
@@ -1098,6 +1116,7 @@ async def run_optimization():
                 )
                 await set_discharge_fn(None, None)
                 cur_state.pop('axle_export_armed', None)
+                cur_state.pop('axle_force_export_triggered', None)
             cur_state['active_axle_event_end'] = axle_event['end'].isoformat()
             cur_state['tracked_axle_event_start'] = axle_event['start'].isoformat()
             save_state_fn(cur_state)
@@ -1111,6 +1130,7 @@ async def run_optimization():
             cur_state.pop('tracked_axle_event_start', None)
             cur_state.pop('axle_precharge_triggered', None)
             cur_state.pop('axle_export_armed', None)
+            cur_state.pop('axle_force_export_triggered', None)
             save_state_fn(cur_state)
 
     # Calculate and persist planned SoC trajectory accounting for applied charge blocks

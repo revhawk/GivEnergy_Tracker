@@ -127,6 +127,7 @@ from givtcp import (
     get_effective_export_rate_w,
     set_inverter_charge_slots,
     set_inverter_discharge_slot,
+    trigger_force_export,
     HAS_MODBUS,
 )
 

@@ -178,7 +178,7 @@ class TestSetInverterDischargeSlotGivTCP:
     @responses.activate
     async def test_program_discharge_slot_sets_timed_export_and_parameters(self):
         for path in ("/setDischargeSlot", "/setDischargeTarget", "/setDischargeRate",
-                     "/enableDischargeTarget", "/enableDischargeSchedule", "/setBatteryMode"):
+                     "/setEcoMode", "/enableDischargeTarget", "/enableDischargeSchedule", "/setBatteryMode"):
             responses.add(responses.POST, f"{GIVTCP_URL}{path}", json={"result": "ok"})
 
         start = datetime(2026, 10, 27, 19, 0, tzinfo=timezone.utc)
@@ -211,7 +211,7 @@ class TestSetInverterDischargeSlotGivTCP:
 
     @responses.activate
     async def test_clear_discharge_slot_resets_to_eco_and_disables_schedule(self):
-        for path in ("/setDischargeSlot", "/setDischargeSlot1", "/enableDischargeSchedule", "/setBatteryMode"):
+        for path in ("/setDischargeSlot", "/setDischargeSlot1", "/enableDischargeSchedule", "/setEcoMode", "/setBatteryMode"):
             responses.add(responses.POST, f"{GIVTCP_URL}{path}", json={"result": "ok"})
 
         ok = await optimiser.set_inverter_discharge_slot(None, None)
@@ -291,11 +291,30 @@ class TestInverterCapabilitiesAutoDetect:
             f"{GIVTCP_URL}/getCache",
             json={"Inverter": {"Invertor_Max_Bat_Rate": 3600}},
         )
-        for path in ("/setDischargeSlot", "/setDischargeSlot1", "/enableDischargeSchedule", "/setBatteryMode", "/setDischargeRate"):
+        for path in ("/setDischargeSlot", "/setDischargeSlot1", "/enableDischargeSchedule", "/setEcoMode", "/setBatteryMode", "/setDischargeRate"):
             responses.add(responses.POST, f"{GIVTCP_URL}{path}", json={"result": "ok"})
 
         ok = await optimiser.set_inverter_discharge_slot(None, None)
         assert ok is True
+        rate_call = next(c for c in responses.calls if c.request.url.endswith("/setDischargeRate"))
+        assert _body(rate_call) == {"dischargeRate": 3600}
+
+    @pytest.mark.asyncio
+    @responses.activate
+    async def test_trigger_force_export_posts_duration_and_rate(self):
+        import givtcp
+        responses.add(
+            responses.GET,
+            f"{GIVTCP_URL}/getCache",
+            json={"Inverter": {"Invertor_Max_Bat_Rate": 3600}},
+        )
+        responses.add(responses.POST, f"{GIVTCP_URL}/setDischargeRate", json={"result": "ok"})
+        responses.add(responses.POST, f"{GIVTCP_URL}/forceExport", json={"result": "ok"})
+
+        ok = await optimiser.trigger_force_export(60)
+        assert ok is True
+        fe_call = next(c for c in responses.calls if c.request.url.endswith("/forceExport"))
+        assert _body(fe_call) == {"duration": "60"}
         rate_call = next(c for c in responses.calls if c.request.url.endswith("/setDischargeRate"))
         assert _body(rate_call) == {"dischargeRate": 3600}
 

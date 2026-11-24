@@ -603,10 +603,11 @@ async def set_inverter_discharge_slot(start_time=None, end_time=None, discharge_
                 except Exception:
                     logging.warning(f"GivTCP: Could not set discharge slot ({e})")
 
-            # 2. Apply discharge control parameters & Timed Export mode
+            # 2. Apply discharge control parameters & Timed Export mode (explicitly disabling Eco so Gen 3 exports to grid)
             for _path, _payload in [
                 ("/setDischargeTarget",      {"dischargeToPercent": target}),
                 ("/setDischargeRate",        {"dischargeRate": int(rate_w)}),
+                ("/setEcoMode",              {"state": "disable"}),
                 ("/enableDischargeTarget",   {"state": "enable"}),
                 ("/enableDischargeSchedule", {"state": "enable"}),
                 ("/setBatteryMode",          {"mode": "Timed Export"}),
@@ -614,8 +615,10 @@ async def set_inverter_discharge_slot(start_time=None, end_time=None, discharge_
                 try:
                     time.sleep(0.2)
                     _r = requests.post(f"{base_url}{_path}", json=_payload, timeout=givtcp_timeout)
+                    if _r.status_code >= 400:
+                        logging.warning(f"GivTCP: {_path} returned HTTP {_r.status_code}: {_r.text[:120]}")
                 except Exception as _e:
-                    logging.debug(f"GivTCP: {_path} ({_e})")
+                    logging.warning(f"GivTCP: {_path} failed ({_e})")
 
             logging.info(f"GivTCP: Axle Export Discharge Slot ({s_str}-{e_str}) applied successfully in Timed Export mode.")
             return True
@@ -634,6 +637,7 @@ async def set_inverter_discharge_slot(start_time=None, end_time=None, discharge_
             restore_cmds = [
                 ("/setDischargeSlot1",       {"start": "00:00", "finish": "00:00"}),
                 ("/enableDischargeSchedule", {"state": "disable"}),
+                ("/setEcoMode",              {"state": "enable"}),
                 ("/setBatteryMode",          {"mode": "Eco"}),
             ]
             hw_max = get_inverter_capabilities().get("max_battery_rate_w")
@@ -649,5 +653,37 @@ async def set_inverter_discharge_slot(start_time=None, end_time=None, discharge_
             return True
     except Exception as e:
         logging.error(f"GivTCP discharge slot write failed: {e}")
+        return False
+
+
+async def trigger_force_export(duration_minutes, discharge_rate_w=None):
+    """Trigger immediate full-rate Force Export via GivTCP /forceExport for an active Axle VPP event."""
+    givtcp_url = getattr(config, 'GIVTCP_URL', None) if config else None
+    givtcp_timeout = float(getattr(config, 'GIVTCP_TIMEOUT', 25.0) if config else 25.0)
+    if not givtcp_url:
+        logging.warning("GivTCP: GIVTCP_URL not configured. Cannot trigger force export.")
+        return False
+
+    mins = max(1, int(round(duration_minutes)))
+    rate_w = get_effective_export_rate_w(discharge_rate_w)
+    base_url = givtcp_url.rstrip('/')
+    logging.info(f"GivTCP: Triggering Force Export for {mins} minute(s) at {rate_w}W...")
+    try:
+        try:
+            requests.post(f"{base_url}/setDischargeRate", json={"dischargeRate": int(rate_w)}, timeout=givtcp_timeout)
+            time.sleep(0.2)
+        except Exception as _e:
+            logging.debug(f"GivTCP: /setDischargeRate before forceExport ({_e})")
+
+        r = requests.post(
+            f"{base_url}/forceExport",
+            json={"duration": str(mins)},
+            timeout=givtcp_timeout,
+        )
+        r.raise_for_status()
+        logging.info(f"GivTCP: Force Export ({mins}m @ {rate_w}W) activated successfully.")
+        return True
+    except Exception as e:
+        logging.warning(f"GivTCP: /forceExport failed ({e}) — relying on Timed Export discharge slot.")
         return False
 

@@ -39,7 +39,7 @@ ARBITRAGE_MARGIN_P = 1.5            # Import must be below (export − margin).
 ARBITRAGE_TARGET_SOC = 100          # Battery target SoC (%) when arbitrage slots appear (100% enables immediate solar export)
 LOW_SOLAR_TARGET_SOC = 100          # Pre-charge target to 100% on low-solar winter days to protect 16:00-19:00 peak
 ENABLE_WINTER_FULL_CHARGE = True    # Always pre-charge to 100% between 02:00-05:00 from November to February
-DAYTIME_TOPUP_MAX_TARGET_SOC = 55   # Cap daytime re-plan top-ups (25.8p) to 55% max (never charge to 100% at day rates)
+DAYTIME_TOPUP_MAX_TARGET_SOC = 100  # Max SoC for daytime re-plan top-ups (100% ensures full peak & Power Down coverage)
 
 # Cost-based planner (ADR 0016)
 BATTERY_ROUND_TRIP_EFFICIENCY = 0.92  # ~8% round-trip loss (split evenly charge/discharge)

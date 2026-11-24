@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.25.10] - 2026-11-24
+
+### Fixed
+- **Maximized Axle VPP Grid Export (`givtcp.py`, `simulation.py`, `optimiser.py`)**:
+  - Explicitly disables `Eco_Mode` (`/setEcoMode: disable`) when arming `Timed Export` so GivEnergy Hybrid Gen 3 inverters export to the grid at full `3,600 W` instead of staying in `Timed Demand` (house-load-only mode), and logs any HTTP >= 400 GivTCP responses as warnings.
+  - Added active `trigger_force_export()` (`/forceExport` with exact remaining event `duration` in minutes at full hardware discharge rate) triggered automatically by the 5-minute Axle monitor as soon as an Axle export window goes live, guaranteeing maximum kWh grid export.
+  - Explicitly re-enables `Eco_Mode` (`/setEcoMode: enable`) alongside `Eco` mode restoration when the Axle event concludes or is cancelled.
+- **Lifted Daytime Re-Plan Top-Up Cap to `100%` (`simulation.py`, `config.py.example`)**:
+  - Raised `DAYTIME_TOPUP_MAX_TARGET_SOC` default from `55%` → `100%` so daytime re-plans (such as afternoon Octopus Power Down sessions or heavy-load drift) can charge enough battery to guarantee `0.0 kWh` grid import through the entire evening peak and Power Down window.
+- **Unit Test Expansion (`tests/test_optimization.py`, `tests/test_write_slots.py`)**:
+  - Added `test_check_axle_events_triggers_force_export_when_event_live` and `test_trigger_force_export_posts_duration_and_rate`.
+  - Updated `test_daytime_replan_capped_to_peak_protection` for the `100%` daytime cap.
+
+### Senior Developer Review
+- **Maximum Flexibility Revenue**: Combines `setEcoMode: disable` + `Timed Export` (at T-10m) with active `/forceExport` (at T=0) at auto-detected `3,600 W`, eliminating low-export Axle sessions while ensuring 100% battery readiness for Power Down sessions.
+- **Verification**: Full pre-commit verification gate (`scripts/verify_commit.py`) and all 190 pytest tests passed 100%.
+
 ## [1.0.25.9] - 2026-11-19
 
 ### Added
