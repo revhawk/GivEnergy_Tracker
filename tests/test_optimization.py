@@ -1179,6 +1179,38 @@ async def test_run_light_monitor_triggers_on_new_octoplus_event():
         assert await run_light_monitor() is True
 
 
+def test_classify_day_composable_tiers():
+    """Verify extracted pure classify_day() across negative, high-solar, and winter tiers."""
+    from simulation import classify_day
+    summer_dt = datetime(2026, 7, 10, 8, 0, tzinfo=timezone.utc)
+    summer_slots = [{"start": summer_dt, "end": summer_dt + timedelta(minutes=30), "price": 20.0}]
+    high_imports = [{"slot": summer_slots[0], "solar": 10.0, "load": 1.0}]
+
+    assert classify_day(summer_slots, high_imports, 20.0, 9.5, 25.0, [{"price": -2.0}]) == "NEGATIVE_RATE_OPPORTUNITY"
+    assert classify_day(summer_slots, high_imports, 20.0, 9.5, 25.0, []) == "HIGH_SOLAR_SELF_CONSUMPTION"
+
+    winter_dt = datetime(2026, 11, 24, 8, 0, tzinfo=timezone.utc)
+    winter_slots = [{"start": winter_dt, "end": winter_dt + timedelta(minutes=30), "price": 25.8}]
+    low_imports = [{"slot": winter_slots[0], "solar": 0.5, "load": 1.0}]
+    assert classify_day(winter_slots, low_imports, 20.0, 9.5, 6.0, []) == "LOW_SOLAR_GRID_PRECHARGE"
+
+
+def test_clear_axle_state_removes_all_tracking_keys():
+    """Verify _clear_axle_state removes every Axle tracking key while preserving unrelated state."""
+    from simulation import _clear_axle_state
+    st = {
+        "active_axle_event_end": "2026-11-24T21:00:00+00:00",
+        "tracked_axle_event_start": "2026-11-24T20:00:00+00:00",
+        "axle_precharge_triggered": "2026-11-24T20:00:00+00:00",
+        "axle_export_armed": "2026-11-24T20:00:00+00:00",
+        "axle_force_export_triggered": "2026-11-24T20:00:00+00:00",
+        "last_plan_date": "2026-11-24",
+    }
+    _clear_axle_state(st)
+    assert st == {"last_plan_date": "2026-11-24"}
+
+
+
 
 
 

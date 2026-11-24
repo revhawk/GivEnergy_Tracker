@@ -19,6 +19,20 @@ except ImportError:
 import state
 
 AXLE_EXPORT_ARM_LEAD_MINUTES = 10  # Arm Timed Export only within 10m of Axle start so Eco mode covers peak & Power Down
+
+_AXLE_STATE_KEYS = (
+    'active_axle_event_end',
+    'tracked_axle_event_start',
+    'axle_precharge_triggered',
+    'axle_export_armed',
+    'axle_force_export_triggered',
+)
+
+
+def _clear_axle_state(cur_state):
+    """Remove all Axle VPP event tracking keys from a state dict in-place."""
+    for key in _AXLE_STATE_KEYS:
+        cur_state.pop(key, None)
 import tariffs
 import solar
 import profiler
@@ -135,11 +149,7 @@ async def check_axle_events(realtime_soc=None):
         if now_utc < last_axle_end:
             logging.info("Axle VPP Export Event cancelled by Axle — resetting inverter to Eco mode.")
             await set_discharge_fn(None, None)
-            cur_state.pop('active_axle_event_end', None)
-            cur_state.pop('tracked_axle_event_start', None)
-            cur_state.pop('axle_precharge_triggered', None)
-            cur_state.pop('axle_export_armed', None)
-            cur_state.pop('axle_force_export_triggered', None)
+            _clear_axle_state(cur_state)
             save_state_fn(cur_state)
             return True
 
@@ -149,11 +159,7 @@ async def check_axle_events(realtime_soc=None):
         if now_utc >= last_axle_end:
             logging.info("Axle VPP Export Event concluded — resetting inverter to Eco mode.")
             await set_discharge_fn(None, None)
-            cur_state.pop('active_axle_event_end', None)
-            cur_state.pop('tracked_axle_event_start', None)
-            cur_state.pop('axle_precharge_triggered', None)
-            cur_state.pop('axle_export_armed', None)
-            cur_state.pop('axle_force_export_triggered', None)
+            _clear_axle_state(cur_state)
             save_state_fn(cur_state)
 
     return False
@@ -625,46 +631,17 @@ def build_plan_candidates(day_classification, current_soc, battery_capacity,
     return candidates
 
 
-async def run_optimization():
-    """Main Optimization Engine run: fetch tariffs, simulate battery evolution, and program GivTCP slots."""
-    logging.info(f"===== ENERGY OPTIMIZATION RUN =====")
-    
-    opt = _op()
-    fetch_agile_fn = getattr(opt, 'fetch_agile_rates', tariffs.fetch_agile_rates)
-    fetch_solar_fn = getattr(opt, 'fetch_parallel_solar_forecasts', solar.fetch_parallel_solar_forecasts)
-    get_solar_kwh_fn = getattr(opt, 'get_solar_kwh_for_slot', solar.get_solar_kwh_for_slot)
-    get_load_kwh_fn = getattr(opt, 'get_load_kwh_for_slot', profiler.get_load_kwh_for_slot)
-    get_telemetry_fn = getattr(opt, 'get_inverter_telemetry', givtcp.get_inverter_telemetry)
-    get_soc_fn = getattr(opt, 'get_inverter_soc', givtcp.get_inverter_soc)
-    fetch_export_fn = getattr(opt, 'fetch_export_rate', tariffs.fetch_export_rate)
-    chatgpt_veto_fn = getattr(opt, 'chatgpt_veto_plan', llm.chatgpt_veto_plan)
-    chatgpt_select_fn = getattr(opt, 'chatgpt_select_candidate', llm.chatgpt_select_candidate)
-    record_plan_fn = getattr(opt, '_record_plan', state._record_plan)
-    set_slots_fn = getattr(opt, 'set_inverter_charge_slots', givtcp.set_inverter_charge_slots)
-    set_discharge_fn = getattr(opt, 'set_inverter_discharge_slot', givtcp.set_inverter_discharge_slot)
-    force_export_fn = getattr(opt, 'trigger_force_export', givtcp.trigger_force_export)
-    load_state_fn = getattr(opt, 'load_state', state.load_state)
-    save_state_fn = getattr(opt, 'save_state', state.save_state)
-
-    # 1. Fetch Octopus Agile prices
-    rates = fetch_agile_fn()
-    if not rates:
-        logging.error("Could not retrieve Agile rates. Aborting optimization.")
-        return
-        
-    # Filter for future rates only
-    now_utc = datetime.now(timezone.utc)
-    upcoming_slots = [r for r in rates if r['end'] > now_utc][:48] # Next 24 hours (48 slots)
-    if not upcoming_slots:
-        logging.error("No upcoming Agile rate slots available. Aborting.")
-        return
-
-    # 1b. Check for live Octoplus Power Down & Power Up sessions
-    has_octo_creds = bool((getattr(config, 'OCTOPUS_ACCOUNT_NUMBER', None) or getattr(config, 'OCTOPUS_ACCOUNT_ID', None)) and getattr(config, 'OCTOPUS_API_KEY', None)) if config else False
+def _overlay_flexibility_events(upcoming_slots, now_utc, opt, fetch_export_fn):
+    """Fetch Octoplus & Axle VPP events and annotate upcoming_slots with flags & export rates."""
+    has_octo_creds = bool(
+        (getattr(config, 'OCTOPUS_ACCOUNT_NUMBER', None) or getattr(config, 'OCTOPUS_ACCOUNT_ID', None))
+        and getattr(config, 'OCTOPUS_API_KEY', None)
+    ) if config else False
     if has_octo_creds:
         logging.info("Checking Octopus Octoplus sessions from: https://api.backend.octopus.energy/v1/graphql/")
     else:
         logging.info("Checking Octopus Octoplus sessions via Home Assistant integration...")
+
     fetch_octoplus_fn = getattr(opt, 'fetch_live_octoplus_sessions', octoplus.fetch_live_octoplus_sessions)
     live_sessions = fetch_octoplus_fn() if fetch_octoplus_fn else []
     if live_sessions:
@@ -691,7 +668,6 @@ async def run_optimization():
                         f"({s_str} - {e_str}, Free Electricity). Prioritizing 100% battery pre-charge."
                     )
 
-        # Apply Power Up and Power Down overrides to upcoming slots
         for s in upcoming_slots:
             s['tariff_price'] = s['price']
             if octoplus.is_power_up_slot_dt(s['start'], s['end'], live_sessions):
@@ -701,7 +677,6 @@ async def run_optimization():
     else:
         logging.info("Octopus Octoplus: Polled successfully — no active or upcoming sessions scheduled.")
 
-    # 1c. Check for active or upcoming Axle Energy Self-Dispatch events (ADR 0015)
     axle_event = None
     if axle.is_axle_enabled():
         logging.info("Checking Axle Energy Self-Dispatch events from: https://api.axle.energy/vpp/home-assistant/event")
@@ -722,8 +697,7 @@ async def run_optimization():
                         s['export_rate'] = reward_p
         else:
             logging.info("Axle Energy VPP: Polled successfully — no active or upcoming flexibility events scheduled.")
-        
-    # Attach live export rate for each slot if not already set (e.g. by Axle VPP)
+
     for s in upcoming_slots:
         if 'export_rate' not in s:
             try:
@@ -731,44 +705,20 @@ async def run_optimization():
             except TypeError:
                 s['export_rate'] = fetch_export_fn()
 
-    # 2. Fetch primary & shadow solar forecasts in parallel
-    solar_forecasts, solar_comparison = fetch_solar_fn()
-    
-    # 3. Get current battery SoC & telemetry
-    telemetry = await get_telemetry_fn()
-    if telemetry and 'soc' in telemetry:
-        current_soc = telemetry['soc']
-    else:
-        current_soc = await get_soc_fn()
-        
-    if current_soc is None:
-        logging.error(
-            "Cannot plan without a valid battery SoC reading. Aborting this optimization run. "
-            "The tracker will retry on the next tick. Check GivTCP is running at "
-            f"{getattr(config, 'GIVTCP_URL', '(not set)') if config else '(not set)'}."
-        )
-        return
+    return live_sessions, axle_event
 
-    # 4. Simulate battery SoC evolution if we DO NOT grid-charge
-    battery_capacity = getattr(config, 'BATTERY_CAPACITY_KWH', 9.5) if config else 9.5
-    max_charge_rate = getattr(config, 'MAX_BATTERY_CHARGE_RATE', 3000) if config else 3000
-    max_charge_kwh_per_slot = (max_charge_rate / 1000.0) * 0.5 # 3kW * 0.5h = 1.5kWh
-    
-    # Minimum reserve from config (previously hard-coded to 10%)
-    min_soc = float(getattr(config, 'BATTERY_RESERVE_PERCENT', 10) if config else 10)
-    min_energy = battery_capacity * (min_soc / 100.0)
+
+def _simulate_base_no_charge(
+    upcoming_slots, telemetry, solar_forecasts, load_history,
+    battery_capacity, max_charge_kwh_per_slot, min_energy, current_energy,
+    get_solar_kwh_fn, get_load_kwh_fn,
+):
+    """Run the 24-hour no-grid-charge baseline physical simulation and log the slot table."""
     max_energy = battery_capacity
-    
-    current_energy = battery_capacity * (current_soc / 100.0)
-    
     energy = current_energy
     import_needed_slots = []
     imports = []
-    
-    state_data = load_state_fn()
-    load_history = state_data.get('load_profile_history')
 
-    # Run physical priority simulation: Solar -> Home Load -> Battery Charge -> iBoost Divert -> Export
     for idx, slot in enumerate(upcoming_slots):
         if idx == 0 and telemetry and 'pv_power' in telemetry and 'load_power' in telemetry:
             solar_kwh = (telemetry['pv_power'] / 1000.0) * 0.5
@@ -782,30 +732,24 @@ async def run_optimization():
             solar_kwh = get_solar_kwh_fn(slot['start'], slot['end'], solar_forecasts)
             load_kwh = get_load_kwh_fn(slot['start'], slot['end'], load_history)
         net = load_kwh - solar_kwh
-        
+
         iboost_divert = 0.0
         grid_export = 0.0
         import_needed = 0.0
-        
+
         if slot.get('is_axle_export'):
-            # Axle Flexibility Force Export at max discharge rate (3 kW = 1.5 kWh per slot)
             force_discharge = min(max_charge_kwh_per_slot, max(0.0, energy - min_energy))
             energy -= force_discharge
             if net < 0:
                 grid_export = (-net) + force_discharge
-                import_needed = 0.0
+            elif force_discharge >= net:
+                grid_export = force_discharge - net
             else:
-                if force_discharge >= net:
-                    grid_export = force_discharge - net
-                    import_needed = 0.0
-                else:
-                    grid_export = 0.0
-                    import_needed = net - force_discharge
+                import_needed = net - force_discharge
         elif net < 0:
             excess_solar = -net
             solar_charge = min(excess_solar, max_charge_kwh_per_slot, max_energy - energy)
             energy += solar_charge
-            
             remaining_excess = excess_solar - solar_charge
             max_iboost_kwh = (getattr(config, 'IBOOST_MAX_DIVERT_RATE', 3000) / 1000.0 if config else 3.0) * 0.5
             iboost_divert = min(remaining_excess, max_iboost_kwh)
@@ -814,9 +758,8 @@ async def run_optimization():
             discharge = min(net, energy - min_energy)
             energy -= discharge
             import_needed = net - discharge
-            
+
         batt_soc = (energy / battery_capacity) * 100.0
-        
         imports.append({
             'slot': slot,
             'import_needed': import_needed,
@@ -824,16 +767,11 @@ async def run_optimization():
             'load': load_kwh,
             'batt_soc': batt_soc,
             'iboost': iboost_divert,
-            'export': grid_export
+            'export': grid_export,
         })
-        
         if import_needed > 0:
-            import_needed_slots.append({
-                'slot': slot,
-                'kwh': import_needed,
-                'price': slot['price']
-            })
-            
+            import_needed_slots.append({'slot': slot, 'kwh': import_needed, 'price': slot['price']})
+
     logging.info("--- 24-Hour Base Simulation (No Grid Charge) ---")
     logging.info(f"{'Date/Time':<10} | {'Price':<12} | {'Solar':<6} | {'Load':<6} | {'Battery':<7} | {'iBoost':<6} | {'Export':<6} | {'Import':<6}")
     logging.info("-" * 81)
@@ -848,20 +786,18 @@ async def run_optimization():
             price_str = f"{raw_price:.1f}p [VPP]"
         else:
             price_str = f"{raw_price:.1f}p"
-        solar_str = f"{imp['solar']:.2f}"
-        load_str = f"{imp['load']:.2f}"
-        batt = f"{imp['batt_soc']:.0f}%"
         iboost = f"{imp['iboost']:.2f}" if imp['iboost'] > 0 else "-"
         export = f"{imp['export']:.2f}" if imp['export'] > 0 else "-"
         imp_val = f"{imp['import_needed']:.2f}" if imp['import_needed'] > 0 else "-"
-        
-        logging.info(f"{time_str:<10} | {price_str:<12} | {solar_str:<6} | {load_str:<6} | {batt:<7} | {iboost:<6} | {export:<6} | {imp_val:<6}")
-        
+        logging.info(
+            f"{time_str:<10} | {price_str:<12} | {imp['solar']:.2f}   | {imp['load']:.2f}   | "
+            f"{imp['batt_soc']:.0f}%".ljust(7) + f" | {iboost:<6} | {export:<6} | {imp_val:<6}"
+        )
+
     total_import_kwh = sum(i['kwh'] for i in import_needed_slots)
     total_iboost_kwh = sum(i['iboost'] for i in imports)
     total_export_kwh = sum(i['export'] for i in imports)
-    
-    # Restrict total solar calculation to the upcoming slots horizon (prevents summing 48h across 2 days)
+
     if upcoming_slots:
         sim_start = upcoming_slots[0]['start']
         sim_end = upcoming_slots[-1]['end']
@@ -876,29 +812,12 @@ async def run_optimization():
     logging.info(f"Total Grid Import Needed:  {total_import_kwh:.2f} kWh")
     logging.info(f"Expected iBoost Diversion: {total_iboost_kwh:.2f} kWh")
     logging.info(f"Expected Grid Export:      {total_export_kwh:.2f} kWh")
+    return imports, import_needed_slots, total_import_kwh, total_solar_kwh
 
-    export_rate = fetch_export_fn()
-    margin = getattr(config, 'ARBITRAGE_MARGIN_P', 1.5) if config else 1.5
-    arbitrage_threshold = export_rate - margin
 
-    negative_slots = [s for s in upcoming_slots if s['price'] < 0]
-    arbitrage_slots = [
-        s for s in upcoming_slots
-        if s['price'] < (s.get('export_rate', export_rate) - margin)
-    ]
-    available_capacity_kwh = max_energy - current_energy
-
-    logging.info(f"Export rate now: {export_rate:.2f}p/kWh  |  Arbitrage threshold: <{arbitrage_threshold:.2f}p")
-
-    if negative_slots:
-        logging.info(f"⚡ NEGATIVE RATE ALERT: {len(negative_slots)} slot(s) — grid pays YOU!")
-        for ns in negative_slots[:8]:
-            local_t = ns['start'].astimezone().strftime('%m-%d %H:%M')
-            logging.info(f"  • {local_t} @ {ns['price']:.2f}p/kWh")
-    # Weather-Adaptive Day Classification
-    battery_capacity = float(getattr(config, 'BATTERY_CAPACITY_KWH', 9.5))
+def classify_day(upcoming_slots, imports, current_soc, battery_capacity, total_solar_kwh, negative_slots):
+    """Classify the upcoming day into one of 4 weather/tariff strategy tiers."""
     available_capacity_kwh = max(0.0, (100.0 - current_soc) / 100.0 * battery_capacity)
-    
     daytime_solar_surplus_kwh = sum(
         max(0.0, imp['solar'] - imp['load'])
         for imp in imports if imp['slot']['start'].astimezone().hour < 16
@@ -917,7 +836,7 @@ async def run_optimization():
         (0.35 * available_capacity_kwh <= daytime_solar_surplus_kwh or total_solar_kwh < 15.0)
         and total_solar_kwh >= 4.0
         and not solar_self_sufficient
-        and not is_winter  # In winter (Nov-Feb), UK solar is never medium-solar partial charge
+        and not is_winter
     )
 
     if negative_slots:
@@ -933,37 +852,13 @@ async def run_optimization():
         f"☀️ [DAY CLASSIFICATION] {day_classification} "
         f"(Forecast Surplus: {daytime_solar_surplus_kwh:.2f} kWh | Deficit: {available_capacity_kwh:.2f} kWh | Solar Total: {total_solar_kwh:.2f} kWh)"
     )
+    return day_classification
 
-    # 5. Generate Candidate Plan Options (Option B) for AI Co-Pilot Evaluation
-    candidates = build_plan_candidates(
-        day_classification=day_classification,
-        current_soc=current_soc,
-        battery_capacity=battery_capacity,
-        upcoming_slots=upcoming_slots,
-        total_solar_kwh=total_solar_kwh,
-        solar_comparison=solar_comparison,
-        export_rate=export_rate,
-        total_import_kwh=total_import_kwh,
-    )
 
-    # 5b. Simulate & cost every candidate, then search for a cheaper plan (ADR 0016)
-    planner_settings = planner.get_planner_settings()
-    sim_prices = [0.0 if s.get('is_power_up') else s['price'] for s in upcoming_slots]
-    iboost_slot_kwh = (getattr(config, 'IBOOST_MAX_DIVERT_RATE', 3000) / 1000.0 if config else 3.0) * 0.5
-    sim_inputs = {
-        'solar': [i['solar'] for i in imports],
-        'load': [i['load'] for i in imports],
-        'prices': sim_prices,
-        'export_rates': [s.get('export_rate', export_rate) for s in upcoming_slots],
-        'capacity': battery_capacity,
-        'start_energy': current_energy,
-        'reserve_energy': min_energy,
-        'max_rate_kwh': max_charge_kwh_per_slot,
-        'iboost_kwh': iboost_slot_kwh,
-        'force_export_mask': [bool(s.get('is_axle_export')) for s in upcoming_slots],
-        'value_rate': planner.end_value_rate(sim_prices),
-    }
-
+def _score_and_augment_candidates(
+    candidates, upcoming_slots, sim_inputs, battery_capacity, min_soc, planner_settings
+):
+    """Attach simulated blended costs to each candidate and append a cost-optimised search candidate if cheaper."""
     def _attach_sim(cand, mask, target_energy):
         score, cen, pes = planner.score_plan(sim_inputs, mask, target_energy, planner_settings)
         cand['sim_score_p'] = round(score, 1)
@@ -1021,25 +916,13 @@ async def run_optimization():
             f"| Sim net cost: {c.get('sim_cost_p', 0):.1f}p (pessimistic {c.get('sim_cost_pessimistic_p', 0):.1f}p, "
             f"blended {c.get('sim_score_p', 0):.1f}p) | Slots: {c['slots_desc']}"
         )
+    return candidates
 
-    # 6. Evaluate Candidate Strategies via ChatGPT AI Co-Pilot
-    approve, sel_id, score, reason, weather_commentary = chatgpt_select_fn(
-        day_classification=day_classification,
-        current_soc=current_soc,
-        battery_capacity_kwh=battery_capacity,
-        total_solar_kwh=total_solar_kwh,
-        solar_comparison=solar_comparison,
-        candidates=candidates,
-        upcoming_slots=upcoming_slots,
-        export_rate=export_rate,
-        live_sessions=live_sessions,
-        axle_event=axle_event,
-    )
 
-    # 7. Select Candidate and Handle Disagreement / Fallbacks
+def _resolve_selected_candidate(candidates, approve, sel_id, day_classification, total_import_kwh):
+    """Apply veto overrides, safety fallbacks, and shadow cost comparison to select the final plan."""
     selected_candidate = next((c for c in candidates if c['id'] == sel_id), candidates[0])
 
-    # If LLM disapproves but proposed cost is negative, grid pays us — override veto
     if not approve and selected_candidate.get('avg_price', 0.0) < 0.0:
         logging.info(f"⚡ OVERRIDING LLM VETO: candidate cost is negative ({selected_candidate['avg_price']:.2f}p/kWh). Proceeding with plan.")
         approve = True
@@ -1056,7 +939,6 @@ async def run_optimization():
             logging.info(f"LLM vetoed candidate {selected_candidate['id']} on high solar day — falling back to Option {solar_only['id']} (Solar self-consumption).")
             selected_candidate = solar_only
 
-    # Shadow comparison: how does the chosen plan compare with the cheapest simulated plan?
     scored = [c for c in candidates if 'sim_score_p' in c]
     if scored and 'sim_score_p' in selected_candidate:
         cheapest = min(scored, key=lambda c: c['sim_score_p'])
@@ -1075,24 +957,13 @@ async def run_optimization():
     if selected_candidate.get('strategy') == "negative_rates" or selected_candidate.get('avg_price', 0.0) < 0.0:
         target_soc_to_apply = 100
 
-    score_str = f"{score}/10" if score is not None else "n/a"
-    logging.info(
-        f"Selected Strategy: Option {selected_candidate['id']} [{selected_candidate['name']}] "
-        f"| approve={approve} | score={score_str} | reason={reason}"
-    )
-    if weather_commentary and weather_commentary != "N/A":
-        logging.info(f"LLM weather commentary: {weather_commentary}")
+    return selected_candidate, approve, slots_to_apply, target_soc_to_apply
 
-    if slots_to_apply and approve:
-        logging.info(f"Programming {len(slots_to_apply)} charge block(s) with target {target_soc_to_apply}% SoC...")
-        action = "charge"
-        await set_slots_fn(slots_to_apply, charge_target=target_soc_to_apply)
-    else:
-        logging.info("Zero grid charge programmed (relying on solar PV and existing battery).")
-        action = "no_charge"
-        await set_slots_fn(None, None)
 
-    # 7b. Coordinate Axle Self-Dispatch VPP Discharge Slot (Just-In-Time Arming)
+async def _coordinate_axle_discharge(
+    axle_event, now_utc, set_discharge_fn, force_export_fn, load_state_fn, save_state_fn
+):
+    """Coordinate Just-In-Time Axle Timed Export arming, live /forceExport, and Eco mode restoration."""
     if axle_event and axle_event.get('start') and axle_event.get('end') and axle_event.get('import_export') == 'export':
         if axle_event['end'] > now_utc and axle_event['start'] < now_utc + timedelta(hours=24):
             a_start = axle_event['start'].astimezone()
@@ -1126,15 +997,18 @@ async def run_optimization():
         cur_state = load_state_fn()
         if cur_state.get('active_axle_event_end') or cur_state.get('axle_export_armed'):
             await set_discharge_fn(None, None)
-            cur_state.pop('active_axle_event_end', None)
-            cur_state.pop('tracked_axle_event_start', None)
-            cur_state.pop('axle_precharge_triggered', None)
-            cur_state.pop('axle_export_armed', None)
-            cur_state.pop('axle_force_export_triggered', None)
+            _clear_axle_state(cur_state)
             save_state_fn(cur_state)
 
-    # Calculate and persist planned SoC trajectory accounting for applied charge blocks
-    # (Prevents light monitor false drift triggers that otherwise re-plan in a loop)
+
+def _persist_plan_and_stats(
+    opt, upcoming_slots, imports, sim_inputs, planner_settings,
+    slots_to_apply, approve, target_soc_to_apply, battery_capacity,
+    action, selected_candidate, day_classification, weather_commentary,
+    current_soc, total_solar_kwh, export_rate, candidates, score, reason,
+    load_state_fn, save_state_fn, record_plan_fn,
+):
+    """Persist planned SoC trajectory, last plan snapshot, and daily telemetry stats."""
     applied_mask = planner.slots_in_windows(upcoming_slots, slots_to_apply if (approve and slots_to_apply) else [])
     sim_common = {k: v for k, v in sim_inputs.items() if k != 'solar'}
     planned_run = planner.simulate_plan(
@@ -1157,7 +1031,6 @@ async def run_optimization():
     cur_state['planned_soc_schedule'] = planned_soc_schedule
     save_state_fn(cur_state)
 
-    # 8. Log and persist to NAS state & daily stats
     record_plan_fn(
         action=action,
         branch=selected_candidate.get('strategy', 'candidate_selection'),
@@ -1219,9 +1092,162 @@ async def run_optimization():
             'llm_reason': reason,
             'llm_score': score,
         }
-        updated_stats = update_daily_stats_fn(daily_stats, run_data)
-        save_daily_stats_fn(updated_stats)
+        save_daily_stats_fn(update_daily_stats_fn(daily_stats, run_data))
     except Exception as e:
         logging.warning(f"Could not update daily stats: {e}")
 
+
+async def run_optimization():
+    """Main Optimization Engine pipeline: ingest -> simulate -> classify -> score -> select -> apply -> persist."""
+    logging.info("===== ENERGY OPTIMIZATION RUN =====")
+
+    opt = _op()
+    fetch_agile_fn = getattr(opt, 'fetch_agile_rates', tariffs.fetch_agile_rates)
+    fetch_solar_fn = getattr(opt, 'fetch_parallel_solar_forecasts', solar.fetch_parallel_solar_forecasts)
+    get_solar_kwh_fn = getattr(opt, 'get_solar_kwh_for_slot', solar.get_solar_kwh_for_slot)
+    get_load_kwh_fn = getattr(opt, 'get_load_kwh_for_slot', profiler.get_load_kwh_for_slot)
+    get_telemetry_fn = getattr(opt, 'get_inverter_telemetry', givtcp.get_inverter_telemetry)
+    get_soc_fn = getattr(opt, 'get_inverter_soc', givtcp.get_inverter_soc)
+    fetch_export_fn = getattr(opt, 'fetch_export_rate', tariffs.fetch_export_rate)
+    chatgpt_select_fn = getattr(opt, 'chatgpt_select_candidate', llm.chatgpt_select_candidate)
+    record_plan_fn = getattr(opt, '_record_plan', state._record_plan)
+    set_slots_fn = getattr(opt, 'set_inverter_charge_slots', givtcp.set_inverter_charge_slots)
+    set_discharge_fn = getattr(opt, 'set_inverter_discharge_slot', givtcp.set_inverter_discharge_slot)
+    force_export_fn = getattr(opt, 'trigger_force_export', givtcp.trigger_force_export)
+    load_state_fn = getattr(opt, 'load_state', state.load_state)
+    save_state_fn = getattr(opt, 'save_state', state.save_state)
+
+    # 1. Fetch upcoming 24h tariff slots & overlay Octoplus / Axle flexibility events
+    rates = fetch_agile_fn()
+    if not rates:
+        logging.error("Could not retrieve Agile rates. Aborting optimization.")
+        return
+
+    now_utc = datetime.now(timezone.utc)
+    upcoming_slots = [r for r in rates if r['end'] > now_utc][:48]
+    if not upcoming_slots:
+        logging.error("No upcoming Agile rate slots available. Aborting.")
+        return
+
+    live_sessions, axle_event = _overlay_flexibility_events(upcoming_slots, now_utc, opt, fetch_export_fn)
+
+    # 2. Fetch solar ensemble & live GivTCP battery telemetry
+    solar_forecasts, solar_comparison = fetch_solar_fn()
+    telemetry = await get_telemetry_fn()
+    current_soc = telemetry['soc'] if (telemetry and 'soc' in telemetry) else await get_soc_fn()
+    if current_soc is None:
+        logging.error(
+            "Cannot plan without a valid battery SoC reading. Aborting this optimization run. "
+            "The tracker will retry on the next tick. Check GivTCP is running at "
+            f"{getattr(config, 'GIVTCP_URL', '(not set)') if config else '(not set)'}."
+        )
+        return
+
+    # 3. Run 24-hour baseline (no-grid-charge) simulation
+    battery_capacity = float(getattr(config, 'BATTERY_CAPACITY_KWH', 9.5) if config else 9.5)
+    max_charge_rate = getattr(config, 'MAX_BATTERY_CHARGE_RATE', 3000) if config else 3000
+    max_charge_kwh_per_slot = (max_charge_rate / 1000.0) * 0.5
+    min_soc = float(getattr(config, 'BATTERY_RESERVE_PERCENT', 10) if config else 10)
+    min_energy = battery_capacity * (min_soc / 100.0)
+    current_energy = battery_capacity * (current_soc / 100.0)
+    load_history = load_state_fn().get('load_profile_history')
+
+    imports, _, total_import_kwh, total_solar_kwh = _simulate_base_no_charge(
+        upcoming_slots, telemetry, solar_forecasts, load_history,
+        battery_capacity, max_charge_kwh_per_slot, min_energy, current_energy,
+        get_solar_kwh_fn, get_load_kwh_fn,
+    )
+
+    # 4. Arbitrage checks & weather-adaptive day classification
+    export_rate = fetch_export_fn()
+    margin = getattr(config, 'ARBITRAGE_MARGIN_P', 1.5) if config else 1.5
+    negative_slots = [s for s in upcoming_slots if s['price'] < 0]
+    logging.info(f"Export rate now: {export_rate:.2f}p/kWh  |  Arbitrage threshold: <{export_rate - margin:.2f}p")
+    if negative_slots:
+        logging.info(f"⚡ NEGATIVE RATE ALERT: {len(negative_slots)} slot(s) — grid pays YOU!")
+        for ns in negative_slots[:8]:
+            logging.info(f"  • {ns['start'].astimezone().strftime('%m-%d %H:%M')} @ {ns['price']:.2f}p/kWh")
+
+    day_classification = classify_day(
+        upcoming_slots, imports, current_soc, battery_capacity, total_solar_kwh, negative_slots
+    )
+
+    # 5. Build, simulate, cost & search candidate strategies
+    candidates = build_plan_candidates(
+        day_classification=day_classification,
+        current_soc=current_soc,
+        battery_capacity=battery_capacity,
+        upcoming_slots=upcoming_slots,
+        total_solar_kwh=total_solar_kwh,
+        solar_comparison=solar_comparison,
+        export_rate=export_rate,
+        total_import_kwh=total_import_kwh,
+    )
+    planner_settings = planner.get_planner_settings()
+    sim_prices = [0.0 if s.get('is_power_up') else s['price'] for s in upcoming_slots]
+    iboost_slot_kwh = (getattr(config, 'IBOOST_MAX_DIVERT_RATE', 3000) / 1000.0 if config else 3.0) * 0.5
+    sim_inputs = {
+        'solar': [i['solar'] for i in imports],
+        'load': [i['load'] for i in imports],
+        'prices': sim_prices,
+        'export_rates': [s.get('export_rate', export_rate) for s in upcoming_slots],
+        'capacity': battery_capacity,
+        'start_energy': current_energy,
+        'reserve_energy': min_energy,
+        'max_rate_kwh': max_charge_kwh_per_slot,
+        'iboost_kwh': iboost_slot_kwh,
+        'force_export_mask': [bool(s.get('is_axle_export')) for s in upcoming_slots],
+        'value_rate': planner.end_value_rate(sim_prices),
+    }
+    candidates = _score_and_augment_candidates(
+        candidates, upcoming_slots, sim_inputs, battery_capacity, min_soc, planner_settings
+    )
+
+    # 6. Select winning strategy via LLM + deterministic guardrails
+    approve, sel_id, score, reason, weather_commentary = chatgpt_select_fn(
+        day_classification=day_classification,
+        current_soc=current_soc,
+        battery_capacity_kwh=battery_capacity,
+        total_solar_kwh=total_solar_kwh,
+        solar_comparison=solar_comparison,
+        candidates=candidates,
+        upcoming_slots=upcoming_slots,
+        export_rate=export_rate,
+        live_sessions=live_sessions,
+        axle_event=axle_event,
+    )
+    selected_candidate, approve, slots_to_apply, target_soc_to_apply = _resolve_selected_candidate(
+        candidates, approve, sel_id, day_classification, total_import_kwh
+    )
+
+    score_str = f"{score}/10" if score is not None else "n/a"
+    logging.info(
+        f"Selected Strategy: Option {selected_candidate['id']} [{selected_candidate['name']}] "
+        f"| approve={approve} | score={score_str} | reason={reason}"
+    )
+    if weather_commentary and weather_commentary != "N/A":
+        logging.info(f"LLM weather commentary: {weather_commentary}")
+
+    # 7. Apply charge slots & Just-In-Time Axle VPP discharge coordination
+    if slots_to_apply and approve:
+        logging.info(f"Programming {len(slots_to_apply)} charge block(s) with target {target_soc_to_apply}% SoC...")
+        action = "charge"
+        await set_slots_fn(slots_to_apply, charge_target=target_soc_to_apply)
+    else:
+        logging.info("Zero grid charge programmed (relying on solar PV and existing battery).")
+        action = "no_charge"
+        await set_slots_fn(None, None)
+
+    await _coordinate_axle_discharge(
+        axle_event, now_utc, set_discharge_fn, force_export_fn, load_state_fn, save_state_fn
+    )
+
+    # 8. Persist planned SoC trajectory & daily stats
+    _persist_plan_and_stats(
+        opt, upcoming_slots, imports, sim_inputs, planner_settings,
+        slots_to_apply, approve, target_soc_to_apply, battery_capacity,
+        action, selected_candidate, day_classification, weather_commentary,
+        current_soc, total_solar_kwh, export_rate, candidates, score, reason,
+        load_state_fn, save_state_fn, record_plan_fn,
+    )
     return
