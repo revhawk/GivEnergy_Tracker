@@ -278,3 +278,53 @@ class TestTimeOfUseExport:
         config.EXPORT_PRODUCT_CODE = "OUTGOING-VAR-24-10-26"
         config.EXPORT_TARIFF_CODE = "E-1R-OUTGOING-VAR-24-10-26-E"
 
+    def test_derive_product_code_and_missing_credential_guards(self, monkeypatch):
+        """Kills _derive_product_code len>=4 / Or->And and missing single-credential guards."""
+        import tariffs
+        import config
+
+        # Exact 4-part tariff code (kills len(parts) >= 4 -> > 4!)
+        assert tariffs.extract_product_code_from_tariff("E-1R-FLUX-E") == "FLUX"
+        assert tariffs.extract_product_code_from_tariff("G-1R-SILVER-24-04-03-E") == "SILVER-24-04-03"
+        # Invalid prefix falls back to parts[:-1]
+        assert tariffs.extract_product_code_from_tariff("X-1R-FOO-E") == "X-1R-FOO"
+        assert tariffs.extract_product_code_from_tariff("E-1R-E") == "E-1R"
+
+        # Single missing credential (key present, account_id empty) -> discover returns None
+        monkeypatch.setattr(config, "OCTOPUS_API_KEY", "sk_live_abc", raising=False)
+        monkeypatch.setattr(config, "OCTOPUS_ACCOUNT_ID", "", raising=False)
+        monkeypatch.setattr(config, "OCTOPUS_ACCOUNT_NUMBER", "", raising=False)
+        monkeypatch.delenv("OCTOPUS_API_KEY", raising=False)
+        monkeypatch.delenv("OCTOPUS_ACCOUNT_ID", raising=False)
+        assert tariffs.discover_account_tariffs() is None
+
+        # Single missing product code (tariff present, product empty) -> fallback rate
+        monkeypatch.setattr(config, "EXPORT_PRODUCT_CODE", "", raising=False)
+        monkeypatch.setattr(config, "EXPORT_TARIFF_CODE", "E-1R-OUTGOING-VAR-24-10-26-E", raising=False)
+        monkeypatch.setenv("AUTO_DETECT_TARIFFS", "false")
+        assert tariffs.fetch_export_rate() == config.EXPORT_RATE_P_FALLBACK
+        # Restore
+        monkeypatch.setattr(config, "EXPORT_PRODUCT_CODE", "OUTGOING-VAR-24-10-26", raising=False)
+
+    @responses.activate
+    def test_fetch_agile_rates_open_ended_valid_to_defaults_plus_24h(self, monkeypatch):
+        """Kills Add->Sub mutant on valid_to=None -> start + 24h in fetch_agile_rates."""
+        import tariffs
+        import config
+        monkeypatch.setenv("AUTO_DETECT_TARIFFS", "false")
+        url = (
+            f"https://api.octopus.energy/v1/products/{config.AGILE_PRODUCT_CODE}"
+            f"/electricity-tariffs/{config.AGILE_TARIFF_CODE}/standard-unit-rates/"
+        )
+        responses.add(
+            responses.GET,
+            url,
+            json={"results": [
+                {"valid_from": "2026-11-24T00:00:00Z", "valid_to": None, "value_inc_vat": 25.8}
+            ]},
+        )
+        slots = tariffs.fetch_agile_rates()
+        assert len(slots) == 48
+        assert slots[-1]["end"] == slots[0]["start"] + timedelta(hours=24)
+
+

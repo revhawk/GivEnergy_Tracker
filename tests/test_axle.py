@@ -318,3 +318,67 @@ class TestAxleTimingAndWindows:
         upcoming_ev = {"start": now + timedelta(minutes=30), "end": now + timedelta(minutes=90)}
         assert axle.is_axle_precharge_window(upcoming_ev, lead_hours=2.0) is True
 
+    def test_axle_fallback_paths_and_edge_boundaries(self, monkeypatch):
+        """Kills remaining fallback/boundary mutants in axle.py (HA sensor fallback, force=True,
+        alternate attribute keys, default entity_id, and exact cache boundary).
+        """
+        # 1. HA attributes fallback with 'end' and default direction='export'
+        ha_ev = axle.parse_axle_payload({
+            "state": "2026-11-24T18:00:00Z",
+            "attributes": {"end": "2026-11-24T19:00:00Z"},
+        })
+        assert ha_ev["end"] == ha_ev["start"] + timedelta(hours=1)
+        assert ha_ev["import_export"] == "export"
+
+        # 2. Flat dict with updated_at vs updated
+        flat_ev = axle.parse_axle_payload({
+            "start_time": "2026-11-24T18:00:00Z",
+            "end_time": "2026-11-24T19:00:00Z",
+            "updated": "2026-11-24T10:00:00Z",
+        })
+        assert flat_ev["updated_at"] is not None
+
+        # 3. fetch_axle_event falls back to HA sensor when API returns no event and SUPERVISOR_TOKEN is set
+        axle.clear_axle_cache()
+        monkeypatch.setattr(axle, "SUPERVISOR_TOKEN", "sup_tok")
+        now = datetime.now(timezone.utc)
+        ha_payload = {
+            "state": (now + timedelta(hours=1)).isoformat(),
+            "attributes": {"end_time": (now + timedelta(hours=2)).isoformat()},
+        }
+        with patch("axle.test_axle_connection", return_value=(False, "err", None)), \
+             patch("axle.fetch_ha_axle_sensor", return_value=ha_payload) as mock_ha:
+            ev = axle.fetch_axle_event(token="tok", force=True)
+            assert mock_ha.called
+            assert ev is not None
+
+        # 4. When API succeeds with event, HA sensor is NOT called
+        axle.clear_axle_cache()
+        api_payload = {
+            "start_time": (now + timedelta(hours=1)).isoformat(),
+            "end_time": (now + timedelta(hours=2)).isoformat(),
+        }
+        with patch("axle.test_axle_connection", return_value=(True, "ok", api_payload)), \
+             patch("axle.fetch_ha_axle_sensor") as mock_ha:
+            ev2 = axle.fetch_axle_event(token="tok", force=True)
+            assert not mock_ha.called
+            assert ev2 is not None
+
+        # 5. force=True bypasses fresh cache
+        with patch("axle.test_axle_connection", return_value=(True, "ok", api_payload)) as mock_api:
+            axle.fetch_axle_event(token="tok", force=True)
+            assert mock_api.called
+
+        # 6. parse_axle_payload list filtering skips invalid/past events and selects upcoming
+        past = (now - timedelta(hours=2)).isoformat()
+        past_end = (now - timedelta(hours=1)).isoformat()
+        fut = (now + timedelta(hours=3)).isoformat()
+        fut_end = (now + timedelta(hours=4)).isoformat()
+        picked = axle.parse_axle_payload([
+            {"start_time": "invalid"},
+            {"start_time": past, "end_time": past_end},
+            {"start_time": fut, "end_time": fut_end},
+        ])
+        assert picked is not None
+        assert picked["start"].hour == (now + timedelta(hours=3)).hour
+

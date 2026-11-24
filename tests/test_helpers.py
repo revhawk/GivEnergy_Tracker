@@ -632,4 +632,81 @@ class TestOctoplusWheelAndScratchcard:
         assert rewards.is_scratchcard_alerts_enabled() is True
 
 
+class TestOctoplusBoundaryAndMinuteMutations:
+    """Kills adjacent-slot boundary, :30 minute arithmetic, and midnight-crossing mutants in octoplus.py."""
+
+    def test_power_down_and_power_up_adjacent_boundaries_and_half_hour_windows(self, monkeypatch):
+        import octoplus
+        import config
+
+        # Live session 17:00-18:00 UTC: adjacent slots 16:30-17:00 and 18:00-18:30 MUST be False
+        s_start = datetime(2026, 11, 24, 17, 0, tzinfo=timezone.utc)
+        s_end = datetime(2026, 11, 24, 18, 0, tzinfo=timezone.utc)
+        pd_sessions = [{"session_type": "power_down", "start": s_start, "end": s_end, "is_joined": True}]
+        pu_sessions = [{"session_type": "power_up", "start": s_start, "end": s_end, "is_joined": True}]
+
+        monkeypatch.setattr(config, "POWER_DOWN_WINDOWS", [], raising=False)
+        monkeypatch.setattr(config, "POWER_UP_WINDOWS", [], raising=False)
+
+        before_s = datetime(2026, 11, 24, 16, 30, tzinfo=timezone.utc)
+        after_e = datetime(2026, 11, 24, 18, 30, tzinfo=timezone.utc)
+        assert octoplus.is_power_down_slot_dt(before_s, s_start, live_sessions=pd_sessions) is False
+        assert octoplus.is_power_down_slot_dt(s_end, after_e, live_sessions=pd_sessions) is False
+        assert octoplus.is_power_down_slot_dt(s_start, s_start + timedelta(minutes=30), live_sessions=pd_sessions) is True
+
+        assert octoplus.is_power_up_slot_dt(before_s, s_start, live_sessions=pu_sessions) is False
+        assert octoplus.is_power_up_slot_dt(s_end, after_e, live_sessions=pu_sessions) is False
+        assert octoplus.is_power_up_slot_dt(s_start, s_start + timedelta(minutes=30), live_sessions=pu_sessions) is True
+
+        # Static :30 minute windows + midnight crossing (23:30-24:00)
+        monkeypatch.setattr(config, "POWER_DOWN_WINDOWS", [("17:30", "18:30"), ("23:30", "24:00")], raising=False)
+        monkeypatch.setattr(config, "POWER_UP_WINDOWS", [("13:30", "14:30"), ("23:30", "24:00")], raising=False)
+
+        # 17:00-17:30 is strictly before 17:30-18:30 -> False; 17:30-18:00 -> True; 18:30-19:00 -> False
+        assert octoplus.is_power_down_slot_dt(
+            datetime(2026, 11, 24, 17, 0, tzinfo=timezone.utc),
+            datetime(2026, 11, 24, 17, 30, tzinfo=timezone.utc),
+            live_sessions=[],
+        ) is False
+        assert octoplus.is_power_down_slot_dt(
+            datetime(2026, 11, 24, 17, 30, tzinfo=timezone.utc),
+            datetime(2026, 11, 24, 18, 0, tzinfo=timezone.utc),
+            live_sessions=[],
+        ) is True
+        assert octoplus.is_power_down_slot_dt(
+            datetime(2026, 11, 24, 18, 30, tzinfo=timezone.utc),
+            datetime(2026, 11, 24, 19, 0, tzinfo=timezone.utc),
+            live_sessions=[],
+        ) is False
+        # Midnight slot 23:30 -> next day 00:00
+        assert octoplus.is_power_down_slot_dt(
+            datetime(2026, 11, 24, 23, 30, tzinfo=timezone.utc),
+            datetime(2026, 11, 25, 0, 0, tzinfo=timezone.utc),
+            live_sessions=[],
+        ) is True
+
+        # Power Up static :30 window & midnight slot
+        assert octoplus.is_power_up_slot_dt(
+            datetime(2026, 11, 24, 13, 0, tzinfo=timezone.utc),
+            datetime(2026, 11, 24, 13, 30, tzinfo=timezone.utc),
+            live_sessions=[],
+        ) is False
+        assert octoplus.is_power_up_slot_dt(
+            datetime(2026, 11, 24, 13, 30, tzinfo=timezone.utc),
+            datetime(2026, 11, 24, 14, 0, tzinfo=timezone.utc),
+            live_sessions=[],
+        ) is True
+        assert octoplus.is_power_up_slot_dt(
+            datetime(2026, 11, 24, 14, 30, tzinfo=timezone.utc),
+            datetime(2026, 11, 24, 15, 0, tzinfo=timezone.utc),
+            live_sessions=[],
+        ) is False
+        assert octoplus.is_power_up_slot_dt(
+            datetime(2026, 11, 24, 23, 30, tzinfo=timezone.utc),
+            datetime(2026, 11, 25, 0, 0, tzinfo=timezone.utc),
+            live_sessions=[],
+        ) is True
+
+
+
 

@@ -210,9 +210,20 @@ def test_charge_slot_with_simultaneous_solar_excess_diverts_and_exports():
     assert res['iboost_kwh'] == pytest.approx(1.5)
     assert res['export_kwh'] == pytest.approx(1.0)
 
+    # Also test capacity clamping (capacity - energy < spare_rate * eff) to kill L90 Sub->Add!
+    # CAP=10.0: start at 9.3, target 9.5 (grid charge 0.2 -> energy=9.5, 0.5 remaining to CAP=10.0).
+    # spare_rate = 1.5 - 0.2 = 1.3 kWh, but capacity - energy = 0.5 kWh -> solar charge MUST clamp to 0.5 (export=2.5)!
+    res_clamp = planner.simulate_plan(
+        solar=[3.0], load=[0.0], prices=[5.0], export_rates=[15.0],
+        charge_mask=[True], target_energy=9.5,
+        capacity=CAP, start_energy=9.3, reserve_energy=RES, max_rate_kwh=RATE,
+        iboost_kwh=0.0, efficiency=1.0, force_export_mask=None, value_rate=0.0,
+    )
+    assert res_clamp['export_kwh'] == pytest.approx(2.5)
+
 
 def test_search_uses_full_slot_limit_and_default_settings():
-    """Kills limit + 1 -> limit - 1 and settings=None mutants in search_best_plan."""
+    """Kills limit + 1 -> limit - 1 and settings=None / explicit settings mutants in search_best_plan."""
     # 1 cheap slot (0p) + 1 expensive slot (50p): limit=1 eligible cheap slot must be selected
     inputs = dict(
         solar=[0.0, 0.0], load=[0.0, 1.5], prices=[0.0, 50.0], export_rates=[0.0, 0.0],
@@ -222,4 +233,9 @@ def test_search_uses_full_slot_limit_and_default_settings():
     best = planner.search_best_plan(inputs, [True, False], CAP, 10, settings=None)
     assert best['mask'] == [True, False]
     assert best['target_soc'] is not None
+
+    # Passing explicit custom settings (min_improvement_p=999) MUST use passed settings, not get_planner_settings()
+    custom_st = {'efficiency': 0.5, 'pessimistic_factor': 0.6, 'pessimistic_weight': 0.3, 'min_improvement_p': 2.0}
+    best_custom = planner.search_best_plan(inputs, [True, False], CAP, 10, settings=custom_st)
+    assert best_custom['score'] > best['score']  # 50% efficiency costs more than 92% default!
 
