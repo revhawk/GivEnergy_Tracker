@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.25.11] - 2026-11-24
+
+### Changed
+- **Composable Optimization Pipeline Refactor (`simulation.py`)**:
+  - Decomposed the 600-line `run_optimization()` function into 8 focused, single-responsibility pipeline helpers (`_clear_axle_state`, `_overlay_flexibility_events`, `_simulate_base_no_charge`, `classify_day`, `_score_and_augment_candidates`, `_resolve_selected_candidate`, `_coordinate_axle_discharge`, `_persist_plan_and_stats`) with zero behavioral regressions.
+- **GitHub Actions CI Upgrade (`.github/workflows/tests.yml`)**:
+  - Upgraded `actions/checkout@v5` and `actions/setup-python@v6` to eliminate GitHub's Node.js 20 deprecation warnings.
+
+### Added
+- **End-to-End Guardrail Test Suite (`tests/test_e2e_guardrails.py`)**:
+  - Added 5 multi-step E2E guardrail scenarios covering the full Axle VPP lifecycle (`Eco` → `T-10m Timed Export` → `T=0 /forceExport` → `Eco` restore), unbooked vs. booked Happy Hour confirmation gates, intraday Power Down detection + 100% daytime top-up, winter overnight pre-charge drift stability, and negative-rate LLM fail-open resilience.
+- **Mutation-Hardened Unit Tests (`tests/test_hive.py`, `tests/test_planner.py`, `tests/test_axle.py`, `tests/test_helpers.py`, `tests/test_api_parsing.py`)**:
+  - Expanded test coverage to **213 tests** via AST mutation testing, raising mutation kill rates to `100.0%` (`hive.py`), `90.3%` (`octoplus.py`), `84.4%` (`planner.py`), and `80.6%` (`axle.py`).
+
+### Senior Developer Review
+- **Maintainability & Regression Protection**: Clean modular pipeline in `simulation.py` backed by E2E guardrails and mutation-hardened unit tests across all core decision modules.
+- **Verification**: Full pre-commit verification gate (`scripts/verify_commit.py`) and all 213 pytest tests passed 100%.
+
 ## [1.0.25.10] - 2026-11-24
 
 ### Fixed
