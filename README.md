@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="ha-addon/logo.png" alt="GivEnergy Tariff Optimiser" width="480" />
+</p>
+
 # ⚡ GivEnergy Tariff Optimiser
 
 A Home Assistant add-on that automatically schedules your GivEnergy battery to charge during the cheapest **Octopus Agile** or **Octopus Flux** half-hour slots, taking into account your solar forecast, flexibility events (Axle VPP & Octoplus), and current battery state of charge.
