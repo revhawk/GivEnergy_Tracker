@@ -22,7 +22,7 @@ configuration:
     description: "Hour of day (0-23, typically 23 for 23:00 / 11 PM) when end-of-day financial audit and accounting runs."
   log_file_path:
     name: "Log File Path"
-    description: "Optional path to persist add-on logs on disk or network storage (e.g. /share/nas_logs/givenergy_tracker.log)."
+    description: "Optional path to persist App logs on disk or network storage (e.g. /share/nas_logs/givenergy_tracker.log)."
   enable_axle_dispatch:
     name: "Enable Axle Energy VPP"
     description: "Enable automated participation in Axle Energy Self-Dispatch Virtual Power Plant flexibility events."

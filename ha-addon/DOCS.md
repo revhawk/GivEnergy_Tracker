@@ -45,8 +45,8 @@ Open the **Configuration** tab of the App to customize your settings:
 | **`log_file_path`** | `/share/nas_logs/givenergy_tracker.log` | **NAS Log Location**. The network / SMB file path where timestamped logs and daily performance history (`/share/nas_logs/history/`) are saved. |
 | **`enable_axle_dispatch`** | `false` | **Axle VPP Toggle**. Set to `true` to enable automated export during Axle Energy grid flexibility events. |
 | **`axle_api_token`** | `""` | **Axle API Token**. Your token from Axle Energy Account Settings → Home Assistant. (Can also be set in `/share/givenergy_config.py`). |
-| **`axle_export_power_w`** | `3000` | **Axle Export Power (Watts)**. Continuous battery discharge limit during flexibility events (default 3,000 W). |
-| **`hive_water_heater_entity`** | `water_heater.hive_hot_water` | Your Hive hot water entity in Home Assistant. Automatically pauses gas boiler schedule when electric/solar heating is active. |
+| **`axle_export_power_w`** | `0` | **Axle Export Power (Watts)**. Continuous battery discharge limit during flexibility events. `0` (default) auto-detects your inverter's hardware max rate from GivTCP (e.g. `3,600 W` on Hybrid Gen 3). |
+| **`enable_winter_full_charge`** | `true` | **Winter 100% Overnight Pre-Charge**. Targets 100% SoC during cheap off-peak hours (Nov–Feb) to avoid daytime/peak imports and arm Axle exports. |
 
 ---
 
@@ -60,10 +60,10 @@ flowchart LR
         Rates["16:00 - 16:30<br/>Tomorrow's Rates Published"]
     end
 
-    subgraph Addon["App Autonomous Lifecycle"]
+    subgraph App["App Autonomous Lifecycle"]
         Plan["17:00<br/><b>Daily Planning Run</b><br/>Calculates plan & programs inverter"]
         Flex["Every 5 Mins<br/><b>Flexibility Poll</b><br/>Axle VPP & Octoplus auto-join"]
-        Drift["Every 30 Mins<br/><b>Light Monitor Tick</b><br/>SoC drift > 15% re-plan (55% cap)"]
+        Drift["Every 30 Mins<br/><b>Light Monitor Tick</b><br/>SoC drift > 15% re-plan (up to 100% SoC)"]
         Audit["23:00<br/><b>Daily Savings Audit</b><br/>ChatGPT daily savings report"]
         Charge["02:00 - 05:00<br/><b>Overnight Execution</b><br/>100% winter pre-charge at off-peak rates"]
     end
@@ -81,7 +81,7 @@ flowchart LR
 
 1. **Daily Planner (Fires at 17:00)**: Fetches tomorrow's 48 Octopus import/export rates and solar forecasts, simulates 24 hours of home energy demand across 4 candidate strategies, programs optimal charge slots into your inverter via GivTCP, and pauses Hive gas boiler when appropriate.
 2. **Continuous Flexibility Monitor (Every 5 mins)**: Polls **Axle Energy VPP** and **Octopus Octoplus** every 5 minutes. Automatically enrolls in newly announced Power Down sessions, detects confirmed Happy Hour bookings, arms Axle `Timed Export` 10 minutes before dispatch (keeping `Eco` mode active beforehand), and breaks the sleep loop immediately to re-plan your inverter.
-3. **Light Status & Drift Monitor (Every 30 mins)**: Reads live battery SoC against the planned schedule. If SoC drifts by more than `15%`, triggers a daytime re-plan capped at `55%` target SoC to protect the evening peak without over-buying expensive daytime power.
+3. **Light Status & Drift Monitor (Every 30 mins)**: Reads live battery SoC against the planned schedule. If SoC drifts by more than `15%`, triggers a daytime re-plan (up to `100%` target SoC when needed) to protect the evening peak and Power Down windows.
 4. **Daily Savings Audit (Fires at 23:00)**: Calculates your estimated savings for the day and logs a clear ChatGPT summary report.
 
 ---
@@ -118,7 +118,7 @@ flowchart TD
    - **Power Up Sessions (Free Electricity)**: Automatically schedules maximum battery charging during Octopus Free Electricity sessions.
 5. **Smart Hot Water Control**:
    - **Excess Solar Diversion**: Excess solar power beyond home load and battery capacity is directed into your hot water cylinder via iBoost.
-   - **Gas Savings with Morning Shower Safety**: Pauses your Hive gas boiler when electric pre-charging or solar heating is active, performing a 05:00 AM temperature check ($\ge 45^\circ\text{C}$) for shower safety.
+   - **Gas Savings with Morning Shower Safety**: Pauses your Hive gas boiler when electric pre-charging or solar heating is active, performing a 05:00 AM temperature check (≥ 45°C) for shower safety.
 
 ---
 
@@ -126,8 +126,8 @@ flowchart TD
 
 The current App version includes full software simulation and fail-safe logic. Upcoming hardware integrations include:
 
-- **⚡ Direct iBoost Immersion Relay Override**: Hardware relay contact integration to force 3 kW immersion hot water heating during negative/plunge electricity rate slots ($< 0.0\text{p/kWh}$).
-- **🌡️ Hot Water Cylinder Temperature Probes**: Integration with 1-Wire DS18B20 or Zigbee multi-point cylinder sensors to measure exact stored thermal energy ($\text{kWh}$).
+- **⚡ Direct iBoost Immersion Relay Override**: Hardware relay contact integration to force 3 kW immersion hot water heating during negative/plunge electricity rate slots (< 0.0p/kWh).
+- **🌡️ Hot Water Cylinder Temperature Probes**: Integration with 1-Wire DS18B20 or Zigbee multi-point cylinder sensors to measure exact stored thermal energy (kWh).
 
 ---
 
@@ -153,7 +153,7 @@ In the App **Configuration** tab, enter the path as a Unix-style Home Assistant 
 | **🪟 Windows File Explorer** | `\\<YOUR_HA_IP>\share\nas_logs\` *(e.g. `\\homeassistant.local\share\nas_logs\`)* |
 | **🐧 Linux / Unix System** | `/share/nas_logs/` or `smb://homeassistant.local/share/nas_logs/` |
 | **🍎 macOS Finder** | `smb://homeassistant.local/share/nas_logs/` *(Go → Connect to Server)* |
-| **🏠 Home Assistant File Editor** | Open **File Editor** App $\rightarrow$ navigate to `/share/nas_logs/` |
+| **🏠 Home Assistant File Editor** | Open **File Editor** App → navigate to `/share/nas_logs/` |
 
 Files generated in your NAS directory:
 - **`givenergy_tracker.log`**: Full timestamped log file (`YYYY-MM-DD HH:MM:SS - INFO - ...`).

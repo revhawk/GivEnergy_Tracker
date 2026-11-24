@@ -96,7 +96,7 @@ To verify that our tests catch real logic bugs (not just achieve line coverage),
 Always activate the project virtual environment before running tests or pre-commit checks:
 
 ```bash
-cd /home/reg/Coding/GivEnergy_Tracker
+cd GivEnergy_Tracker
 source .venv/bin/activate
 
 # 1. Run the full automated pre-commit verification gate (version sync, leak check, AppArmor, pytest)

@@ -11,7 +11,7 @@ Whenever you (or any AI agent) are asked to prepare or execute a commit, you **M
 Always run the automated verification script inside the project `.venv` first:
 
 ```bash
-cd /home/reg/Coding/GivEnergy_Tracker
+cd GivEnergy_Tracker
 source .venv/bin/activate
 python scripts/verify_commit.py
 ```
@@ -34,7 +34,7 @@ The version number must be identical across all seven files:
 
 ### 2. Git Safety & Private Information Protection
 No private secrets or local network information may ever be committed:
-- [ ] **No private IPs**: Never commit explicit private workstation IPs (e.g. `192.168.1.96`); use `<GIVTCP_HOST>` or `192.168.1.xx`.
+- [ ] **No private IPs**: Never commit explicit private workstation IPs (e.g. `192.168.1.100`); use `<GIVTCP_HOST>` or `192.168.1.xx`.
 - [ ] **No live API credentials**: No real OpenAI (`sk-proj-...`) or Octopus (`sk_live_...`) keys.
 - [ ] **GivTCP port**: Always use standard REST port `6345` (never 8099).
 - [ ] **.gitignore check**: Verify `.env*`, `config.py`, `nas_logs/`, `givenergy_state.json`, and `daily_stats_*.json` remain strictly ignored.
@@ -43,8 +43,8 @@ No private secrets or local network information may ever be committed:
 ### 3. Container Startup & Linux Permission Safety
 Prevent Home Assistant container startup failures (such as `[FATAL tini] exec ./run.sh failed: Permission denied`):
 - [ ] `ha-addon/run.sh` must be executable (`git update-index --chmod=+x ha-addon/run.sh`).
-- [ ] `ha-addon/Dockerfile` must invoke bash explicitly: `CMD [ "/bin/bash", "/app/run.sh" ]`.
-- [ ] Do **NOT** add custom `ha-addon/apparmor.txt` profiles without exhaustive host testing. Rely on the default Supervisor profile.
+- [ ] `ha-addon/Dockerfile` must execute standard `CMD [ "/run.sh" ]`.
+- [ ] `ha-addon/apparmor.txt` must be present and configured with least-privilege rules (verified by `scripts/verify_commit.py`).
 - [ ] `ha-addon/config.yaml` must declare `homeassistant_api: true` so the Supervisor API token is injected for Octoplus and Hive calls.
 
 ### 4. License & Attribution Integrity
@@ -74,7 +74,7 @@ Per AGENTS.md Rule 4:
 ## 🚀 Standard Verified Commit Commands
 
 ```bash
-cd /home/reg/Coding/GivEnergy_Tracker
+cd GivEnergy_Tracker
 source .venv/bin/activate
 
 # 1. Run automated verification gate

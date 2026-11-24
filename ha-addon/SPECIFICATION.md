@@ -2,7 +2,7 @@
 
 **Version:** 1.0.25.11  
 **Target Hardware:** GivEnergy Inverters (Gen 1, Gen 2, Gen 3, All-in-One)  
-**Target Platform:** Home Assistant Add-on Container (Linux ARM64 / AMD64)  
+**Target Platform:** Home Assistant App Container (Linux ARM64 / AMD64)  
 
 ---
 
@@ -18,7 +18,7 @@ The system models a 24-hour forward physical simulation of home energy balance (
 
 ```mermaid
 graph TD
-    subgraph External Services
+    subgraph External["External Services"]
         Agile["Octopus Agile API"]
         Outgoing["Octopus Outgoing Export API"]
         FSolar["Forecast.Solar API"]
@@ -27,7 +27,7 @@ graph TD
         Axle_Cloud["Axle Energy VPP Cloud"]
     end
 
-    subgraph GivEnergy Tariff Optimiser Add-on
+    subgraph App["GivEnergy Tariff Optimiser App"]
         Version["version.py - v1.0.25.11"]
         Config["config.py - Settings & Options"]
         Optimiser["optimiser.py - Daemon & Scheduling Loop"]
@@ -46,7 +46,7 @@ graph TD
         Hive_Mod["hive.py - Decoupled Hive Controller"]
     end
 
-    subgraph Local Network & Home Assistant
+    subgraph Local["Local Network & Home Assistant"]
         GivTCP["GivTCP Service :6345"]
         Inverter["GivEnergy Inverter"]
         HA_API["Home Assistant Core REST API"]
@@ -273,7 +273,7 @@ The `rewards.py` module encapsulates Octopus Energy's loyalty gamification featu
 ### 8.1 Capabilities & Design
 1. **Automated Wheel of Fortune Spinning (`spin_wheel_of_fortune`, `auto_spin_available_wheels`)**:
    - **Multi-Tier Execution**: Directly queries the Octopus Kraken GraphQL backend mutation (`spinWheelOfFortune`) when account credentials are available, falling back to the Home Assistant Supervisor service `octopus_energy.spin_wheel_of_fortune`.
-   - **Zero-Friction Scheduling**: Reads remaining spin counts from `sensor.octopus_energy_wheel_of_fortune_spins_*` during add-on startup and scheduled planning ticks. If spins are available ($> 0$), executes spins and publishes a Home Assistant persistent notification with winnings.
+   - **Zero-Friction Scheduling**: Reads remaining spin counts from `sensor.octopus_energy_wheel_of_fortune_spins_*` during App startup and scheduled planning ticks. If spins are available ($> 0$), executes spins and publishes a Home Assistant persistent notification with winnings.
 2. **Weekly Monday Scratchcard Availability Monitor (`check_octoplus_scratchcard_status`)**:
    - Continuously inspects `binary_sensor.octoplus_scratchcard_available` (introduced in `HomeAssistant-OctopusEnergy` v19.3.0).
    - Upon release on Monday mornings, dispatches a persistent notification containing a direct link to the user's dashboard (`https://octopus.energy/dashboard/new/accounts/<account_id>/octoplus`) to scratch and claim points.
@@ -312,9 +312,9 @@ The `tariffs.py` module integrates directly with Octopus Energy REST APIs to ret
    - This guarantees the battery enters the daytime fully charged from low-cost power, powering the home until evening peak and eliminating panic daytime imports.
 3. **Axle Energy VPP Readiness**:
    - Entering the daytime at 100% SoC ensures the battery has surplus capacity to immediately service short-notice Axle Energy VPP flexibility export events (£1.00/kWh) without needing emergency pre-charging at day rates.
-4. **Daytime Re-Planning Safety Cap (`DAYTIME_TOPUP_MAX_TARGET_SOC = 55%`)**:
-   - Re-planning runs between 07:00 and 16:00 are strictly capped at 55% target SoC (`Peak-Protection Daytime Top-Up`).
-   - The engine never commands charging to 100% at expensive daytime shoulder rates (25.8p/kWh). Top-ups are limited strictly to what is required to protect the 16:00–19:00 peak from dropping below the 10% battery floor.
+4. **Daytime Re-Planning Ceiling (`DAYTIME_TOPUP_MAX_TARGET_SOC = 100%`)**:
+   - Re-planning runs between 07:00 and 16:00 can top up as high as **100% target SoC** when needed to cover the full 16:00–19:00 peak and any Power Down session without depleting the battery mid-window.
+   - Normal non-deficit daytime ticks still avoid unnecessary grid charging when existing SoC and solar forecast are sufficient.
 
 ---
 

@@ -1,6 +1,6 @@
 # 🛠️ GivEnergy Tariff Optimiser — Setup & Installation Guide
 
-Welcome! This guide walks you through setting up and configuring the **GivEnergy Tariff Optimiser** add-on for Home Assistant.
+Welcome! This guide walks you through setting up and configuring the **GivEnergy Tariff Optimiser** App for Home Assistant.
 
 ---
 
@@ -45,7 +45,7 @@ Because `config.py` contains private local network IP addresses and Octopus cred
 
 1. **Option A (Recommended for Samba users)**:
    Place your completed `config.py` at `/share/givenergy_config.py`.
-2. **Option B (Addon persistent data directory)**:
+2. **Option B (App persistent data directory)**:
    Place your completed `config.py` at `/data/config.py`.
 
 Use the provided [`ha-addon/config.py.example`](ha-addon/config.py.example) as your template. Fill in:
@@ -123,7 +123,7 @@ The App saves persistent state, daily stats, and 90 days of midnight-rotated log
 
 ## 📚 Further Reading
 
-- [User Guide & Daily Operation](file:///home/reg/Coding/GivEnergy_Tracker/ha-addon/DOCS.md) — How the optimiser selects candidate strategies and manages daily charging.
-- [Weather-Adaptive Solar & Arbitrage](file:///home/reg/Coding/GivEnergy_Tracker/ha-addon/ARBITRAGE_AND_WEATHER.md) — Technical details on solar thresholds and export arbitrage.
+- [User Guide & Daily Operation](ha-addon/DOCS.md) — How the optimiser selects candidate strategies and manages daily charging.
+- [Weather-Adaptive Solar & Arbitrage](ha-addon/ARBITRAGE_AND_WEATHER.md) — Technical details on solar thresholds and export arbitrage.
 - [Architecture & Technical Specification](ha-addon/SPECIFICATION.md) — Component contracts and developer specifications.
 

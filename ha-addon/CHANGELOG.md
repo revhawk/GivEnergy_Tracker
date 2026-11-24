@@ -227,7 +227,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Enhanced `fetch_export_rate(dt)` to support slot-specific datetime lookups for multi-rate export tariffs (e.g. Flux Export ~5p night, ~15p day, ~27p peak).
   - Updated `simulation.py` to evaluate arbitrage profitability dynamically slot-by-slot against each half-hour's respective export rate.
 - **Interactive Tariff Inspection Tool**:
-  - Added [`scripts/check_tariffs.py`](file:///home/reg/Coding/GivEnergy_Tracker/scripts/check_tariffs.py) allowing users to audit live account agreements and compare against local configuration.
+  - Added [`scripts/check_tariffs.py`](../scripts/check_tariffs.py) allowing users to audit live account agreements and compare against local configuration.
 
 ## [1.0.24.8] - 2026-11-05
 

@@ -35,7 +35,7 @@ A Home Assistant App that automatically schedules your GivEnergy battery to char
 - 🧠 **Smart cheapest slot search** — evaluates both contiguous and non-contiguous cheapest slot combinations across the day
 - 🤖 **Smart ChatGPT plan validator** — evaluates pre-charge economics vs peak import rates avoided; produces plain-English daily audit reports
 - ⚡ **5-Minute Continuous Flexibility Polling** — polls **Axle Energy VPP** and **Octopus Octoplus** every 5 minutes to auto-enroll Power Down sessions, detect confirmed Happy Hours, and arm Axle `Timed Export` just-in-time (within 10 minutes of dispatch) so `Eco` mode covers peak & Power Down
-- 🔄 **30-Minute Dynamic SoC Drift Re-Planning** — periodic 30-minute light monitor tick checks live SoC against planned schedule, triggering immediate re-planning if drift > `15.0%` (capped at `55%` daytime peak-protection SoC)
+- 🔄 **30-Minute Dynamic SoC Drift Re-Planning** — periodic 30-minute light monitor tick checks live SoC against planned schedule, triggering immediate re-planning if drift > `15.0%` (up to `100%` daytime SoC when needed to protect evening peak & Power Down windows)
 - ❄️ **Winter 100% Overnight Pre-Charge Policy** — automatically fills the battery to `100%` during cheap overnight windows (Nov–Feb) to eliminate daytime peak imports and arm Axle VPP exports
 - 🧩 **Flattened Modular Architecture** — clean separation into `givtcp.py`, `tariffs.py`, `solar.py`, `solar_openmeteo.py`, `planner.py`, `octoplus.py`, `axle.py`, `rewards.py`, `profiler.py`, and `llm.py`
 - 📋 **Technical Specification & Contract Testing** — formal [`SPECIFICATION.md`](ha-addon/SPECIFICATION.md) and API contract test suite (`tests/test_contracts.py`)
@@ -76,11 +76,15 @@ GivEnergy_Tracker/
 │   ├── translations/              ← Home Assistant UI localization & descriptive subtitles
 │   │   └── en.yaml                ← Full configuration titles and inline option descriptions
 │   ├── requirements.txt           ← Python dependencies
+│   ├── icon.png & logo.png        ← Home Assistant App Store icon & banner
+│   ├── ARCHITECTURE.md            ← Modular domain & composable pipeline guide
 │   ├── SPECIFICATION.md           ← Complete technical specification & architecture
+│   ├── TESTING.md                 ← Testing pyramid, E2E guardrails & mutation QA
+│   ├── CHANGELOG.md               ← Version history & senior developer reviews
 │   └── DOCS.md                    ← App user documentation
-├── tests/                         ← Pytest test suite (includes contract tests)
+├── tests/                         ← Pytest test suite (213 unit, contract & E2E tests)
 ├── README.md
-├── CHANGELOG.md
+├── SETUP.md
 ├── LICENSE
 └── .gitignore
 ```
@@ -182,7 +186,7 @@ flowchart LR
     subgraph Daemon["Daemon Autonomous Lifecycle"]
         Plan["17:00<br/><b>Daily Planning Run</b><br/>Fetch rates, solar forecast & program inverter"]
         Flex["Every 5 Mins<br/><b>Flexibility Poll</b><br/>Axle VPP & Octoplus auto-join"]
-        Drift["Every 30 Mins<br/><b>Light Monitor Tick</b><br/>SoC drift > 15% re-plan (55% daytime cap)"]
+        Drift["Every 30 Mins<br/><b>Light Monitor Tick</b><br/>SoC drift > 15% re-plan (up to 100% SoC)"]
         Audit["23:00<br/><b>End-of-Day Audit</b><br/>ChatGPT daily savings report"]
         Charge["02:00 - 05:00<br/><b>Overnight Execution</b><br/>100% winter pre-charge at off-peak rate"]
     end
@@ -201,7 +205,7 @@ flowchart LR
 | **16:00 – 16:30** | Octopus Energy API | Tomorrow's half-hourly rates published. |
 | **17:00** | Daily Planning Run | Ingests rates, solar ensemble & load profile; evaluates 4 candidate strategies; programs GivTCP registers. |
 | **Every 5 Mins** | Continuous Flexibility Poll | Polls Axle Energy VPP & Octopus Octoplus; auto-enrolls Power Down events, detects booked Happy Hours, and arms Axle Timed Export 10m before dispatch. |
-| **Every 30 Mins** | Light Monitor Tick | Checks live battery SoC vs. planned schedule; triggers daytime re-plan (capped at 55% SoC) if drift exceeds 15%. |
+| **Every 30 Mins** | Light Monitor Tick | Checks live battery SoC vs. planned schedule; triggers daytime re-plan (up to 100% SoC if needed) if drift exceeds 15%. |
 | **23:00** | End-of-Day Audit | ChatGPT analyzes daily solar performance, battery utilization, and net financial savings. |
 | **02:00 – 05:00** | Overnight Execution | GivEnergy battery charges at low off-peak rates (15.6p/kWh on Flux; 100% target in Nov–Feb winter months). |
 
@@ -233,8 +237,8 @@ flowchart TD
 
 The App currently features software simulation and fail-safe logic for heating and hot water. Physical hardware controls will be enabled once hardware installation is finalized:
 
-- **⚡ Direct iBoost Hardware Relay Override (Planned)**: Physical smart relay integration (e.g. Shelly / ESPHome relay contact) to programmatically override the iBoost controller during negative/plunge electricity rate slots ($< 0.0\text{p/kWh}$), forcing 3 kW immersion heating from cheap/negative grid power even when solar PV generation is 0 W.
-- **🌡️ Hot Water Cylinder Temperature Sensors (Planned)**: Installation of multi-point 1-Wire DS18B20 or Zigbee cylinder probes (top/middle/bottom) to measure exact thermal stratification ($^\circ\text{C}$) and stored thermal energy ($\text{kWh}$). When missing, `evaluate_morning_shower_safety(tank_temp_c)` defaults to `SAFE` mode (keeping Hive gas boiler on `"schedule"`) to guarantee a 6:00 AM warm shower.
+- **⚡ Direct iBoost Hardware Relay Override (Planned)**: Physical smart relay integration (e.g. Shelly / ESPHome relay contact) to programmatically override the iBoost controller during negative/plunge electricity rate slots (< 0.0p/kWh), forcing 3 kW immersion heating from cheap/negative grid power even when solar PV generation is 0 W.
+- **🌡️ Hot Water Cylinder Temperature Sensors (Planned)**: Installation of multi-point 1-Wire DS18B20 or Zigbee cylinder probes (top/middle/bottom) to measure exact thermal stratification (°C) and stored thermal energy (kWh). When missing, `evaluate_morning_shower_safety(tank_temp_c)` defaults to `SAFE` mode (keeping Hive gas boiler on `"schedule"`) to guarantee a 6:00 AM warm shower.
 
 ---
 
@@ -249,7 +253,7 @@ The App currently features software simulation and fail-safe logic for heating a
 | **`openai_model`** | `gpt-4o-mini` | Optional | **AI Model Selection**. Default (`gpt-4o-mini`) is cheap (< 1p/month), fast, and accurate. |
 | **`daily_plan_hour`** | `17` | Yes | **Daily Planning Hour (5:00 PM)**. Octopus publishes rates at 16:30, programming inverter 7h early. |
 | **`daily_audit_hour`** | `23` | Yes | **Daily Audit Hour (11:00 PM)**. Summarizes today's financial performance right before midnight. |
-| **`hive_water_heater_entity`** | `water_heater.hive_hot_water` | Optional | **Hive Hot Water Entity**. Pauses gas hot water during electric pre-charge/solar immersion. |
+| **`enable_winter_full_charge`** | `true` | Optional | **Winter 100% Pre-Charge (Nov–Feb)**. Automatically fills to 100% during cheap off-peak hours in winter. |
 
 ---
 
@@ -301,6 +305,8 @@ Any Home Assistant user can add your App Store repository by following these ste
 ---
 
 ### Local Development Installation (Alternative)
+
+1. Copy the `ha-addon/` directory into your Home Assistant host's `/addons/givenergy_tracker/` folder using either:
    - **Samba share** — mount `\\homeassistant\addons\` from your desktop and copy the folder in.
    - **Terminal / SSH App** — `scp` or `git clone` directly onto the Pi.
 2. In Home Assistant: **Settings → Apps → App Store**. The **GivEnergy Tariff Optimiser** card will appear under **Local apps**.
@@ -322,10 +328,10 @@ Then edit `config.py` with your Octopus API key, MPANs, meter serial, geographic
 ### 3. Install & Start
 
 1. Click **Install** on the App card
-2. Go to the **Configuration** tab and set your options (`interval_minutes`, `openai_api_key`, `daily_plan_hour`, `daily_audit_hour`, `startup_write_test`)
+2. Go to the **Configuration** tab and set your options (`interval_minutes`, `openai_api_key`, `daily_plan_hour`, `daily_audit_hour`, `enable_axle_dispatch`)
 3. Click **Start**
 4. Watch the **Log** tab. On first startup you should see:
-   - Version banner: `GivEnergy Tariff Optimiser v1.0.23.4`
+   - Version banner: `GivEnergy Tariff Optimiser v1.0.25.11`
    - Effective config dump (verifies your `config.py` values)
    - First planning run (`===== DAILY PLANNING RUN (first plan since startup) =====`)
 
@@ -336,7 +342,7 @@ After you edit any file on the HA host (either by editing directly or SMB-copyin
 1. Bump `version:` in `ha-addon/config.yaml` AND `__version__` in `ha-addon/version.py` (they must match)
 2. **Reload the App Store** — Settings → Apps → App Store → ⋮ → **Check for updates**. This is the step most easily forgotten — HA caches version metadata and won't detect the change without this refresh.
 3. Click **Update** on the App card (or ⋮ → **Rebuild** if you want to force a fresh image build)
-4. Confirm the log banner shows the new version `v1.0.23.4`
+4. Confirm the log banner shows the new version `v1.0.25.11`
 
 ---
 
@@ -420,7 +426,7 @@ The daemon runs continuously in the background using **four coordinated executio
 4. **Read Live Telemetry (`givtcp.py`)** — reads battery SoC, PV generation, and home load via GivTCP REST API v2/v3 (Modbus TCP fallback).
 5. **Simulate 24h & Generate 4 Candidate Strategies (`simulation.py`, `planner.py`)** — models Solar → Dynamic Load Profile (`profiler.py`) → Battery → iBoost → Grid Export/Import, then evaluates 4 candidate plans under blended normal/pessimistic solar assumptions:
    - **Option 1 — Flexibility / Winter 100% / Headroom**: Pre-charges to 100% for Axle VPP exports or during Nov–Feb winter months, or preserves solar headroom in spring/summer.
-   - **Option 2 — Midday Dip / Peak-Protection Top-Up**: Covers evening peak demand while capping daytime re-plans at `55%` SoC (`DAYTIME_TOPUP_MAX_TARGET_SOC`) to avoid over-buying daytime rates.
+   - **Option 2 — Midday Dip / Peak-Protection Top-Up**: Covers evening peak demand and Power Down sessions, allowing daytime re-plans up to `100%` SoC (`DAYTIME_TOPUP_MAX_TARGET_SOC`) when required.
    - **Option 3 — Pure Solar Self-Consumption**: Zero grid draw when solar surplus covers battery deficit.
    - **Option 4 — Cost-Optimised Search (`planner.py`)**: Pure side-effect-free search across contiguous and non-contiguous slots to minimize net 24h cost.
 6. **AI Strategist Selection (`llm.py`)** — if OpenAI is configured, ChatGPT scores the candidate plans, evaluates weather risk, and selects the optimal strategy (with negative-rate override and fail-open deterministic fallback).
@@ -437,7 +443,7 @@ The 30-minute sleep interval is sliced into 5-minute ticks (`AXLE_POLL_INTERVAL_
 
 Reads live battery SoC from GivTCP and compares it against the scheduled simulation trajectory:
 - If everything is on track, logs status quietly with zero inverter writes or unnecessary API calls.
-- If live SoC drifts by more than `15.0%` (`SOC_DRIFT_THRESHOLD_PCT`), triggers an immediate re-plan (daytime top-ups between 07:00 and 16:00 are strictly capped at `55%` target SoC to protect the 16:00–19:00 peak without over-buying daytime shoulder rates).
+- If live SoC drifts by more than `15.0%` (`SOC_DRIFT_THRESHOLD_PCT`), triggers an immediate re-plan (daytime top-ups between 07:00 and 16:00 can target up to `100%` SoC when needed to carry through the 16:00–19:00 peak and any Power Down window).
 
 ### 4. End-of-Day Audit (once/day at `daily_audit_hour`, default 23:00)
 
@@ -458,7 +464,7 @@ The optimizer supports two methods to communicate with the inverter:
 
 | Method | How | When Used |
 |--------|-----|-----------|
-| **GivTCP REST API** | HTTP to `GIVTCP_URL` | Preferred (when GivTCP add-on is running) |
+| **GivTCP REST API** | HTTP to `GIVTCP_URL` | Preferred (when GivTCP App is running) |
 | **Direct Modbus TCP** | TCP to `INVERTER_IP:INVERTER_PORT` | Fallback (requires `givenergy-modbus` package) |
 
 If `GIVTCP_URL` is set and reachable, REST is always tried first. Direct Modbus is only used as a fallback.
