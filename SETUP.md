@@ -6,13 +6,13 @@ Welcome! This guide walks you through setting up and configuring the **GivEnergy
 
 ## 📋 System Prerequisites
 
-Before installing the add-on, make sure you have:
+Before installing the App, make sure you have:
 
 1. **Home Assistant OS or Supervised**: Running on Raspberry Pi, Home Assistant Green/Yellow, ODROID, or x86/x64 server.
 2. **GivEnergy Inverter & Battery**: Gen 1, Gen 2, Gen 3, All-in-One, or AC Coupled inverter.
-3. **GivTCP Add-on (v2 or v3)**: Installed and running in Home Assistant, providing local REST endpoints (`http://<GIVTCP_HOST>:6345`).
+3. **GivTCP App (v2 or v3)**: Installed and running in Home Assistant, providing local REST endpoints (`http://<GIVTCP_HOST>:6345`).
 4. **Octopus Energy Account**: Subscribed to **Octopus Agile** or **Octopus Flux** import tariffs and **Octopus Outgoing** or **Flux Export** (automatically discovered via your Octopus API key & Account ID).
-5. **(Recommended) Samba Share Add-on**: For logging state and daily statistics to `/share/nas_logs` accessible from your PC or NAS.
+5. **(Recommended) Samba Share App**: For logging state and daily statistics to `/share/nas_logs` accessible from your PC or NAS.
 6. **(Optional) OpenAI API Key**: If you want ChatGPT AI Co-Pilot plan scoring and weather commentary (`gpt-4o-mini`).
 
 ---
@@ -21,7 +21,7 @@ Before installing the add-on, make sure you have:
 
 ### Step 1: Add the Repository to Home Assistant
 
-1. In Home Assistant, navigate to **Settings** → **Add-ons** → **Add-on Store** (bottom-right button).
+1. In Home Assistant, navigate to **Settings** → **Apps** → **App Store** (bottom-right button).
 2. Click the **⋮ (three dots)** menu in the top-right corner and select **Repositories**.
 3. In the text box, paste the repository URL:
    ```text
@@ -31,9 +31,9 @@ Before installing the add-on, make sure you have:
 
 ---
 
-### Step 2: Install the Add-on
+### Step 2: Install the App
 
-1. Scroll down the Add-on Store (or refresh the page) to find the **GivEnergy Tariff Optimiser** card under "revhawk Add-ons".
+1. Scroll down the App Store (or refresh the page) to find the **GivEnergy Tariff Optimiser** card under "revhawk Apps".
 2. Click on **GivEnergy Tariff Optimiser**.
 3. Click the blue **Install** button. Installation takes about 1–2 minutes while dependencies are built.
 
@@ -56,9 +56,9 @@ Use the provided [`ha-addon/config.py.example`](ha-addon/config.py.example) as y
 
 ---
 
-### Step 4: Configure Add-on Options
+### Step 4: Configure App Options
 
-Click on the **Configuration** tab at the top of the add-on page to view the settings.
+Click on the **Configuration** tab at the top of the App page to view the settings.
 
 | Setting | Recommended Value | Description |
 | :--- | :---: | :--- |
@@ -75,16 +75,16 @@ Click **Save** after entering your settings.
 
 ---
 
-### Step 5: Start the Add-on & Verify Logs
+### Step 5: Start the App & Verify Logs
 
 1. Return to the **Info** tab.
 2. Toggle **Start on boot** to `ON`.
-3. Toggle **Watchdog** to `ON` (automatically restarts the add-on if Home Assistant reboots).
+3. Toggle **Watchdog** to `ON` (automatically restarts the App if Home Assistant reboots).
 4. Click **Start**.
 5. Click on the **Log** tab and refresh after 10–15 seconds. You should see:
    ```text
    ============================================================
-   ⚡ GivEnergy Tariff Optimiser Add-on Starting (v1.0.23.4)
+   ⚡ GivEnergy Tariff Optimiser App Starting (v1.0.25.11)
    ============================================================
    [GivTCP] Inverter Telemetry: Battery 54% (9.5 kWh capacity)
    [Tariff] Fetched 48 Octopus Agile rate slots
@@ -96,7 +96,7 @@ Click **Save** after entering your settings.
 
 ## 📂 NAS Logging & Samba Network Share Setup
 
-The add-on saves persistent state, daily stats, and 90 days of midnight-rotated logs directly to `/share/nas_logs/`:
+The App saves persistent state, daily stats, and 90 days of midnight-rotated logs directly to `/share/nas_logs/`:
 
 - `givenergy_state.json`: Current battery SoC, active plan, candidate options, and LLM reasoning.
 - `givenergy_daily_stats.json`: Rolling daily stats (total import kWh, export kWh, estimated savings).
@@ -104,7 +104,7 @@ The add-on saves persistent state, daily stats, and 90 days of midnight-rotated 
 - `givenergy_tracker.log`: Rotating application logs.
 
 ### Accessing Logs from Windows / Mac / Linux:
-1. Install the official **Samba share** add-on from the Home Assistant Add-on Store.
+1. Install the official **Samba share** App from the Home Assistant App Store.
 2. In your computer's file explorer, connect to your Home Assistant IP:
    - Windows: `\\homeassistant.local\share\nas_logs` (or `\\<YOUR_HA_IP>\share\nas_logs`)
    - Mac / Linux: `smb://homeassistant.local/share/nas_logs` (or `smb://<YOUR_HA_IP>/share/nas_logs`)
@@ -113,7 +113,7 @@ The add-on saves persistent state, daily stats, and 90 days of midnight-rotated 
 
 ## 🔍 First-Run Verification Checklist
 
-- [ ] **GivTCP Connection**: In the add-on log, verify that battery SoC and inverter capacity are correctly detected.
+- [ ] **GivTCP Connection**: In the App log, verify that battery SoC and inverter capacity are correctly detected.
 - [ ] **Octopus Rates**: Check that incoming Agile rates are displayed with reasonable pence values.
 - [ ] **Solar Forecast**: Check that solar forecast values are returned from Forecast.Solar and Open-Meteo.
 - [ ] **State File Created**: Check that `/share/nas_logs/givenergy_state.json` is created and contains today's plan.

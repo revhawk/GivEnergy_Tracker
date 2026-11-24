@@ -4,7 +4,7 @@
 
 # ⚡ GivEnergy Tariff Optimiser
 
-A Home Assistant add-on that automatically schedules your GivEnergy battery to charge during the cheapest **Octopus Agile** or **Octopus Flux** half-hour slots, taking into account your solar forecast, flexibility events (Axle VPP & Octoplus), and current battery state of charge.
+A Home Assistant App that automatically schedules your GivEnergy battery to charge during the cheapest **Octopus Agile** or **Octopus Flux** half-hour slots, taking into account your solar forecast, flexibility events (Axle VPP & Octoplus), and current battery state of charge.
 
 > **Designed for:** **Octopus Agile** and **Octopus Flux** tariff customers (import & export, auto-discovered via Octopus Account API) with GivEnergy inverters and solar panels running Home Assistant.
 
@@ -40,7 +40,7 @@ A Home Assistant add-on that automatically schedules your GivEnergy battery to c
 - 🧩 **Flattened Modular Architecture** — clean separation into `givtcp.py`, `tariffs.py`, `solar.py`, `solar_openmeteo.py`, `planner.py`, `octoplus.py`, `axle.py`, `rewards.py`, `profiler.py`, and `llm.py`
 - 📋 **Technical Specification & Contract Testing** — formal [`SPECIFICATION.md`](ha-addon/SPECIFICATION.md) and API contract test suite (`tests/test_contracts.py`)
 - 🏷️ **Single-Source Versioning** — `version.py` (`__version__`) synced automatically with `config.yaml`, `openapi.json`, and `SPECIFICATION.md` (enforced by `scripts/verify_commit.py`) to ensure zero version drift
-- 🏠 **Native Home Assistant add-on** — installs directly from a local repository
+- 🏠 **Native Home Assistant App** — installs directly from a local repository
 
 ---
 
@@ -50,10 +50,10 @@ For complete API contracts, component specifications, and Mermaid sequence diagr
 
 ```
 GivEnergy_Tracker/
-├── ha-addon/                      ← The Home Assistant add-on package
+├── ha-addon/                      ← The Home Assistant App package
 │   ├── version.py                 ← Single source of truth for version (__version__)
-│   ├── config.yaml                ← Add-on manifest (name, version, options)
-│   ├── Dockerfile                 ← Builds the add-on container (python:3.11-slim)
+│   ├── config.yaml                ← App manifest (name, version, options)
+│   ├── Dockerfile                 ← Builds the App container (python:3.11-slim)
 │   ├── run.sh                     ← Entrypoint: reads HA options, launches optimiser
 │   ├── config.py                  ← Real credentials & settings
 │   ├── optimiser.py               ← Main daemon orchestrator & scheduling loop
@@ -77,7 +77,7 @@ GivEnergy_Tracker/
 │   │   └── en.yaml                ← Full configuration titles and inline option descriptions
 │   ├── requirements.txt           ← Python dependencies
 │   ├── SPECIFICATION.md           ← Complete technical specification & architecture
-│   └── DOCS.md                    ← Add-on user documentation
+│   └── DOCS.md                    ← App user documentation
 ├── tests/                         ← Pytest test suite (includes contract tests)
 ├── README.md
 ├── CHANGELOG.md
@@ -231,7 +231,7 @@ flowchart TD
 
 ### 🚀 Future Hardware Roadmap & Planned Enhancements
 
-The add-on currently features software simulation and fail-safe logic for heating and hot water. Physical hardware controls will be enabled once hardware installation is finalized:
+The App currently features software simulation and fail-safe logic for heating and hot water. Physical hardware controls will be enabled once hardware installation is finalized:
 
 - **⚡ Direct iBoost Hardware Relay Override (Planned)**: Physical smart relay integration (e.g. Shelly / ESPHome relay contact) to programmatically override the iBoost controller during negative/plunge electricity rate slots ($< 0.0\text{p/kWh}$), forcing 3 kW immersion heating from cheap/negative grid power even when solar PV generation is 0 W.
 - **🌡️ Hot Water Cylinder Temperature Sensors (Planned)**: Installation of multi-point 1-Wire DS18B20 or Zigbee cylinder probes (top/middle/bottom) to measure exact thermal stratification ($^\circ\text{C}$) and stored thermal energy ($\text{kWh}$). When missing, `evaluate_morning_shower_safety(tank_temp_c)` defaults to `SAFE` mode (keeping Hive gas boiler on `"schedule"`) to guarantee a 6:00 AM warm shower.
@@ -259,20 +259,20 @@ The add-on currently features software simulation and fail-safe logic for heatin
 |-----------|------------|
 | Home Assistant | 2024.1+ with Supervisor |
 | GivEnergy Inverter | Any model supported by GivTCP |
-| GivTCP Add-on | Installed & running in Home Assistant |
+| GivTCP App | Installed & running in Home Assistant |
 | Octopus Energy | **Octopus Agile** or **Octopus Flux** (import) + **Outgoing Fixed/Variable** or **Flux Export** (auto-discovered via API key) |
 | Solar Panels | With known kWp, tilt (declination), and azimuth |
 | Network Share (Optional) | For persistent log files (NAS, Samba, etc.) |
 
 ### Home Assistant resources
 
-If you're new to Home Assistant or the add-on system:
+If you're new to Home Assistant or the App system:
 
 - 🏠 [Home Assistant website](https://www.home-assistant.io/) — official project home
 - 🚀 [Getting started guide](https://www.home-assistant.io/getting-started/) — installation, first-boot onboarding, device integration
-- 📦 [Add-ons overview](https://www.home-assistant.io/addons/) — how HA's add-on system works
-- 🛠️ [Local add-on tutorial (developer docs)](https://developers.home-assistant.io/docs/add-ons/tutorial/) — the mechanics of installing a local repository
-- 🔌 [GivTCP](https://github.com/britkat1980/giv_tcp) — the community add-on that talks to GivEnergy inverters (prerequisite for this tracker)
+- 📦 [Apps overview](https://www.home-assistant.io/addons/) — how HA's App system works
+- 🛠️ [Local App tutorial (developer docs)](https://developers.home-assistant.io/docs/add-ons/tutorial/) — the mechanics of installing a local repository
+- 🔌 [GivTCP](https://github.com/britkat1980/giv_tcp) — the community App that talks to GivEnergy inverters (prerequisite for this tracker)
 - ⚡ [Octopus Energy Developer API](https://developer.octopus.energy/) — where your API key lives
 
 ---
@@ -281,30 +281,30 @@ If you're new to Home Assistant or the add-on system:
 
 ### Adding to Home Assistant (1-Click Badge)
 
-Click the button below to add this repository directly to your Home Assistant Add-on Store:
+Click the button below to add this repository directly to your Home Assistant App Store:
 
-[![Open your Home Assistant instance and show the add-on store with a specific repository filled in.](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Frevhawk%2FGivEnergy_Tracker)
+[![Open your Home Assistant instance and show the App Store with a specific repository filled in.](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Frevhawk%2FGivEnergy_Tracker)
 
 ### Manual Repository Installation
 
-Any Home Assistant user can add your add-on store repository by following these steps:
+Any Home Assistant user can add your App Store repository by following these steps:
 
-1. In Home Assistant, go to **Settings → Add-ons → Add-on Store**.
+1. In Home Assistant, go to **Settings → Apps → App Store**.
 2. In the top-right corner, click **⋮ (three dots) → Repositories**.
 3. Add the GitHub repository URL:
    ```text
    https://github.com/revhawk/GivEnergy_Tracker
    ```
-4. Click **Add**. The **GivEnergy Tariff Optimiser** card will appear in the Add-on Store!
+4. Click **Add**. The **GivEnergy Tariff Optimiser** card will appear in the App Store!
 5. Click **Install**, configure options under the **Configuration** tab, and click **Start**.
 
 ---
 
 ### Local Development Installation (Alternative)
    - **Samba share** — mount `\\homeassistant\addons\` from your desktop and copy the folder in.
-   - **Terminal / SSH add-on** — `scp` or `git clone` directly onto the Pi.
-2. In Home Assistant: **Settings → Add-ons → Add-on Store**. The **GivEnergy Tariff Optimiser** card will appear under **Local add-ons**.
-3. If you don't see it, click **⋮ (top right) → "Check for updates"** — that forces HA to re-scan the local add-on folder.
+   - **Terminal / SSH App** — `scp` or `git clone` directly onto the Pi.
+2. In Home Assistant: **Settings → Apps → App Store**. The **GivEnergy Tariff Optimiser** card will appear under **Local apps**.
+3. If you don't see it, click **⋮ (top right) → "Check for updates"** — that forces HA to re-scan the local App folder.
 
 ### 2. Configure `config.py`
 
@@ -321,7 +321,7 @@ Then edit `config.py` with your Octopus API key, MPANs, meter serial, geographic
 
 ### 3. Install & Start
 
-1. Click **Install** on the add-on card
+1. Click **Install** on the App card
 2. Go to the **Configuration** tab and set your options (`interval_minutes`, `openai_api_key`, `daily_plan_hour`, `daily_audit_hour`, `startup_write_test`)
 3. Click **Start**
 4. Watch the **Log** tab. On first startup you should see:
@@ -334,8 +334,8 @@ Then edit `config.py` with your Octopus API key, MPANs, meter serial, geographic
 After you edit any file on the HA host (either by editing directly or SMB-copying new versions):
 
 1. Bump `version:` in `ha-addon/config.yaml` AND `__version__` in `ha-addon/version.py` (they must match)
-2. **Reload the add-on store** — Settings → Add-ons → Add-on Store → ⋮ → **Check for updates**. This is the step most easily forgotten — HA caches version metadata and won't detect the change without this refresh.
-3. Click **Update** on the add-on card (or ⋮ → **Rebuild** if you want to force a fresh image build)
+2. **Reload the App Store** — Settings → Apps → App Store → ⋮ → **Check for updates**. This is the step most easily forgotten — HA caches version metadata and won't detect the change without this refresh.
+3. Click **Update** on the App card (or ⋮ → **Rebuild** if you want to force a fresh image build)
 4. Confirm the log banner shows the new version `v1.0.23.4`
 
 ---
@@ -482,7 +482,7 @@ When releasing a new version, synchronize the version string across the authorit
 - **`ha-addon/SPECIFICATION.md`**: `**Version:** x.y.z` (technical specification header & contracts)
 - **`ha-addon/CHANGELOG.md`**: `## [x.y.z] - YYYY-MM-DD` (release notes & Senior Developer Review summary)
 
-When the version number in `ha-addon/config.yaml` is bumped, Home Assistant will show an **Update** badge on the add-on card — no reinstall required.
+When the version number in `ha-addon/config.yaml` is bumped, Home Assistant will show an **Update** badge on the App card — no reinstall required.
 
 ---
 
@@ -492,7 +492,7 @@ When the version number in `ha-addon/config.yaml` is bumped, Home Assistant will
 
 - It is listed in `.gitignore` and should never be committed. Rely on this only as a first line of defence — a `git add -f` still bypasses it.
 - Its contents are stored **in plaintext** on the Home Assistant host and inside the running container. Anyone with SSH/terminal access to the host can read it.
-- HA add-on options set via the UI (like `openai_api_key`) live in `/data/options.json` on the host — also plaintext, contrary to what earlier docs implied.
+- HA App options set via the UI (like `openai_api_key`) live in `/data/options.json` on the host — also plaintext, contrary to what earlier docs implied.
 - **Never paste `config.py` contents into a chat log, forum post, screenshot, or LLM conversation.** Once transmitted, treat the secrets as compromised and rotate them (Octopus dashboard, OpenAI dashboard, NAS admin).
 - **Rotation is cheaper than an audit.** If in doubt, rotate.
 
@@ -519,15 +519,15 @@ cp config.py.example config.py
 # Edit config.py with your credentials, MPANs, and site geometry
 ```
 
-### Editing the add-on
+### Editing the App
 
 1. Edit files under `ha-addon/`.
-2. **Rebuild** the add-on in Home Assistant (Settings → Add-ons → GivEnergy Tariff Optimiser → ⋮ → **Rebuild**). Restart alone won't pick up changes because `config.py` and `optimiser.py` are baked into the container image at build time.
+2. **Rebuild** the App in Home Assistant (Settings → Apps → GivEnergy Tariff Optimiser → ⋮ → **Rebuild**). Restart alone won't pick up changes because `config.py` and `optimiser.py` are baked into the container image at build time.
 3. Watch the **Log** tab. The startup banner shows the effective config values so you can verify your edits took.
 
 ### Running one planning pass on demand
 
-Set `run_once: true` in the add-on's Configuration tab, then Start it. It'll do a full plan, write to the inverter, and exit.
+Set `run_once: true` in the App's Configuration tab, then Start it. It'll do a full plan, write to the inverter, and exit.
 
 ### Testing in Local Environment
 
@@ -540,7 +540,7 @@ python3 -m venv .venv
 # 2. Activate the virtual environment
 source .venv/bin/activate
 
-# 3. Install add-on & test suite dependencies
+# 3. Install App & test suite dependencies
 pip install -r ha-addon/requirements.txt -r tests/requirements.txt
 
 # 4. Run the full unit test suite
@@ -562,7 +562,7 @@ Test targets, end-to-end guardrails, and mutation testing benchmarks are documen
 
 - 🐛 **Report a Bug / Request a Feature**: Open an issue on [GitHub Issues](https://github.com/revhawk/GivEnergy_Tracker/issues)
 - 📋 **View Release Notes**: Check out the [Changelog](https://github.com/revhawk/GivEnergy_Tracker/blob/main/ha-addon/CHANGELOG.md)
-- 📖 **Add-on Documentation**: Read the full [DOCS.md](https://github.com/revhawk/GivEnergy_Tracker/blob/main/ha-addon/DOCS.md)
+- 📖 **App Documentation**: Read the full [DOCS.md](https://github.com/revhawk/GivEnergy_Tracker/blob/main/ha-addon/DOCS.md)
 - 🐙 **GitHub Repository**: [revhawk/GivEnergy_Tracker](https://github.com/revhawk/GivEnergy_Tracker)
 
 ---

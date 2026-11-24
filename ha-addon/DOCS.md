@@ -1,13 +1,13 @@
-# GivEnergy Tariff Optimiser — Add-on User Guide
+# GivEnergy Tariff Optimiser — App User Guide
 
-Welcome to the **GivEnergy Tariff Optimiser**! This Home Assistant add-on automates your GivEnergy battery storage, solar PV panels, and hot water heating around your dynamic **Octopus Energy** electricity tariffs (**Octopus Agile** or **Octopus Flux** import, and **Outgoing** or **Flux Export**, with automatic account tariff discovery).
+Welcome to the **GivEnergy Tariff Optimiser**! This Home Assistant App automates your GivEnergy battery storage, solar PV panels, and hot water heating around your dynamic **Octopus Energy** electricity tariffs (**Octopus Agile** or **Octopus Flux** import, and **Outgoing** or **Flux Export**, with automatic account tariff discovery).
 
 ---
 
-## 🌟 What This Add-on Does For You
+## 🌟 What This App Does For You
 
 - ⚡ **Automated Overnight Pre-Charging**: Automatically charges your battery during the cheapest half-hour grid slots overnight so your home runs on cheap power during expensive day & evening peak hours.
-- 💰 **Profitable Solar Arbitrage**: When electricity rates dip lower than your solar export price, the add-on charges your battery from cheap grid power so you can sell more of your daytime solar generation back to the grid for profit.
+- 💰 **Profitable Solar Arbitrage**: When electricity rates dip lower than your solar export price, the App charges your battery from cheap grid power so you can sell more of your daytime solar generation back to the grid for profit.
 - 🤖 **Smart AI Plan Review**: Uses OpenAI's ChatGPT as an independent sanity check to score your daily plan out of 10 and veto any unusual charge decisions.
 - 🧺 **Washing Machine Usage Dashboard**: Monitors smart plug power draw (`sensor.washing_machine_power`), tracks daily wash cycles & kWh, calculates exact wash costs in pence, and recommends the top 3 cheapest Agile windows to run laundry.
 - ♨️ **Smart Hot Water & Heating Control**: Directs excess solar energy into your hot water cylinder via iBoost immersion diversion and automatically pauses your Hive gas boiler when electric/solar heating is active—saving gas while guaranteeing a warm morning shower.
@@ -21,7 +21,7 @@ Welcome to the **GivEnergy Tariff Optimiser**! This Home Assistant add-on automa
 
 ### 1. Installation
 
-1. In Home Assistant, go to **Settings → Add-ons → Add-on Store**.
+1. In Home Assistant, go to **Settings → Apps → App Store**.
 2. Click **⋮ (three dots) → Repositories** in the top right.
 3. Add the repository URL:
    ```text
@@ -31,7 +31,7 @@ Welcome to the **GivEnergy Tariff Optimiser**! This Home Assistant add-on automa
 
 ### 2. Configuration Settings
 
-Open the **Configuration** tab of the add-on to customize your settings:
+Open the **Configuration** tab of the App to customize your settings:
 
 | Setting | Recommended Default | What It Means for You |
 | :--- | :---: | :--- |
@@ -52,7 +52,7 @@ Open the **Configuration** tab of the add-on to customize your settings:
 
 ## ⏰ How Your System Works Throughout the Day
 
-Once installed, the add-on runs quietly in the background without spamming your network or inverter:
+Once installed, the App runs quietly in the background without spamming your network or inverter:
 
 ```mermaid
 flowchart LR
@@ -60,7 +60,7 @@ flowchart LR
         Rates["16:00 - 16:30<br/>Tomorrow's Rates Published"]
     end
 
-    subgraph Addon["Add-on Autonomous Lifecycle"]
+    subgraph Addon["App Autonomous Lifecycle"]
         Plan["17:00<br/><b>Daily Planning Run</b><br/>Calculates plan & programs inverter"]
         Flex["Every 5 Mins<br/><b>Flexibility Poll</b><br/>Axle VPP & Octoplus auto-join"]
         Drift["Every 30 Mins<br/><b>Light Monitor Tick</b><br/>SoC drift > 15% re-plan (55% cap)"]
@@ -90,7 +90,7 @@ flowchart LR
 
 For full architectural details, see the dedicated [Weather-Adaptive Solar & Arbitrage Guide](ARBITRAGE_AND_WEATHER.md) subpage.
 
-The add-on uses a **4-Tier Day Classifier** to dynamically adapt to daily UK weather without static calendar months:
+The App uses a **4-Tier Day Classifier** to dynamically adapt to daily UK weather without static calendar months:
 
 ```mermaid
 flowchart TD
@@ -108,7 +108,7 @@ flowchart TD
     E -->|"Surplus 40% to 99% of Deficit<br/>(Non-Winter)"| G["⛅ MEDIUM_SOLAR_PARTIAL_PRECHARGE<br/>Partial Pre-Charge for Peak Hours<br/>Leaves 30%–50% headroom for solar surges"]
 ```
 
-### How The Add-on Saves You Money:
+### How The App Saves You Money:
 
 1. **Overnight & Midday Deficit Charging**: If tomorrow's solar forecast is low (`LOW_SOLAR_GRID_PRECHARGE`), the optimiser pre-charges the battery during cheap Agile slots to protect against 45p–50p peak evening rates.
 2. **Medium Solar Headroom (`MEDIUM_SOLAR_PARTIAL_PRECHARGE`)**: On partial solar days, partial pre-charging covers peak demand while leaving **30%–50% top battery headroom** to capture live daytime solar surges (like a 7.1 kW solar surge when the oven is running!).
@@ -124,7 +124,7 @@ flowchart TD
 
 ## 🚀 Future Hardware Enhancements
 
-The current add-on version includes full software simulation and fail-safe logic. Upcoming hardware integrations include:
+The current App version includes full software simulation and fail-safe logic. Upcoming hardware integrations include:
 
 - **⚡ Direct iBoost Immersion Relay Override**: Hardware relay contact integration to force 3 kW immersion hot water heating during negative/plunge electricity rate slots ($< 0.0\text{p/kWh}$).
 - **🌡️ Hot Water Cylinder Temperature Probes**: Integration with 1-Wire DS18B20 or Zigbee multi-point cylinder sensors to measure exact stored thermal energy ($\text{kWh}$).
@@ -137,13 +137,13 @@ The current add-on version includes full software simulation and fail-safe logic
 1. **Solar covers your needs**: Your solar forecast is strong enough to cover home load and fill your battery without needing grid power.
 2. **Import rates are higher than export**: Every import slot is above your export arbitrage threshold, so grid charging would cost more than exporting solar.
 
-### How do I check add-on logs and access NAS files?
-Go to **Settings → Add-ons → GivEnergy Tariff Optimiser → Log** tab in Home Assistant.
+### How do I check App logs and access NAS files?
+Go to **Settings → Apps → GivEnergy Tariff Optimiser → Log** tab in Home Assistant.
 
-For long-term storage, your add-on saves timestamped logs and performance history into `/share/nas_logs/`.
+For long-term storage, your App saves timestamped logs and performance history into `/share/nas_logs/`.
 
 #### 🎛️ 1. Setting the NAS Log Location in Home Assistant UI
-In the add-on **Configuration** tab, enter the path as a Unix-style Home Assistant container path:
+In the App **Configuration** tab, enter the path as a Unix-style Home Assistant container path:
 - **HA UI Setting (`log_file_path`)**: `/share/nas_logs/givenergy_tracker.log` *(Default)*
 
 #### 📂 2. Accessing NAS Files from Your PC / Mac (Windows vs Unix Style)
@@ -153,7 +153,7 @@ In the add-on **Configuration** tab, enter the path as a Unix-style Home Assista
 | **🪟 Windows File Explorer** | `\\<YOUR_HA_IP>\share\nas_logs\` *(e.g. `\\homeassistant.local\share\nas_logs\`)* |
 | **🐧 Linux / Unix System** | `/share/nas_logs/` or `smb://homeassistant.local/share/nas_logs/` |
 | **🍎 macOS Finder** | `smb://homeassistant.local/share/nas_logs/` *(Go → Connect to Server)* |
-| **🏠 Home Assistant File Editor** | Open **File Editor** add-on $\rightarrow$ navigate to `/share/nas_logs/` |
+| **🏠 Home Assistant File Editor** | Open **File Editor** App $\rightarrow$ navigate to `/share/nas_logs/` |
 
 Files generated in your NAS directory:
 - **`givenergy_tracker.log`**: Full timestamped log file (`YYYY-MM-DD HH:MM:SS - INFO - ...`).

@@ -51,7 +51,7 @@ flowchart TD
 | [`tests/test_api_parsing.py`](../tests/test_api_parsing.py) | **Tariff & Solar APIs** | Octopus Agile & Flux rate parsing, time-of-use Flux Export matching, product code extraction, open-ended `valid_to: None` handling, Forecast.Solar & Open-Meteo parsing. |
 | [`tests/test_llm.py`](../tests/test_llm.py) | **ChatGPT AI Strategist** | Candidate selection, negative-rate veto overrides, fail-open fallbacks on API errors, and daily audit summaries. |
 | [`tests/test_contracts.py`](../tests/test_contracts.py) | **Pydantic v2 Contracts** | Schema validation for telemetry, rate slots, GivTCP write payloads, LLM decisions, and version sync with `config.yaml`. |
-| [`tests/test_config_options.py`](../tests/test_config_options.py) | **Add-on Configuration** | Home Assistant `config.yaml` schema, translations, and runtime environment overrides. |
+| [`tests/test_config_options.py`](../tests/test_config_options.py) | **App Configuration** | Home Assistant `config.yaml` schema, translations, and runtime environment overrides. |
 | [`tests/test_appliance.py`](../tests/test_appliance.py) | **Smart Appliances** | Washing machine smart-plug telemetry tracking and cheapest wash window recommendations. |
 | [`tests/test_state_logging.py`](../tests/test_state_logging.py) | **State & NAS History** | JSON state persistence, rolling load profiles, and daily stats archiving. |
 | [`tests/test_pre_commit_requirements.py`](../tests/test_pre_commit_requirements.py) | **Release Hygiene** | Automated verification of GPLv3 license headers, AppArmor security profile, and version synchronization. |
@@ -110,4 +110,4 @@ pytest tests/test_e2e_guardrails.py -v
 ```
 
 ### Continuous Integration (GitHub Actions)
-Every push and pull request to `main` automatically runs [`.github/workflows/tests.yml`](../.github/workflows/tests.yml) across **Python 3.11** and **Python 3.12** under `TZ=Europe/London` (matching the Home Assistant add-on runtime timezone).
+Every push and pull request to `main` automatically runs [`.github/workflows/tests.yml`](../.github/workflows/tests.yml) across **Python 3.11** and **Python 3.12** under `TZ=Europe/London` (matching the Home Assistant App runtime timezone).
