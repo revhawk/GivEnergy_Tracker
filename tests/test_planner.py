@@ -163,3 +163,63 @@ def test_candidate_contract_accepts_sim_fields():
         sim_cost_p=120.0, sim_cost_pessimistic_p=150.0, sim_score_p=129.0, sim_min_soc=10.0,
     )
     assert c.sim_score_p == 129.0
+
+
+def test_score_plan_exact_blended_weighting_formula():
+    """Kills arithmetic mutants in score_plan blended weighting: (1-w)*central + w*pess."""
+    inputs = dict(
+        solar=[4.0, 0.0], load=[1.0, 3.0], prices=[20.0, 40.0], export_rates=[10.0, 10.0],
+        capacity=CAP, start_energy=RES, reserve_energy=RES, max_rate_kwh=RATE,
+        iboost_kwh=0.0, force_export_mask=None, value_rate=0.0,
+    )
+    st = {'efficiency': 1.0, 'pessimistic_factor': 0.5, 'pessimistic_weight': 0.3, 'min_improvement_p': 2.0}
+    score, central, pess = planner.score_plan(inputs, [False, False], None, st)
+    assert central['net_cost_p'] != pess['net_cost_p']
+    assert score == pytest.approx(0.7 * central['net_cost_p'] + 0.3 * pess['net_cost_p'])
+
+    # Also verify settings=None falls back to default settings cleanly
+    score_default, _, _ = planner.score_plan(inputs, [False, False], None, settings=None)
+    assert isinstance(score_default, float)
+
+
+def test_force_export_respects_reserve_energy_floor():
+    """Kills energy - reserve_energy -> energy + reserve_energy mutant during force export."""
+    # Start right near reserve floor (1.45 kWh vs 0.95 kWh reserve -> max 0.50 kWh exportable, NOT 1.5 kWh!)
+    res = planner.simulate_plan(
+        solar=[0.0], load=[0.0], prices=[25.0], export_rates=[100.0],
+        charge_mask=[False], target_energy=None,
+        capacity=CAP, start_energy=RES + 0.5, reserve_energy=RES, max_rate_kwh=RATE,
+        iboost_kwh=0.0, efficiency=1.0, force_export_mask=[True], value_rate=0.0,
+    )
+    assert res['export_kwh'] == pytest.approx(0.5)
+    assert res['min_soc'] == pytest.approx((RES / CAP) * 100.0, abs=0.2)
+
+
+def test_charge_slot_with_simultaneous_solar_excess_diverts_and_exports():
+    """Kills spare_rate, sc, left, and exp arithmetic mutants when charging during solar excess."""
+    # Start at 8.0 kWh (1.5 kWh below 9.5 cap), target 8.5 kWh (needs 0.5 kWh grid charge).
+    # Simultaneous solar=4.0 kWh, load=0.5 kWh -> net = -3.5 kWh excess solar!
+    # spare_rate = 1.5 - 0.5 = 1.0 kWh -> sc = 1.0 kWh -> left = 2.5 kWh -> ib = 1.5 kWh -> exp = 1.0 kWh
+    res = planner.simulate_plan(
+        solar=[4.0], load=[0.5], prices=[5.0], export_rates=[15.0],
+        charge_mask=[True], target_energy=8.5,
+        capacity=CAP, start_energy=8.0, reserve_energy=RES, max_rate_kwh=RATE,
+        iboost_kwh=1.5, efficiency=1.0, force_export_mask=None, value_rate=0.0,
+    )
+    assert res['grid_charge_kwh'] == pytest.approx(0.5)
+    assert res['iboost_kwh'] == pytest.approx(1.5)
+    assert res['export_kwh'] == pytest.approx(1.0)
+
+
+def test_search_uses_full_slot_limit_and_default_settings():
+    """Kills limit + 1 -> limit - 1 and settings=None mutants in search_best_plan."""
+    # 1 cheap slot (0p) + 1 expensive slot (50p): limit=1 eligible cheap slot must be selected
+    inputs = dict(
+        solar=[0.0, 0.0], load=[0.0, 1.5], prices=[0.0, 50.0], export_rates=[0.0, 0.0],
+        capacity=CAP, start_energy=RES, reserve_energy=RES, max_rate_kwh=RATE,
+        iboost_kwh=0.0, force_export_mask=None, value_rate=0.0,
+    )
+    best = planner.search_best_plan(inputs, [True, False], CAP, 10, settings=None)
+    assert best['mask'] == [True, False]
+    assert best['target_soc'] is not None
+

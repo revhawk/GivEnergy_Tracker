@@ -1,5 +1,6 @@
 """Unit & Contract Tests for Axle Energy Self-Dispatch Module (ADR 0015)."""
 import pytest
+import responses
 from datetime import datetime, timezone, timedelta
 from unittest.mock import patch, MagicMock
 
@@ -212,3 +213,108 @@ class TestAxleTimingAndWindows:
         assert c1["target_soc"] == 100
         assert "Axle Flexibility" in c1["name"]
         assert c1["strategy"] == "axle_flexibility"
+
+    def test_is_axle_enabled_each_source_independently(self, monkeypatch):
+        """Kills Or->And mutants in is_axle_enabled across env, config, and token sources."""
+        class EmptyCfg:
+            ENABLE_AXLE_DISPATCH = False
+            AXLE_API_TOKEN = ""
+
+        monkeypatch.setattr(axle, "config", EmptyCfg)
+        monkeypatch.delenv("ENABLE_AXLE_DISPATCH", raising=False)
+        monkeypatch.delenv("AXLE_API_TOKEN", raising=False)
+        assert axle.is_axle_enabled() is False
+
+        # Only env flag
+        monkeypatch.setenv("ENABLE_AXLE_DISPATCH", "true")
+        assert axle.is_axle_enabled() is True
+        monkeypatch.delenv("ENABLE_AXLE_DISPATCH")
+
+        # Only token
+        monkeypatch.setenv("AXLE_API_TOKEN", "tok_123")
+        assert axle.is_axle_enabled() is True
+        monkeypatch.delenv("AXLE_API_TOKEN")
+
+        # Only config flag
+        EmptyCfg.ENABLE_AXLE_DISPATCH = True
+        assert axle.is_axle_enabled() is True
+
+    def test_parse_axle_payload_missing_end_defaults_plus_one_hour_and_alt_keys(self):
+        """Kills Add->Sub (+1h default) and alternate-key Or->And mutants in parse_axle_payload."""
+        # Missing end_time -> must default to start + 1 hour (NOT start - 1 hour!)
+        parsed = axle.parse_axle_payload({"start_time": "2026-11-24T18:00:00Z"})
+        assert parsed is not None
+        assert parsed["end"] == parsed["start"] + timedelta(hours=1)
+        assert parsed["import_export"] == "export"
+
+        # Alternate keys in flat dict & HA attributes
+        alt = axle.parse_axle_payload({"start": "2026-11-24T18:00:00Z", "finish": "2026-11-24T19:30:00Z", "direction": "import"})
+        assert alt["end"] == alt["start"] + timedelta(minutes=90)
+        assert alt["import_export"] == "import"
+
+        ha_alt = axle.parse_axle_payload({
+            "state": "2026-11-24T18:00:00Z",
+            "attributes": {"finish": "2026-11-24T19:00:00Z", "direction": "export", "updated": "2026-11-24T12:00:00Z"}
+        })
+        assert ha_alt["end"] == ha_alt["start"] + timedelta(hours=1)
+        assert ha_alt["updated_at"] is not None
+
+        # Unavailable / null start strings must return None
+        assert axle.parse_axle_payload({"start_time": "unavailable"}) is None
+        assert axle.parse_axle_payload({"start_time": ""}) is None
+
+    @responses.activate
+    def test_fetch_ha_axle_sensor_200_vs_404(self, monkeypatch):
+        """Kills status_code == 200 -> != 200 and entity_id fallback mutants."""
+        monkeypatch.setattr(axle, "SUPERVISOR_TOKEN", "sup_tok")
+        responses.add(
+            responses.GET,
+            "http://supervisor/core/api/states/sensor.axle_event",
+            json={"state": "2026-11-24T20:00:00Z", "attributes": {"end_time": "2026-11-24T21:00:00Z"}},
+            status=200,
+        )
+        ev = axle.fetch_ha_axle_sensor("sensor.axle_event")
+        assert ev is not None
+        assert ev["state"] == "2026-11-24T20:00:00Z"
+
+        responses.replace(
+            responses.GET,
+            "http://supervisor/core/api/states/sensor.axle_event",
+            status=404,
+        )
+        assert axle.fetch_ha_axle_sensor("sensor.axle_event") is None
+
+    def test_fetch_axle_event_cache_hit_and_expiry(self, monkeypatch):
+        """Kills cache TTL (age < 300, now - fetched_at) and force=True mutants."""
+        axle.clear_axle_cache()
+        now = datetime.now(timezone.utc)
+        cached_ev = {"start": now + timedelta(hours=1), "end": now + timedelta(hours=2), "import_export": "export"}
+        axle._axle_cache["event"] = cached_ev
+        axle._axle_cache["fetched_at"] = now - timedelta(seconds=60)  # Fresh (< 300s)
+
+        # Should return cached event without calling API
+        with patch("axle.test_axle_connection") as mock_api:
+            assert axle.fetch_axle_event(token="tok", force=False) == cached_ev
+            assert not mock_api.called
+
+        # Expired (> 300s) -> must re-fetch from API
+        axle._axle_cache["fetched_at"] = now - timedelta(seconds=400)
+        with patch("axle.test_axle_connection", return_value=(True, "ok", {"start_time": (now + timedelta(hours=2)).isoformat(), "end_time": (now + timedelta(hours=3)).isoformat()})) as mock_api:
+            fresh = axle.fetch_axle_event(token="tok", force=False)
+            assert mock_api.called
+            assert fresh is not None
+
+    def test_axle_window_helpers_guard_none_and_default_dt(self):
+        """Kills Or->And mutants on None/missing fields and default dt in window helpers."""
+        assert axle.is_axle_event_active(None) is False
+        assert axle.is_axle_event_active({"start": datetime.now(timezone.utc)}) is False
+        assert axle.is_axle_precharge_window(None) is False
+        assert axle.is_axle_precharge_window({}) is False
+
+        # Default dt=None works live
+        now = datetime.now(timezone.utc)
+        live_ev = {"start": now - timedelta(minutes=5), "end": now + timedelta(minutes=55)}
+        assert axle.is_axle_event_active(live_ev) is True
+        upcoming_ev = {"start": now + timedelta(minutes=30), "end": now + timedelta(minutes=90)}
+        assert axle.is_axle_precharge_window(upcoming_ev, lead_hours=2.0) is True
+
