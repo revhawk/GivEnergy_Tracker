@@ -163,6 +163,10 @@ Files generated in your NAS directory:
 
 ---
 
-## 💬 Support & Feedback
+## 💬 Support & Documentation
 
-For updates, questions, or issues, visit the [GivEnergy Tracker GitHub Repository](https://github.com/revhawk/GivEnergy_Tracker).
+For updates, questions, or issues, visit the [GivEnergy Tracker GitHub Repository](https://github.com/revhawk/GivEnergy_Tracker):
+- **Architecture & Composable Pipeline**: [`ARCHITECTURE.md`](ARCHITECTURE.md)
+- **Technical Specification & Contracts**: [`SPECIFICATION.md`](SPECIFICATION.md)
+- **Testing, E2E Guardrails & Mutation QA**: [`TESTING.md`](TESTING.md)
+- **Weather & Arbitrage Strategy**: [`ARBITRAGE_AND_WEATHER.md`](ARBITRAGE_AND_WEATHER.md)

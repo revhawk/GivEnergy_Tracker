@@ -14,6 +14,7 @@ A Home Assistant add-on that automatically schedules your GivEnergy battery to c
 | 📘 [**End-User Guide & Operations**](ha-addon/DOCS.md) | How charging works, candidate strategies, daily savings, washing machine dashboard | Daily Home Users |
 | ☀️ [**Solar & Weather Strategy**](ha-addon/ARBITRAGE_AND_WEATHER.md) | Weather-adaptive day classification, autumn headroom, and export arbitrage | Solar & Energy Enthusiasts |
 | 📐 [**Architecture & Technical Specification**](ha-addon/SPECIFICATION.md) | Component architecture, Pydantic contracts, OpenAPI 3.1.0 spec, and contract test suite | Developers & Integrators |
+| 🧪 [**Testing, Guardrails & Mutation QA**](ha-addon/TESTING.md) | Testing pyramid, 5 E2E guardrails, mutation testing scoreboard, and CI verification | Developers & QA |
 | 📜 [**Changelog & Releases**](ha-addon/CHANGELOG.md) | Version history and senior developer reviews | Release Tracking |
 
 ---
@@ -549,7 +550,7 @@ pytest tests/test_optimization.py
 python ha-addon/optimiser.py
 ```
 
-Test targets and coverage are documented in [`tests/README.md`](tests/README.md).
+Test targets, end-to-end guardrails, and mutation testing benchmarks are documented in [`ha-addon/TESTING.md`](ha-addon/TESTING.md) and [`tests/README.md`](tests/README.md).
 
 ---
 

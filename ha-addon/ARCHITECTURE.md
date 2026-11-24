@@ -71,7 +71,19 @@ flowchart TD
 
 ---
 
-## 2. Core Execution Flows
+## 2. Composable Optimization Pipeline (`simulation.py`)
+
+`run_optimization()` is composed of 8 single-responsibility pipeline stages, backed by parallel 5-minute flexibility and 30-minute drift monitors:
+
+```mermaid
+flowchart LR
+    S1["1. Ingest & Overlay<br/>_overlay_flexibility_events()<br/>Agile/Flux, Octoplus & Axle"] --> S2["2. Baseline Sim<br/>_simulate_base_no_charge()<br/>24h no-charge balance"]
+    S2 --> S3["3. Classify Day<br/>classify_day()<br/>4 weather/tariff tiers"]
+    S3 --> S4["4. Build & Score<br/>build_plan_candidates()<br/>_score_and_augment_candidates()"]
+    S4 --> S5["5. Select & Guard<br/>chatgpt_select_candidate()<br/>_resolve_selected_candidate()"]
+    S5 --> S6["6. Program Inverter<br/>set_inverter_charge_slots()<br/>_coordinate_axle_discharge()"]
+    S6 --> S7["7. Persist State<br/>_persist_plan_and_stats()<br/>SoC trajectory & NAS stats"]
+```
 
 ### 2.1 Daily Planning Run (Scheduled 17:00 or On Startup)
 1. **Rate Discovery:** [`tariffs.py`](file:///home/reg/Coding/GivEnergy_Tracker/ha-addon/tariffs.py) auto-detects active customer tariffs (Flux/Agile) and retrieves upcoming 48 half-hour slots.

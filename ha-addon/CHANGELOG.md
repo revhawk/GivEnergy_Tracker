@@ -20,6 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Added 5 multi-step E2E guardrail scenarios covering the full Axle VPP lifecycle (`Eco` → `T-10m Timed Export` → `T=0 /forceExport` → `Eco` restore), unbooked vs. booked Happy Hour confirmation gates, intraday Power Down detection + 100% daytime top-up, winter overnight pre-charge drift stability, and negative-rate LLM fail-open resilience.
 - **Mutation-Hardened Unit Tests (`tests/test_hive.py`, `tests/test_planner.py`, `tests/test_axle.py`, `tests/test_helpers.py`, `tests/test_api_parsing.py`)**:
   - Expanded test coverage to **213 tests** via AST mutation testing, raising mutation kill rates to `100.0%` (`hive.py`), `90.3%` (`octoplus.py`), `84.4%` (`planner.py`), and `80.6%` (`axle.py`).
+- **Dedicated Testing & Architecture Documentation (`ha-addon/TESTING.md`, `ha-addon/ARCHITECTURE.md`, `README.md`, `ha-addon/DOCS.md`)**:
+  - Added dedicated [`ha-addon/TESTING.md`](TESTING.md) documentation page with a Testing Pyramid Mermaid diagram, Axle E2E Guardrail lifecycle diagram, full 213-test inventory table, mutation testing scoreboard, and local/CI test commands.
+  - Added a Composable Optimization Pipeline Mermaid diagram to `ha-addon/ARCHITECTURE.md` and linked `TESTING.md` from `README.md` and `ha-addon/DOCS.md`.
 
 ### Senior Developer Review
 - **Maintainability & Regression Protection**: Clean modular pipeline in `simulation.py` backed by E2E guardrails and mutation-hardened unit tests across all core decision modules.
