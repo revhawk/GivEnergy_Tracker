@@ -76,7 +76,7 @@ GivEnergy_Tracker/
 │   ├── translations/              ← Home Assistant UI localization & descriptive subtitles
 │   │   └── en.yaml                ← Full configuration titles and inline option descriptions
 │   ├── requirements.txt           ← Python dependencies
-│   ├── icon.png & logo.png        ← Home Assistant App Store icon & banner
+│   ├── icon.png & logo.png        ← Home Assistant App icon & banner
 │   ├── ARCHITECTURE.md            ← Modular domain & composable pipeline guide
 │   ├── SPECIFICATION.md           ← Complete technical specification & architecture
 │   ├── TESTING.md                 ← Testing pyramid, E2E guardrails & mutation QA
@@ -285,21 +285,21 @@ If you're new to Home Assistant or the App system:
 
 ### Adding to Home Assistant (1-Click Badge)
 
-Click the button below to add this repository directly to your Home Assistant App Store:
+Click the button below to add this repository directly to your Home Assistant Apps:
 
-[![Open your Home Assistant instance and show the App Store with a specific repository filled in.](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Frevhawk%2FGivEnergy_Tracker)
+[![Open your Home Assistant instance and show the App repository dialog with a specific repository filled in.](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Frevhawk%2FGivEnergy_Tracker)
 
 ### Manual Repository Installation
 
-Any Home Assistant user can add your App Store repository by following these steps:
+Any Home Assistant user can add this repository by following these steps:
 
-1. In Home Assistant, go to **Settings → Apps → App Store**.
+1. In Home Assistant, go to **Settings → Apps → Install app** (bottom-right button).
 2. In the top-right corner, click **⋮ (three dots) → Repositories**.
 3. Add the GitHub repository URL:
    ```text
    https://github.com/revhawk/GivEnergy_Tracker
    ```
-4. Click **Add**. The **GivEnergy Tariff Optimiser** card will appear in the App Store!
+4. Click **Add**. The **GivEnergy Tariff Optimiser** card will appear in the **App list**!
 5. Click **Install**, configure options under the **Configuration** tab, and click **Start**.
 
 ---
@@ -309,7 +309,7 @@ Any Home Assistant user can add your App Store repository by following these ste
 1. Copy the `ha-addon/` directory into your Home Assistant host's `/addons/givenergy_tracker/` folder using either:
    - **Samba share** — mount `\\homeassistant\addons\` from your desktop and copy the folder in.
    - **Terminal / SSH App** — `scp` or `git clone` directly onto the Pi.
-2. In Home Assistant: **Settings → Apps → App Store**. The **GivEnergy Tariff Optimiser** card will appear under **Local apps**.
+2. In Home Assistant: **Settings → Apps → Install app**. The **GivEnergy Tariff Optimiser** card will appear under **Local apps**.
 3. If you don't see it, click **⋮ (top right) → "Check for updates"** — that forces HA to re-scan the local App folder.
 
 ### 2. Configure `config.py`
@@ -340,7 +340,7 @@ Then edit `config.py` with your Octopus API key, MPANs, meter serial, geographic
 After you edit any file on the HA host (either by editing directly or SMB-copying new versions):
 
 1. Bump `version:` in `ha-addon/config.yaml` AND `__version__` in `ha-addon/version.py` (they must match)
-2. **Reload the App Store** — Settings → Apps → App Store → ⋮ → **Check for updates**. This is the step most easily forgotten — HA caches version metadata and won't detect the change without this refresh.
+2. **Reload the App list** — Settings → Apps → **Install app** → ⋮ → **Check for updates** (or click the **↻** refresh icon on the Apps page). This is the step most easily forgotten — HA caches version metadata and won't detect the change without this refresh.
 3. Click **Update** on the App card (or ⋮ → **Rebuild** if you want to force a fresh image build)
 4. Confirm the log banner shows the new version `v1.0.25.11`
 

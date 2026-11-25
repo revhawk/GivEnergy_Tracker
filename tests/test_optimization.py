@@ -93,6 +93,7 @@ async def test_optimization_arbitrage_multi_slots(
 
 
 @pytest.mark.asyncio
+@patch('optimiser.fetch_live_octoplus_sessions', return_value=[])
 @patch('simulation.is_winter_full_charge_enabled', return_value=False)
 @patch('optimiser.set_inverter_charge_slots')
 @patch('optimiser.chatgpt_select_candidate')
@@ -101,7 +102,7 @@ async def test_optimization_arbitrage_multi_slots(
 @patch('optimiser.fetch_agile_rates')
 @patch('optimiser.get_inverter_telemetry')
 async def test_optimization_deficit_non_contiguous_cheapest_slots(
-    mock_telemetry, mock_rates, mock_solar, mock_export, mock_select, mock_set_slots, mock_winter
+    mock_telemetry, mock_rates, mock_solar, mock_export, mock_select, mock_set_slots, mock_winter, mock_octoplus
 ):
     # Setup 2 cheap slots separated by expensive slots (01:00 @ 11p, 02:00 @ 30p, 03:00 @ 11p)
     slots = [

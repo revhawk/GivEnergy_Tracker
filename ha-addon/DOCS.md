@@ -21,13 +21,13 @@ Welcome to the **GivEnergy Tariff Optimiser**! This Home Assistant App automates
 
 ### 1. Installation
 
-1. In Home Assistant, go to **Settings → Apps → App Store**.
+1. In Home Assistant, go to **Settings → Apps → Install app** (bottom-right button).
 2. Click **⋮ (three dots) → Repositories** in the top right.
 3. Add the repository URL:
    ```text
    https://github.com/revhawk/GivEnergy_Tracker
    ```
-4. Find **GivEnergy Tariff Optimiser** in the store list and click **Install**.
+4. Find **GivEnergy Tariff Optimiser** in the **App list** and click **Install**.
 
 ### 2. Configuration Settings
 

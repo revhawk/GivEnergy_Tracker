@@ -21,7 +21,7 @@ Before installing the App, make sure you have:
 
 ### Step 1: Add the Repository to Home Assistant
 
-1. In Home Assistant, navigate to **Settings** → **Apps** → **App Store** (bottom-right button).
+1. In Home Assistant, navigate to **Settings** → **Apps** → **Install app** (bottom-right button).
 2. Click the **⋮ (three dots)** menu in the top-right corner and select **Repositories**.
 3. In the text box, paste the repository URL:
    ```text
@@ -33,7 +33,7 @@ Before installing the App, make sure you have:
 
 ### Step 2: Install the App
 
-1. Scroll down the App Store (or refresh the page) to find the **GivEnergy Tariff Optimiser** card under "revhawk Apps".
+1. Scroll down the **App list** (or refresh the page) to find the **GivEnergy Tariff Optimiser** card under "revhawk Apps".
 2. Click on **GivEnergy Tariff Optimiser**.
 3. Click the blue **Install** button. Installation takes about 1–2 minutes while dependencies are built.
 
@@ -104,7 +104,7 @@ The App saves persistent state, daily stats, and 90 days of midnight-rotated log
 - `givenergy_tracker.log`: Rotating application logs.
 
 ### Accessing Logs from Windows / Mac / Linux:
-1. Install the official **Samba share** App from the Home Assistant App Store.
+1. Install the official **Samba share** App from **Settings → Apps → Install app**.
 2. In your computer's file explorer, connect to your Home Assistant IP:
    - Windows: `\\homeassistant.local\share\nas_logs` (or `\\<YOUR_HA_IP>\share\nas_logs`)
    - Mac / Linux: `smb://homeassistant.local/share/nas_logs` (or `smb://<YOUR_HA_IP>/share/nas_logs`)
