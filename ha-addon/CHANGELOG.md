@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.25.13] - 2026-11-27
+
+### Fixed
+- **Octopus Flux Peak Export False Arbitrage Fix (`simulation.py`)**:
+  - Fixed a critical bug where running the daily planner at `17:00` during the Octopus Flux peak export window (`29.18p/kWh`) compared all upcoming slots against the instantaneous `29.18p` peak export rate, falsely classifying `19:00–16:00` (`25.8p/kWh`) as profitable arbitrage and scheduling a 21-hour charge block.
+  - `build_plan_candidates()` now compares each slot against its own slot-specific `export_rate` (`s.get('export_rate', export_rate) - arbitrage_margin`) and excludes Axle VPP slots, so `17:00` Flux runs cleanly schedule `02:00–05:00` (`15.6p/kWh`).
+  - Added regression test `test_flux_peak_export_rate_does_not_trigger_false_arbitrage` in `tests/test_optimization.py`.
+
+### Senior Developer Review
+- **Flux Time-of-Use Safety**: Eliminates false arbitrage during peak export windows while preserving Agile + Outgoing Fixed/Variable arbitrage behavior.
+- **Verification**: Full pre-commit verification gate (`scripts/verify_commit.py`) and all 216 pytest tests passed 100%.
+
 ## [1.0.25.12] - 2026-11-27
 
 ### Added

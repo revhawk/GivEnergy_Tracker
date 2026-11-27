@@ -331,7 +331,7 @@ Then edit `config.py` with your Octopus API key, MPANs, meter serial, geographic
 2. Go to the **Configuration** tab and set your options (`interval_minutes`, `openai_api_key`, `daily_plan_hour`, `daily_audit_hour`, `enable_axle_dispatch`)
 3. Click **Start**
 4. Watch the **Log** tab. On first startup you should see:
-   - Version banner: `GivEnergy Tariff Optimiser v1.0.25.12`
+   - Version banner: `GivEnergy Tariff Optimiser v1.0.25.13`
    - Effective config dump (verifies your `config.py` values)
    - First planning run (`===== DAILY PLANNING RUN (first plan since startup) =====`)
 
@@ -342,7 +342,7 @@ After you edit any file on the HA host (either by editing directly or SMB-copyin
 1. Bump `version:` in `ha-addon/config.yaml` AND `__version__` in `ha-addon/version.py` (they must match)
 2. **Reload the App list** — Settings → Apps → **Install app** → ⋮ → **Check for updates** (or click the **↻** refresh icon on the Apps page). This is the step most easily forgotten — HA caches version metadata and won't detect the change without this refresh.
 3. Click **Update** on the App card (or ⋮ → **Rebuild** if you want to force a fresh image build)
-4. Confirm the log banner shows the new version `v1.0.25.12`
+4. Confirm the log banner shows the new version `v1.0.25.13`
 
 ---
 

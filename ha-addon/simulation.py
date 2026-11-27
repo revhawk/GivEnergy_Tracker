@@ -401,7 +401,14 @@ def build_plan_candidates(day_classification, current_soc, battery_capacity,
     arbitrage_threshold = export_rate - arbitrage_margin
 
     negative_slots = [s for s in upcoming_slots if s['price'] < 0 and not s.get('is_power_down')]
-    arbitrage_slots = [s for s in upcoming_slots if s['price'] < arbitrage_threshold and not s.get('is_power_down')]
+    # Compare each slot against its OWN export rate (never the instantaneous 17:00 Flux peak export
+    # rate of 29.18p, which would falsely flag 19:00-16:00 @ 25.8p as profitable arbitrage).
+    arbitrage_slots = [
+        s for s in upcoming_slots
+        if not s.get('is_power_down')
+        and not s.get('is_axle_export')
+        and s['price'] < (s.get('export_rate', export_rate) - arbitrage_margin)
+    ]
 
     # Target SoC determination based on user rules
     now_dt = upcoming_slots[0]['start'].astimezone() if upcoming_slots else datetime.now().astimezone()

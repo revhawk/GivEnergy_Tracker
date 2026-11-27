@@ -1293,6 +1293,47 @@ async def test_winter_offpeak_guarantee_applies_even_when_option3_selected(
     )
 
 
+def test_flux_peak_export_rate_does_not_trigger_false_arbitrage():
+    """At 17:00 during Octopus Flux peak (export_rate=29.18p), Option 1 must NOT use the 17:00
+    peak export rate to classify 19:00-16:00 (25.8p) as arbitrage; it must schedule 02:00-05:00."""
+    from simulation import build_plan_candidates
+
+    base = datetime(2026, 11, 27, 17, 0, tzinfo=timezone.utc)
+    slots = []
+    for i in range(48):
+        st = base + timedelta(minutes=30 * i)
+        h = st.hour
+        if 2 <= h < 5:
+            price, exp = 15.6, 4.54
+        elif 16 <= h < 19:
+            price, exp = 36.0, 29.18
+        else:
+            price, exp = 25.8, 10.70
+        slots.append({
+            "start": st, "end": st + timedelta(minutes=30),
+            "price": price, "export_rate": exp,
+            "is_power_down": False, "is_power_up": False,
+        })
+
+    cands = build_plan_candidates(
+        day_classification="LOW_SOLAR_GRID_PRECHARGE",
+        current_soc=14.0,
+        battery_capacity=9.52,
+        upcoming_slots=slots,
+        total_solar_kwh=1.3,
+        solar_comparison={},
+        export_rate=29.18,  # Live 17:00 Flux peak export rate
+        total_import_kwh=20.0,
+    )
+    opt1 = next(c for c in cands if c["id"] == 1)
+    assert opt1["strategy"] != "arbitrage"
+    assert len(opt1["slots"]) == 1
+    s0, e0 = opt1["slots"][0]
+    assert s0.astimezone(timezone.utc).hour == 2
+    assert e0.astimezone(timezone.utc).hour == 5
+
+
+
 
 
 
