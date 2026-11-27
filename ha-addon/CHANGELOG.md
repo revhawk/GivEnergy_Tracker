@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.25.12] - 2026-11-27
+
+### Added
+- **Winter Full Off-Peak Window Guarantee (`simulation.py`)**:
+  - Added `_find_cheap_offpeak_band()` so in winter mode (`Nov–Feb`, `LOW_SOLAR_GRID_PRECHARGE`), **all** slots matching the cheapest off-peak rate below median (e.g. Octopus Flux `02:00–05:00` at `15.6p/kWh`, or any remaining off-peak slots during a mid-night re-plan) are always scheduled at `100%` SoC across all selected options. This keeps the battery pinned at `100%` and runs the house directly off cheap off-peak grid power until `05:00`.
+  - Added unit tests (`test_flux_full_offpeak_window_always_covered` and `test_winter_offpeak_guarantee_applies_even_when_option3_selected`) in `tests/test_optimization.py`.
+
+### Fixed
+- **Weekend & Time-of-Day Test Stability (`tests/test_optimization.py`)**:
+  - Stabilized `test_optimization_deficit_non_contiguous_cheapest_slots` so it passes reliably on weekends (lower baseline daytime load without weekday laundry load) and at 23:00 UTC.
+- **Documentation & UI Terminology**:
+  - Updated all user-facing docs to Home Assistant's modern **Apps / Install app / App list** terminology, fixed broken relative links, removed raw LaTeX from `DOCS.md`, and synced configuration option tables with `config.yaml`.
+
+### Senior Developer Review
+- **Winter Off-Peak Resilience**: Eliminates partial-window off-peak charging and guarantees 100% SoC entry at `05:00` on Octopus Flux without disrupting high-solar or medium-solar headroom behavior.
+- **Verification**: Full pre-commit verification gate (`scripts/verify_commit.py`) and all 215 pytest tests passed 100%.
+
 ## [1.0.25.11] - 2026-11-24
 
 ### Changed

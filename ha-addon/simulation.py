@@ -366,6 +366,23 @@ def is_winter_full_charge_enabled():
     return getattr(config, 'ENABLE_WINTER_FULL_CHARGE', True) if config else True
 
 
+def _find_cheap_offpeak_band(candidate_slots, reference_slots):
+    """Return all non-Power-Down slots at the cheapest rate when that rate is below the median rate.
+
+    Covers the entire cheap off-peak window (e.g. Octopus Flux 02:00-05:00 @ 15.6p vs 25.8p day),
+    including any remaining off-peak slots if a re-plan runs mid-window (e.g. 04:19 -> 04:00-05:00).
+    """
+    eligible = [s for s in (candidate_slots or []) if not s.get('is_power_down')]
+    if not eligible or len(reference_slots or []) < 2:
+        return []
+    all_prices_sorted = sorted(s['price'] for s in reference_slots)
+    median_price = all_prices_sorted[len(all_prices_sorted) // 2]
+    min_price = min(s['price'] for s in eligible)
+    if min_price < median_price - 0.5:
+        return [s for s in eligible if s['price'] <= min_price + 0.5]
+    return []
+
+
 def build_plan_candidates(day_classification, current_soc, battery_capacity,
                           upcoming_slots, total_solar_kwh, solar_comparison, export_rate,
                           total_import_kwh=0.0):
@@ -505,12 +522,19 @@ def build_plan_candidates(day_classification, current_soc, battery_capacity,
         effective_headroom = battery_capacity * 0.90 if now_dt.hour >= 16 else battery_capacity * (100.0 - current_soc) / 100.0
         kwh_opt1 = min(max(0.0, (target_soc_opt1 - (current_soc if now_dt.hour < 16 else 10)) / 100.0 * battery_capacity), effective_headroom)
 
+    # In winter mode (LOW_SOLAR_GRID_PRECHARGE), always cover the ENTIRE cheapest off-peak window
+    # (e.g. Flux 02:00-05:00 @ 15.6p) so the battery charges to 100% AND the house runs off cheap grid power.
+    cheap_offpeak_band = (
+        _find_cheap_offpeak_band(opt1_slots_raw, upcoming_slots)
+        if (is_winter and day_classification == "LOW_SOLAR_GRID_PRECHARGE" and not (7 <= now_dt.hour < 16)) else []
+    )
+
     slots_needed_opt1 = math.ceil(kwh_opt1 / max_charge_kwh_per_slot) if kwh_opt1 > 0 else 0
     slots_needed_opt1 = min(slots_needed_opt1, len(opt1_slots_raw))
 
     slots_opt1 = []
     avg_price_opt1 = 0.0
-    if slots_needed_opt1 > 0 and opt1_slots_raw:
+    if (slots_needed_opt1 > 0 or cheap_offpeak_band) and opt1_slots_raw:
         if opt1_strategy in ("negative_rates", "power_up", "arbitrage"):
             sorted_cheap = sorted(opt1_slots_raw, key=lambda s: s['start'])
             blocks_opt1 = _merge_slot_blocks(sorted_cheap)
@@ -520,6 +544,14 @@ def build_plan_candidates(day_classification, current_soc, battery_capacity,
                 avg_price_opt1 = sum(s['price'] for s in opt1_slots_raw) / len(opt1_slots_raw)
         else:
             sorted_cheapest = sorted(opt1_slots_raw, key=lambda s: s['price'])[:slots_needed_opt1]
+            if cheap_offpeak_band:
+                seen_starts = {s['start'] for s in sorted_cheapest}
+                for s in cheap_offpeak_band:
+                    if s['start'] not in seen_starts:
+                        sorted_cheapest.append(s)
+                        seen_starts.add(s['start'])
+                if target_soc_opt1 < 100 and (is_winter or total_import_kwh > 0.2):
+                    target_soc_opt1 = 100
             sorted_chronological = sorted(sorted_cheapest, key=lambda s: s['start'])
             avg_price_opt1 = sum(s['price'] for s in sorted_chronological) / len(sorted_chronological)
             blocks_opt1 = _merge_slot_blocks(sorted_chronological)
@@ -1219,6 +1251,40 @@ async def run_optimization():
     selected_candidate, approve, slots_to_apply, target_soc_to_apply = _resolve_selected_candidate(
         candidates, approve, sel_id, day_classification, total_import_kwh
     )
+
+    # Winter Off-Peak Guarantee (applies across ALL selected options):
+    # In winter (Nov-Feb), whenever a multi-hour cheap off-peak window (e.g. Flux 02:00-05:00 @ 15.6p)
+    # is present in the upcoming horizon, ALWAYS include it at 100% SoC so the battery charges to 100%
+    # and the house runs directly off cheap off-peak grid power regardless of which option was picked.
+    now_local = upcoming_slots[0]['start'].astimezone() if upcoming_slots else datetime.now().astimezone()
+    if (
+        is_winter_season(now_local)
+        and is_winter_full_charge_enabled()
+        and day_classification == "LOW_SOLAR_GRID_PRECHARGE"
+        and not (7 <= now_local.hour < 16)
+    ):
+        winter_offpeak_band = _find_cheap_offpeak_band(upcoming_slots, upcoming_slots)
+        if winter_offpeak_band:
+            offpeak_blocks = _merge_slot_blocks(sorted(winter_offpeak_band, key=lambda s: s['start']))
+            offpeak_windows = [(b['start'].astimezone(), b['end'].astimezone()) for b in offpeak_blocks]
+            existing_windows = list(slots_to_apply or [])
+            # Merge off-peak windows with any existing windows (avoiding duplicates/overlaps)
+            combined = sorted(existing_windows + offpeak_windows, key=lambda w: w[0])
+            merged_windows = []
+            for ws, we in combined:
+                if merged_windows and ws <= merged_windows[-1][1]:
+                    merged_windows[-1] = (merged_windows[-1][0], max(merged_windows[-1][1], we))
+                else:
+                    merged_windows.append((ws, we))
+            if merged_windows != existing_windows or not approve or (target_soc_to_apply or 0) < 100:
+                win_desc = ', '.join(f"{a.strftime('%H:%M')}-{b.strftime('%H:%M')}" for a, b in offpeak_windows)
+                logging.info(
+                    f"❄️ [WINTER OFF-PEAK GUARANTEE] Ensuring full cheap off-peak window ({win_desc}) "
+                    f"is scheduled at 100% SoC across all options."
+                )
+            slots_to_apply = merged_windows
+            target_soc_to_apply = max(int(target_soc_to_apply or 0), 100)
+            approve = True
 
     score_str = f"{score}/10" if score is not None else "n/a"
     logging.info(

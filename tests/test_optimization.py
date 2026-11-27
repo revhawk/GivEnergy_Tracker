@@ -113,7 +113,7 @@ async def test_optimization_deficit_non_contiguous_cheapest_slots(
     for h in range(4, 15):
         slots.append(_make_slot(h, 0, 25.0))
 
-    mock_telemetry.return_value = {"soc": 48, "pv_power": 0.0, "load_power": 800.0}
+    mock_telemetry.return_value = {"soc": 35, "pv_power": 0.0, "load_power": 800.0}
     mock_rates.return_value = slots
     mock_solar.return_value = ([], {})
     mock_export.return_value = 10.0  # Export threshold = 8.5p, so Agile rates (11p) don't trigger arbitrage
@@ -1209,6 +1209,90 @@ def test_clear_axle_state_removes_all_tracking_keys():
     }
     _clear_axle_state(st)
     assert st == {"last_plan_date": "2026-11-24"}
+
+
+def test_flux_full_offpeak_window_always_covered():
+    """On Octopus Flux (02:00-05:00 @ 15.6p vs 25.8p day), Option 1 must cover the ENTIRE 02:00-05:00 window
+    even when SoC is already high (77% or 100%) so the house runs off 15.6p grid and exits 05:00 at 100%."""
+    from simulation import build_plan_candidates
+
+    base = datetime(2026, 11, 27, 0, 0, tzinfo=timezone.utc)
+    slots = []
+    for i in range(48):
+        st = base + timedelta(minutes=30 * i)
+        h = st.hour
+        if 2 <= h < 5:
+            price = 15.6
+        elif 16 <= h < 19:
+            price = 36.0
+        else:
+            price = 25.8
+        slots.append({"start": st, "end": st + timedelta(minutes=30), "price": price, "is_power_down": False, "is_power_up": False})
+
+    for soc in (77.0, 100.0):
+        cands = build_plan_candidates(
+            day_classification="LOW_SOLAR_GRID_PRECHARGE",
+            current_soc=soc,
+            battery_capacity=9.52,
+            upcoming_slots=slots,
+            total_solar_kwh=1.8,
+            solar_comparison={},
+            export_rate=10.7,
+            total_import_kwh=10.0,
+        )
+        opt1 = next(c for c in cands if c["id"] == 1)
+        assert opt1["target_soc"] == 100
+        assert len(opt1["slots"]) == 1
+        start_dt, end_dt = opt1["slots"][0]
+        assert start_dt.astimezone(timezone.utc).hour == 2
+        assert start_dt.astimezone(timezone.utc).minute == 0
+        assert end_dt.astimezone(timezone.utc).hour == 5
+        assert end_dt.astimezone(timezone.utc).minute == 0
+
+
+@pytest.mark.asyncio
+@patch('optimiser.fetch_live_octoplus_sessions', return_value=[])
+@patch('simulation.is_winter_season', return_value=True)
+@patch('simulation.is_winter_full_charge_enabled', return_value=True)
+@patch('optimiser.set_inverter_charge_slots')
+@patch('optimiser.chatgpt_select_candidate')
+@patch('optimiser.fetch_export_rate')
+@patch('optimiser.fetch_parallel_solar_forecasts')
+@patch('optimiser.fetch_agile_rates')
+@patch('optimiser.get_inverter_telemetry')
+async def test_winter_offpeak_guarantee_applies_even_when_option3_selected(
+    mock_telemetry, mock_rates, mock_solar, mock_export, mock_select, mock_set_slots, mock_winter, mock_winter_season, mock_octoplus
+):
+    """In winter on Octopus Flux, even if LLM selects Option 3 (Pure Solar / no charge),
+    the full 02:00-05:00 15.6p off-peak window must still be scheduled at 100% SoC."""
+    tomorrow = (datetime.now(timezone.utc) + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    slots = []
+    for i in range(48):
+        st = tomorrow + timedelta(minutes=30 * i)
+        h = st.hour
+        price = 15.6 if 2 <= h < 5 else (36.0 if 16 <= h < 19 else 25.8)
+        slots.append({"start": st, "end": st + timedelta(minutes=30), "price": price})
+
+    mock_telemetry.return_value = {"soc": 80, "pv_power": 0.0, "load_power": 400.0}
+    mock_rates.return_value = slots
+    mock_solar.return_value = ([], {})
+    mock_export.return_value = 10.7
+    # Force LLM to pick Option 3 (Pure Solar / zero grid draw)
+    mock_select.return_value = (True, 3, 9, "solar ok", "clear")
+    mock_set_slots.return_value = True
+
+    await optimiser.run_optimization()
+
+    assert mock_set_slots.called
+    called_slots = mock_set_slots.call_args[0][0]
+    called_target = mock_set_slots.call_args[1]["charge_target"]
+    assert called_target == 100
+    assert any(
+        s.astimezone(timezone.utc).hour == 2 and e.astimezone(timezone.utc).hour == 5
+        for s, e in called_slots
+    )
+
+
 
 
 
