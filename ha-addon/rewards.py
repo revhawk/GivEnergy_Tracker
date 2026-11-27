@@ -66,8 +66,10 @@ def is_scratchcard_alerts_enabled():
     return True
 
 
-def send_ha_notification(title, message, notification_id=None):
-    """Send a persistent notification to Home Assistant via Supervisor API."""
+def send_ha_notification(title, message, notification_id=None, also_mobile=False):
+    """Send a persistent notification to Home Assistant via Supervisor API.
+    When also_mobile=True, also broadcasts via notify/notify (mobile app push) best-effort.
+    """
     if not SUPERVISOR_TOKEN:
         return False
     url = f"{HA_URL}/services/persistent_notification/create"
@@ -81,11 +83,24 @@ def send_ha_notification(title, message, notification_id=None):
     }
     if notification_id:
         payload["notification_id"] = str(notification_id)
+    ok = False
     try:
         resp = requests.post(url, json=payload, headers=headers, timeout=5)
-        return resp.status_code == 200
+        ok = resp.status_code == 200
     except Exception:
-        return False
+        ok = False
+
+    if also_mobile:
+        try:
+            requests.post(
+                f"{HA_URL}/services/notify/notify",
+                json={"title": title, "message": message},
+                headers=headers,
+                timeout=5,
+            )
+        except Exception:
+            pass
+    return ok
 
 
 def fetch_ha_sensor(entity_id):

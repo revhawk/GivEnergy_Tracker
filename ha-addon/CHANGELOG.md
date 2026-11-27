@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.25.14] - 2026-11-27
+
+### Added
+- **15-Minute Pre-Event Home Assistant & Mobile Push Alerts (`simulation.py`, `rewards.py`)**:
+  - Added automatic ~15–20 minute pre-event notifications (`persistent_notification/create` + best-effort `notify/notify` mobile push) before high-value **Axle Energy VPP** (£1.00/kWh, top priority) and **Octopus Power Down** sessions, reminding you to pause heavy appliances (oven, tumble dryer, washer) so the full inverter discharge rate (`3.6 kW`) exports to the grid and grid import stays at `0.0 kWh`.
+  - Deduplicated via persisted state (`axle_pre_alert_sent` / `notified_power_down_events`) so each event notifies exactly once.
+  - Added unit tests `test_axle_pre_event_notification_fires_once_within_20m` and `test_octoplus_pre_event_alert_and_non_registration_power_up` in `tests/test_optimization.py`.
+
+### Fixed
+- **Automatic Non-Registration Power Up Detection (`simulation.py`)**:
+  - Updated `check_octoplus_events()` to trigger immediate 100% free-charge re-planning for both booked Happy Hours (`is_joined: True`) and automatic non-registration Free Electricity / Power Up sessions (`is_joined: None`), while continuing to skip unbooked promotional Happy Hour slots (`is_joined: False`).
+
+### Senior Developer Review
+- **Revenue & Payout Maximization**: Directly protects highest-value Axle VPP exports and Octopus Power Down OctoPoints/tokens from concurrent heavy household appliance loads.
+- **Verification**: Full pre-commit verification gate (`scripts/verify_commit.py`) and all 218 pytest tests passed 100%.
+
 ## [1.0.25.13] - 2026-11-27
 
 ### Fixed

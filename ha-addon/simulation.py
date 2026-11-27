@@ -19,11 +19,13 @@ except ImportError:
 import state
 
 AXLE_EXPORT_ARM_LEAD_MINUTES = 10  # Arm Timed Export only within 10m of Axle start so Eco mode covers peak & Power Down
+FLEX_EVENT_NOTIFY_LEAD_MINUTES = 20  # Send HA/mobile heads-up ~15-20m before Axle VPP or Power Down starts
 
 _AXLE_STATE_KEYS = (
     'active_axle_event_end',
     'tracked_axle_event_start',
     'axle_precharge_triggered',
+    'axle_pre_alert_sent',
     'axle_export_armed',
     'axle_force_export_triggered',
 )
@@ -41,6 +43,7 @@ import llm
 import octoplus
 import axle
 import planner
+import rewards
 
 
 def _op():
@@ -81,6 +84,26 @@ async def check_axle_events(realtime_soc=None):
 
         # Case 1: Newly announced or updated Axle event within next 24h
         if axle_event['end'] > now_utc and axle_event['start'] < now_utc + timedelta(hours=24):
+            # Send ~15-20 min heads-up alert before Axle VPP export (highest-value event: £1.00/kWh)
+            if direction == 'export':
+                secs_to_start = (axle_event['start'] - now_utc).total_seconds()
+                if 0 < secs_to_start <= FLEX_EVENT_NOTIFY_LEAD_MINUTES * 60 and cur_state.get('axle_pre_alert_sent') != a_start_iso:
+                    mins_left = max(1, int(round(secs_to_start / 60.0)))
+                    rate_w = givtcp.get_effective_export_rate_w()
+                    a_start_hm = axle_event['start'].astimezone().strftime('%H:%M')
+                    a_end_hm = axle_event['end'].astimezone().strftime('%H:%M')
+                    notify_fn = getattr(opt, 'send_ha_notification', rewards.send_ha_notification)
+                    title = f"⚡ Axle VPP Export Starts Soon ({a_start_hm}–{a_end_hm})"
+                    msg = (
+                        f"High-value Axle VPP export (£1.00/kWh) starts in ~{mins_left} min at {a_start_hm}. "
+                        f"Pause heavy appliances (oven, tumble dryer, washer, kettle) so your full "
+                        f"{rate_w / 1000.0:.1f} kW battery discharge exports to the grid for maximum payout!"
+                    )
+                    logging.info(f"🔔 [AXLE ALERT] Sending {mins_left}m pre-event notification ({a_start_hm}–{a_end_hm}).")
+                    notify_fn(title, msg, notification_id=f"axle_pre_{a_start_iso}", also_mobile=True)
+                    cur_state['axle_pre_alert_sent'] = a_start_iso
+                    save_state_fn(cur_state)
+
             if tracked_axle_start_str != a_start_iso or last_axle_end_str != a_end_iso:
                 logging.info(
                     f"⚡ [AXLE MONITOR] New or updated Axle flexibility event detected: "
@@ -192,7 +215,10 @@ async def check_octoplus_events():
 
     tracked_power_down = list(cur_state.get('tracked_power_down_events', []))
     tracked_power_up = list(cur_state.get('tracked_power_up_events', []))
+    notified_power_down = list(cur_state.get('notified_power_down_events', []))
+    notify_fn = getattr(opt, 'send_ha_notification', rewards.send_ha_notification)
     new_event_detected = False
+    state_dirty = False
 
     for s in sessions:
         if s.get('start') and s.get('end') and s['end'] > now_utc and s['start'] < now_utc + timedelta(hours=24):
@@ -200,6 +226,7 @@ async def check_octoplus_events():
             code = str(s.get('code') or s.get('event_id') or '')
             s_start_iso = s['start'].isoformat()
             s_str = s['start'].astimezone().strftime('%m-%d %H:%M')
+            s_hm = s['start'].astimezone().strftime('%H:%M')
             e_str = s['end'].astimezone().strftime('%H:%M')
             event_key = f"{stype}_{code}_{s_start_iso}"
 
@@ -212,9 +239,26 @@ async def check_octoplus_events():
                     tracked_power_down.append(event_key)
                     new_event_detected = True
 
+                secs_to_start = (s['start'] - now_utc).total_seconds()
+                if 0 < secs_to_start <= FLEX_EVENT_NOTIFY_LEAD_MINUTES * 60 and event_key not in notified_power_down:
+                    mins_left = max(1, int(round(secs_to_start / 60.0)))
+                    pts = s.get('reward_points', 0)
+                    pts_note = f", {pts} OctoPoints/kWh" if pts else ""
+                    title = f"🐙 Octopus Power Down Starts Soon ({s_hm}–{e_str})"
+                    msg = (
+                        f"Octopus Power Down ({code}{pts_note}) starts in ~{mins_left} min at {s_hm}. "
+                        f"Pause heavy appliances (oven, tumble dryer, washer) to keep grid import at 0.0 kWh "
+                        f"and earn maximum OctoPoints & Happy Hour tokens!"
+                    )
+                    logging.info(f"🔔 [OCTOPLUS ALERT] Sending {mins_left}m pre-event Power Down notification ({s_hm}–{e_str}).")
+                    notify_fn(title, msg, notification_id=f"octoplus_pd_{code}_{s_start_iso}", also_mobile=True)
+                    notified_power_down.append(event_key)
+                    state_dirty = True
+
             elif stype == 'power_up':
-                # Only trigger re-plan if confirmed joined!
-                if s.get('is_joined') is True and event_key not in tracked_power_up:
+                # Trigger re-plan for booked Happy Hours (is_joined=True) AND automatic non-registration Power Ups (is_joined=None).
+                # Skip only explicitly unbooked promotional slots (is_joined=False).
+                if s.get('is_joined') is not False and event_key not in tracked_power_up:
                     logging.info(
                         f"⚡ [OCTOPLUS FAST MONITOR] Confirmed Power Up session detected: {code} "
                         f"({s_str} - {e_str})! Triggering immediate re-planning to schedule 100% pre-charge at 0.0p/kWh!"
@@ -222,11 +266,12 @@ async def check_octoplus_events():
                     tracked_power_up.append(event_key)
                     new_event_detected = True
 
-    if new_event_detected:
+    if new_event_detected or state_dirty:
         cur_state['tracked_power_down_events'] = tracked_power_down
         cur_state['tracked_power_up_events'] = tracked_power_up
+        cur_state['notified_power_down_events'] = notified_power_down[-20:]
         save_state_fn(cur_state)
-        return True
+        return new_event_detected
 
     return False
 

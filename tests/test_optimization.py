@@ -1333,6 +1333,103 @@ def test_flux_peak_export_rate_does_not_trigger_false_arbitrage():
     assert e0.astimezone(timezone.utc).hour == 5
 
 
+@pytest.mark.asyncio
+async def test_axle_pre_event_notification_fires_once_within_20m():
+    """Axle VPP export must send a persistent + mobile HA alert ~15-20m before start, once per event."""
+    import simulation
+
+    now = datetime.now(timezone.utc)
+    ev = {
+        "start": now + timedelta(minutes=15),
+        "end": now + timedelta(minutes=75),
+        "import_export": "export",
+    }
+    saved = {}
+
+    def fake_load():
+        return dict(saved)
+
+    def fake_save(d):
+        saved.clear()
+        saved.update(d)
+
+    with patch("optimiser.is_axle_enabled", return_value=True), \
+         patch("optimiser.fetch_axle_event", return_value=ev), \
+         patch("optimiser.load_state", side_effect=fake_load), \
+         patch("optimiser.save_state", side_effect=fake_save), \
+         patch("givtcp.get_effective_export_rate_w", return_value=3600), \
+         patch("rewards.send_ha_notification", return_value=True) as mock_notify:
+        await simulation.check_axle_events(realtime_soc=100)
+        assert mock_notify.call_count == 1
+        title, msg = mock_notify.call_args[0]
+        assert "Axle VPP Export" in title
+        assert "3.6 kW" in msg
+        assert mock_notify.call_args[1]["also_mobile"] is True
+
+        # Second 5m tick must NOT re-send the same alert
+        await simulation.check_axle_events(realtime_soc=100)
+        assert mock_notify.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_octoplus_pre_event_alert_and_non_registration_power_up():
+    """Power Down sends a 15m heads-up alert once; non-registration Power Up (is_joined=None) triggers re-plan."""
+    import simulation
+
+    now = datetime.now(timezone.utc)
+    sessions = [
+        {
+            "session_type": "power_down",
+            "code": "EVENT_PD_1",
+            "start": now + timedelta(minutes=15),
+            "end": now + timedelta(minutes=75),
+            "reward_points": 136,
+        },
+        {
+            "session_type": "power_up",
+            "code": "FREE_ELEC_AUTO",
+            "start": now + timedelta(hours=3),
+            "end": now + timedelta(hours=4),
+            # No is_joined key -> automatic non-registration Free Electricity / Power Up
+        },
+        {
+            "session_type": "power_up",
+            "code": "HAPPY_HOUR_UNBOOKED",
+            "start": now + timedelta(hours=5),
+            "end": now + timedelta(hours=6),
+            "is_joined": False,
+        },
+    ]
+    saved = {}
+
+    def fake_load():
+        return dict(saved)
+
+    def fake_save(d):
+        saved.clear()
+        saved.update(d)
+
+    with patch("optimiser.fetch_live_octoplus_sessions", return_value=sessions), \
+         patch("optimiser.clear_octoplus_cache"), \
+         patch("optimiser.load_state", side_effect=fake_load), \
+         patch("optimiser.save_state", side_effect=fake_save), \
+         patch("rewards.send_ha_notification", return_value=True) as mock_notify:
+        replan = await simulation.check_octoplus_events()
+        assert replan is True
+        assert mock_notify.call_count == 1
+        assert "Power Down" in mock_notify.call_args[0][0]
+        assert mock_notify.call_args[1]["also_mobile"] is True
+        # Automatic Power Up tracked, unbooked Happy Hour skipped
+        assert any("FREE_ELEC_AUTO" in k for k in saved["tracked_power_up_events"])
+        assert not any("HAPPY_HOUR_UNBOOKED" in k for k in saved["tracked_power_up_events"])
+
+        # Second 5m tick must not re-alert or re-plan
+        replan2 = await simulation.check_octoplus_events()
+        assert replan2 is False
+        assert mock_notify.call_count == 1
+
+
+
 
 
 
