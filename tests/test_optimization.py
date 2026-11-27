@@ -1429,6 +1429,67 @@ async def test_octoplus_pre_event_alert_and_non_registration_power_up():
         assert mock_notify.call_count == 1
 
 
+@pytest.mark.asyncio
+async def test_flexibility_monitors_mutation_boundaries():
+    """Kill AST mutants in check_axle_events and check_octoplus_events (24h horizon, end-time update, 98% SoC boundary)."""
+    import simulation
+
+    now = datetime.now(timezone.utc)
+
+    # 1. Axle event >24h away must NOT trigger re-plan (kills L86 And->Or)
+    far_ev = {"start": now + timedelta(hours=30), "end": now + timedelta(hours=31), "import_export": "export"}
+    with patch("optimiser.is_axle_enabled", return_value=True), \
+         patch("optimiser.fetch_axle_event", return_value=far_ev), \
+         patch("optimiser.load_state", return_value={}), \
+         patch("optimiser.save_state") as mock_save:
+        assert await simulation.check_axle_events(realtime_soc=50) is False
+        mock_save.assert_not_called()
+
+    # 2. Same start time, extended end time MUST trigger re-plan (kills L107 Or->And)
+    start_dt = now + timedelta(hours=4)
+    old_end = now + timedelta(hours=5)
+    new_end = now + timedelta(hours=6)
+    ext_ev = {"start": start_dt, "end": new_end, "import_export": "export"}
+    st_same_start = {
+        "tracked_axle_event_start": start_dt.isoformat(),
+        "active_axle_event_end": old_end.isoformat(),
+    }
+    with patch("optimiser.is_axle_enabled", return_value=True), \
+         patch("optimiser.fetch_axle_event", return_value=ext_ev), \
+         patch("optimiser.load_state", return_value=st_same_start), \
+         patch("optimiser.save_state"):
+        assert await simulation.check_axle_events(realtime_soc=100) is True
+
+    # 3. Pre-charge window with SoC == 98% must NOT trigger re-plan (kills L128 Lt->LtE)
+    pre_start = now + timedelta(hours=1)
+    pre_end = now + timedelta(hours=2)
+    pre_ev = {"start": pre_start, "end": pre_end, "import_export": "export"}
+    st_tracked = {
+        "tracked_axle_event_start": pre_start.isoformat(),
+        "active_axle_event_end": pre_end.isoformat(),
+    }
+    with patch("optimiser.is_axle_enabled", return_value=True), \
+         patch("optimiser.fetch_axle_event", return_value=pre_ev), \
+         patch("optimiser.load_state", return_value=st_tracked), \
+         patch("optimiser.save_state"):
+        assert await simulation.check_axle_events(realtime_soc=98) is False
+
+    # 4. Octoplus session >24h away must NOT trigger re-plan (kills L224 And->Or)
+    far_sess = [{
+        "session_type": "power_down",
+        "code": "FAR_PD",
+        "start": now + timedelta(hours=30),
+        "end": now + timedelta(hours=31),
+    }]
+    with patch("optimiser.fetch_live_octoplus_sessions", return_value=far_sess), \
+         patch("optimiser.clear_octoplus_cache"), \
+         patch("optimiser.load_state", return_value={}), \
+         patch("optimiser.save_state") as mock_save:
+        assert await simulation.check_octoplus_events() is False
+        mock_save.assert_not_called()
+
+
+
 
 
 

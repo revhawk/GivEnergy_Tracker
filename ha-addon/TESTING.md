@@ -79,15 +79,26 @@ flowchart LR
 
 ## 🧬 Mutation Testing Benchmarks
 
-To verify that our tests catch real logic bugs (not just achieve line coverage), we run AST mutation testing — injecting comparison (`<` ↔ `<=`, `==` ↔ `!=`), boolean (`and` ↔ `or`), and arithmetic (`+` ↔ `-`) mutants into core decision modules:
+To verify that our tests catch real logic bugs (not just achieve line coverage), we maintain a dedicated AST mutation testing harness ([`scripts/run_mutation_tests.py`](../scripts/run_mutation_tests.py)) that injects comparison (`<` ↔ `<=`, `==` ↔ `!=`), boolean (`and` ↔ `or`), and arithmetic (`+` ↔ `-`) mutants into core decision modules:
 
 | Core Logic Module | Baseline Score | Hardened Score | Key Bugs Guarded Against |
 | :--- | :---: | :---: | :--- |
 | [`hive.py`](hive.py) | 0.0% (0/3) | **100.0% (3/3)** | Exact 45.0°C shower safety & 15.0 kWh solar thresholds; HA HTTP error handling. |
+| [`simulation.py`](simulation.py) *(Flux & off-peak helpers)* | — | **100.0% (3/3)** | Winter full off-peak band detection & per-slot Flux export arbitrage guard. |
 | [`octoplus.py`](octoplus.py) *(session matching)* | 38.7% (12/31) | **90.3% (28/31)** | Adjacent-slot overlap boundaries, `:30` minute windows, midnight crossings. |
 | [`planner.py`](planner.py) | 53.1% (17/32) | **84.4% (27/32)** | Blended pessimistic weighting formula, reserve floor during force-export, capacity clamping *(100% of non-equivalent mutants killed)*. |
 | [`axle.py`](axle.py) | 27.8% (10/36) | **80.6% (29/36)** | Independent enable flags, `+1h` default end time, 5m cache TTL, HA sensor fallback. |
+| [`simulation.py`](simulation.py) *(5-min monitors)* | 67.6% (23/34) | **~80%+** | 24h event horizon, end-time extensions, 98% pre-charge boundary, 15m pre-event alerts. |
+| [`rewards.py`](rewards.py) | 0.0% (0/2) | **76.5% (13/17)** | HA notification HTTP status, mobile push, GraphQL/HA spin fallbacks, Monday/force gating. |
 | [`tariffs.py`](tariffs.py) | 53.1% (17/32) | **~60%+** | 4-part tariff product extraction, single-missing-credential guards, open-ended `valid_to: None` (+24h / 48 slots). |
+
+Run mutation tests locally at any time:
+```bash
+cd GivEnergy_Tracker
+source .venv/bin/activate
+python scripts/run_mutation_tests.py --module rewards
+python scripts/run_mutation_tests.py --module all
+```
 
 ---
 
