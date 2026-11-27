@@ -61,13 +61,11 @@ Ensure zero logic regressions in the tariff and battery optimization loop:
 - [ ] **Solar Horizon**: `total_solar_kwh` must only sum forecast entries inside the 24-hour simulation horizon.
 - [ ] **Heavy Laundry**: Weekday load profile history must partition into `weekday_HH:MM` and `weekend_HH:MM`, with configurable `TUMBLE_DRYER_LOAD_W`.
 
-### 6. Test Suite Review & Test Expansion
+### 6. Test Suite Review, Mutation Gate & Test Expansion
 Per AGENTS.md Rule 4:
 - [ ] Every modified or added domain logic function must have corresponding unit/contract tests in `tests/`.
-- [ ] Full test suite must pass **100%** with zero failures:
-  ```bash
-  pytest -q
-  ```
+- [ ] Full test suite must pass **100%** with zero failures (`pytest -q`).
+- [ ] **AST Mutation Smoke Gate** (`scripts/run_mutation_tests.py --module smoke --min-score 75`) runs automatically inside `scripts/verify_commit.py` and must maintain `>= 75%` kill rate across `hive`, `simulation_helpers`, and `rewards` (use `python scripts/verify_commit.py --full-mutation` for a full 7-module audit).
 
 ---
 

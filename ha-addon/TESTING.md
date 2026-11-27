@@ -10,22 +10,22 @@ Every code change passes through four verification layers locally and in GitHub 
 
 ```mermaid
 flowchart TD
-    subgraph Layer1["1. Unit & Contract Tests (208 Tests)"]
+    subgraph Layer1["1. Unit & Contract Tests (221 Tests)"]
         U1["Pure Math & Simulation<br/>test_planner.py, test_optimization.py"]
         U2["Hardware & API Integrations<br/>test_write_slots.py, test_api_parsing.py, test_axle.py"]
-        U3["Safety & Schemas<br/>test_hive.py, test_contracts.py, test_helpers.py"]
+        U3["Safety, Rewards & Schemas<br/>test_hive.py, test_rewards.py, test_contracts.py, test_helpers.py"]
     end
 
     subgraph Layer2["2. End-to-End Guardrails (5 Multi-Step Scenarios)"]
         E2E["tests/test_e2e_guardrails.py<br/>Real simulation + planner + givtcp + octoplus + state"]
     end
 
-    subgraph Layer3["3. AST Mutation Testing"]
-        MUT["Injects comparison, boolean & arithmetic bugs<br/>Verifies test suite kills mutants across core modules"]
+    subgraph Layer3["3. AST Mutation Testing (scripts/run_mutation_tests.py)"]
+        MUT["Injects comparison, boolean & arithmetic bugs<br/>Automated smoke gate (>=75%) + full 7-module audit"]
     end
 
     subgraph Layer4["4. Pre-Commit Gate & GitHub Actions CI"]
-        GATE["scripts/verify_commit.py<br/>Version sync, stale-doc guard, IP/secret leak scan & pytest"]
+        GATE["scripts/verify_commit.py<br/>Version sync, leak scan, pytest & mutation smoke gate"]
         CI["GitHub Actions (.github/workflows/tests.yml)<br/>Python 3.11 & 3.12 Matrix (TZ=Europe/London)"]
     end
 
@@ -37,15 +37,16 @@ flowchart TD
 
 ---
 
-## 📋 Complete Test Suite Inventory (213 Tests)
+## 📋 Complete Test Suite Inventory (226 Tests)
 
 | Test File | Focus Area | Key Behaviors Verified |
 | :--- | :--- | :--- |
 | [`tests/test_e2e_guardrails.py`](../tests/test_e2e_guardrails.py) | **End-to-End Guardrails** | Full multi-step lifecycles across `simulation`, `planner`, `givtcp`, `octoplus`, `axle`, and `state`. |
-| [`tests/test_optimization.py`](../tests/test_optimization.py) | **Core Optimization & Monitors** | 24h simulation, winter 100% pre-charge, daytime top-ups, 5-min Axle/Octoplus polling, 30-min SoC drift, composable helpers (`classify_day`, `_clear_axle_state`). |
+| [`tests/test_optimization.py`](../tests/test_optimization.py) | **Core Optimization & Monitors** | 24h simulation, winter full off-peak guarantee, Flux peak-export arbitrage guard, 15m Axle/Power Down alerts, 5-min polling, 30-min SoC drift, composable helpers. |
 | [`tests/test_planner.py`](../tests/test_planner.py) | **Cost Search Engine** | Pure side-effect-free `simulate_plan()`, blended normal/pessimistic `score_plan()`, `search_best_plan()`, reserve floor, simultaneous solar + grid charge. |
 | [`tests/test_write_slots.py`](../tests/test_write_slots.py) | **GivTCP Hardware Writes** | Charge slot programming, Just-In-Time `Timed Export`, `/setEcoMode`, active `/forceExport`, hardware capability auto-detection (`3,600 W` Hybrid Gen 3). |
 | [`tests/test_axle.py`](../tests/test_axle.py) | **Axle Energy VPP** | Token discovery, payload parsing, +1h default end time, 5-minute cache TTL, HA sensor fallback, active & pre-charge window checks. |
+| [`tests/test_rewards.py`](../tests/test_rewards.py) | **Rewards & HA Alerts** | Persistent + mobile push notifications (`notify/notify`), HTTP status handling, Wheel of Fortune GraphQL/HA fallback, Monday/force gating, scratchcard checks. |
 | [`tests/test_helpers.py`](../tests/test_helpers.py) | **Octoplus & Rewards** | Power Down / Power Up session matching, adjacent-slot boundaries, `:30` minute & midnight-crossing windows, Wheel of Fortune & scratchcard alerts. |
 | [`tests/test_hive.py`](../tests/test_hive.py) | **Hive Hot Water Safety** | Exact `45.0°C` morning shower safety threshold, `15.0 kWh` solar gas-suppression threshold, HA REST HTTP `200`/`500` handling. |
 | [`tests/test_api_parsing.py`](../tests/test_api_parsing.py) | **Tariff & Solar APIs** | Octopus Agile & Flux rate parsing, time-of-use Flux Export matching, product code extraction, open-ended `valid_to: None` handling, Forecast.Solar & Open-Meteo parsing. |
@@ -110,13 +111,16 @@ Always activate the project virtual environment before running tests or pre-comm
 cd GivEnergy_Tracker
 source .venv/bin/activate
 
-# 1. Run the full automated pre-commit verification gate (version sync, leak check, AppArmor, pytest)
+# 1. Run the full automated pre-commit verification gate (version sync, leak check, AppArmor, pytest + mutation smoke gate)
 python scripts/verify_commit.py
 
-# 2. Run the full pytest suite with verbose output
+# 2. Run pre-commit gate with FULL 7-module AST mutation testing
+python scripts/verify_commit.py --full-mutation
+
+# 3. Run the full pytest suite with verbose output
 pytest -v
 
-# 3. Run only the End-to-End Guardrail suite
+# 4. Run only the End-to-End Guardrail suite
 pytest tests/test_e2e_guardrails.py -v
 ```
 

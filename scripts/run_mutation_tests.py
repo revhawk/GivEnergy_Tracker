@@ -149,9 +149,9 @@ def main():
     parser = argparse.ArgumentParser(description="Run AST mutation tests on core GivEnergy Tracker modules.")
     parser.add_argument(
         "--module",
-        choices=list(SUITES.keys()) + ["all"],
+        choices=list(SUITES.keys()) + ["smoke", "all"],
         default="all",
-        help="Target module suite to mutate (default: all)",
+        help="Target module suite to mutate ('smoke' runs fast pre-commit subset; default: all)",
     )
     parser.add_argument(
         "--min-score",
@@ -161,7 +161,12 @@ def main():
     )
     args = parser.parse_args()
 
-    selected = list(SUITES.keys()) if args.module == "all" else [args.module]
+    if args.module == "all":
+        selected = list(SUITES.keys())
+    elif args.module == "smoke":
+        selected = ["hive", "simulation_helpers", "rewards"]
+    else:
+        selected = [args.module]
     total_k = 0
     total_m = 0
     for key in selected:

@@ -1,6 +1,6 @@
 # Test Suite
 
-Automated tests for the **GivEnergy Tariff Optimiser** Home Assistant App (**213 tests** across 14 test modules).
+Automated tests for the **GivEnergy Tariff Optimiser** Home Assistant App (**226 tests** across 15 test modules, backed by automated AST mutation testing).
 
 For the full testing pyramid, E2E guardrail diagrams, and AST mutation testing benchmarks, see [`ha-addon/TESTING.md`](../ha-addon/TESTING.md).
 
@@ -17,8 +17,12 @@ pip install -r ha-addon/requirements.txt -r tests/requirements.txt
 # 3. Execute the full test suite
 pytest -v
 
-# 4. Run the full pre-commit verification gate (version sync, leak scan, AppArmor, pytest)
+# 4. Run the full pre-commit verification gate (version sync, leak scan, AppArmor, pytest & AST mutation smoke gate)
 python scripts/verify_commit.py
+
+# 5. Run targeted or full AST mutation tests directly
+python scripts/run_mutation_tests.py --module smoke
+python scripts/run_mutation_tests.py --module all
 ```
 
 ## Coverage Summary

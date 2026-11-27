@@ -268,7 +268,43 @@ def run_tests() -> bool:
     return True
 
 
+def run_mutation_gate(full: bool = False) -> bool:
+    """Run AST mutation testing gate via scripts/run_mutation_tests.py."""
+    mode = "all" if full else "smoke"
+    min_score = "70" if full else "75"
+    log_info(f"5. Running AST Mutation Testing Gate (mode={mode}, min={min_score}%)...")
+    python_bin = sys.executable
+    venv_py = ROOT / ".venv" / "bin" / "python"
+    if venv_py.exists():
+        python_bin = str(venv_py)
+
+    runner = ROOT / "scripts" / "run_mutation_tests.py"
+    if not runner.exists():
+        log_fail("scripts/run_mutation_tests.py is missing!")
+        return False
+
+    res = subprocess.run(
+        [python_bin, str(runner), "--module", mode, "--min-score", min_score],
+        cwd=str(ROOT),
+        capture_output=True,
+        text=True,
+    )
+    summary_line = next(
+        (line.strip() for line in reversed(res.stdout.splitlines()) if "OVERALL MUTATION SCORE" in line),
+        "OK",
+    )
+    if res.returncode != 0:
+        log_fail(f"AST Mutation gate failed! ({summary_line})")
+        print(res.stdout)
+        print(res.stderr)
+        return False
+
+    log_pass(f"AST Mutation gate passed: {summary_line}")
+    return True
+
+
 def main():
+    full_mutation = "--full-mutation" in sys.argv
     print("=" * 70)
     print(" 🛡️  GIVEnergy Tracker — Pre-Commit Requirements Verification")
     print("=" * 70)
@@ -278,6 +314,7 @@ def main():
         check_private_info_leaks(),
         check_license_and_permissions(),
         run_tests(),
+        run_mutation_gate(full=full_mutation),
     ]
 
     print("=" * 70)
